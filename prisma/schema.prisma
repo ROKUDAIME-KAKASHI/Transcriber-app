@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  createdAt DateTime  @default(now())
+  meetings  Meeting[]
+}
+
+model Meeting {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  language    String   @default("en")
+  status      String   @default("RECORDING") // RECORDING | DONE
+  /// TranscriptPart[]: [{ speaker: number, text: string }]
+  transcript  Json     @default("[]")
+  durationSec Int      @default(0)
+  /// Which device recorded it, e.g. "Android phone"
+  deviceName  String?
+  /// "MOM" | "Report" once processed by AI
+  template    String?
+  /// AI-generated Markdown document
+  document    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, createdAt])
+}

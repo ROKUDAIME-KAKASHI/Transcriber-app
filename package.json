@@ -1,0 +1,38 @@
+{
+  "name": "transcriber-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "dev:phone": "next dev -p 3001 --experimental-https -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "db:push": "prisma db push",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.80",
+    "@prisma/client": "^6.19.3",
+    "ai": "^6.0.201",
+    "bcryptjs": "^3.0.3",
+    "html2pdf.js": "^0.14.0",
+    "lucide-react": "^1.17.0",
+    "next": "16.2.9",
+    "next-auth": "^4.24.14",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/typography": "^0.5.20",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "prisma": "^6.19.3",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
