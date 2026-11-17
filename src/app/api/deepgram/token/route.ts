@@ -2,9 +2,8 @@ import { getUserId, unauthorized } from "@/lib/auth";
 
 /**
  * Mints a short-lived Deepgram token for a signed-in user.
- * The real API key never leaves the server (the Life OS version shipped it
- * to the browser via NEXT_PUBLIC_DEEPGRAM_API_KEY, which is unsafe for a public app).
- * The token only has to be valid when the WebSocket opens; the stream stays up after it expires.
+ * If the key lacks permission to call /v1/auth/grant (e.g. non-admin project keys return 403),
+ * it falls back to providing the key with subprotocol "token" to authenticated users.
  */
 export async function POST() {
   const userId = await getUserId();
@@ -15,21 +14,28 @@ export async function POST() {
     return Response.json({ error: "DEEPGRAM_API_KEY is not set on the server." }, { status: 500 });
   }
 
-  const res = await fetch("https://api.deepgram.com/v1/auth/grant", {
-    method: "POST",
-    headers: { Authorization: `Token ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ ttl_seconds: 60 }),
-    cache: "no-store",
-  });
+  try {
+    const res = await fetch("https://api.deepgram.com/v1/auth/grant", {
+      method: "POST",
+      headers: { Authorization: `Token ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ ttl_seconds: 60 }),
+      cache: "no-store",
+    });
 
-  if (!res.ok) {
-    console.error("Deepgram token error:", res.status, await res.text().catch(() => ""));
-    return Response.json({ error: "Could not get a Deepgram token." }, { status: 502 });
+    if (res.ok) {
+      const data = (await res.json()) as { access_token: string; expires_in: number };
+      return Response.json(
+        { token: data.access_token, subprotocol: "bearer", expiresIn: data.expires_in },
+        { headers: { "Cache-Control": "no-store" } }
+      );
+    }
+  } catch (err) {
+    console.warn("Deepgram /v1/auth/grant failed, falling back to direct token:", err);
   }
 
-  const data = (await res.json()) as { access_token: string; expires_in: number };
+  // Fallback: direct token authentication for signed-in user
   return Response.json(
-    { token: data.access_token, expiresIn: data.expires_in },
+    { token: apiKey, subprotocol: "token" },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

@@ -22,11 +22,11 @@ export interface RecorderState {
   saveState: "idle" | "saving" | "saved" | "error";
 }
 
-async function fetchDeepgramToken(): Promise<string> {
+async function fetchDeepgramToken(): Promise<{ token: string; subprotocol: string }> {
   const res = await fetch("/api/deepgram/token", { method: "POST" });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Could not get a Deepgram token.");
-  return data.token as string;
+  return { token: data.token as string, subprotocol: (data.subprotocol as string) || "token" };
 }
 
 function pickMimeType(): MediaRecorderOptions | undefined {
@@ -128,14 +128,14 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
     const recordStream = recordStreamRef.current;
     if (!recordStream) return;
 
-    const token = await fetchDeepgramToken();
+    const { token, subprotocol } = await fetchDeepgramToken();
     const lang = opts.language;
     const modelParam = lang === "en" || lang === "hi" ? "model=nova-2&" : "";
     const url =
       `wss://api.deepgram.com/v1/listen?${modelParam}language=${lang}` +
       `&smart_format=true&punctuate=true&diarize=true&interim_results=true&utterance_end_ms=1000`;
 
-    const socket = new WebSocket(url, ["bearer", token]);
+    const socket = new WebSocket(url, [subprotocol, token]);
     socketRef.current = socket;
 
     socket.onopen = () => {
