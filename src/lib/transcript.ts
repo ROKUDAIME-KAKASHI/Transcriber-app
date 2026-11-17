@@ -17,7 +17,8 @@ export const TEMPLATES = [
 ] as const;
 
 export function transcriptToText(parts: TranscriptPart[]): string {
-  return parts.map((p) => `Speaker ${p.speaker}: ${p.text}`).join("\n\n");
+  // Speakers are numbered from 1 for people (stored 0-based).
+  return parts.map((p) => `Speaker ${p.speaker + 1}: ${p.text}`).join("\n\n");
 }
 
 export function formatDuration(totalSeconds: number): string {

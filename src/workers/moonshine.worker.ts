@@ -24,6 +24,7 @@
  *  - Base on WebGPU: ~154 MB and slower per phrase, so not used.
  */
 import { env, pipeline, type ProgressInfo } from "@huggingface/transformers";
+import { hasLoop } from "../lib/moonshine/cleanText";
 
 const MODELS = {
   base: "onnx-community/moonshine-base-ONNX",
@@ -136,10 +137,15 @@ async function run(job: Job) {
       job.kind === "final"
         ? { max_new_tokens: Math.ceil(seconds * 6.5) + 8 }
         : { max_new_tokens: Math.ceil(seconds * 4) + 4, no_repeat_ngram_size: 3 };
-    const out = await transcriber(job.audio, options);
+    const textOf = (o: Awaited<ReturnType<Transcriber>>) => ((Array.isArray(o) ? o[0]?.text : o.text) ?? "").trim();
+    let text = textOf(await transcriber(job.audio, options));
+    // Rarely, a final phrase gets stuck repeating itself (noise, a cough mid-word). Decoding it
+    // again with repeated 3-word runs blocked almost always recovers the real sentence.
+    if (job.kind === "final" && hasLoop(text)) {
+      text = textOf(await transcriber(job.audio, { ...options, no_repeat_ngram_size: 3 }));
+    }
     const rtf = (performance.now() - t0) / 1000 / Math.max(seconds, 0.5);
-    const text = (Array.isArray(out) ? out[0]?.text : out.text) ?? "";
-    self.postMessage({ type: "result", id: job.id, text: text.trim(), rtf });
+    self.postMessage({ type: "result", id: job.id, text, rtf });
     if (job.kind === "final") trackSpeed(rtf);
   } catch (err) {
     self.postMessage({ type: "error", id: job.id, message: String((err as Error)?.message ?? err) });

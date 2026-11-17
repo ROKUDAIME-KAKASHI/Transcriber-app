@@ -4,59 +4,61 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { detectDeviceName, type TranscriptPart } from "@/lib/transcript";
 import { loadMoonshine, transcribePartial, transcribeSegment } from "@/lib/moonshine/client";
 import { VoiceChunker } from "@/lib/moonshine/voiceChunker";
-
-/** "deepgram": cloud, live words, speaker labels, Indian languages. "moonshine": free, on-device, English. */
-export type Engine = "deepgram" | "moonshine";
+import { cleanPhrase } from "@/lib/moonshine/cleanText";
 
 const AUTOSAVE_MS = 5000;
 
 /**
  * "Try with sample audio": a short public-domain speech clip (JFK, 1961) fed into the
- * recorder instead of the microphone, so the engines can be seen working without a mic
+ * recorder instead of the microphone, so transcription can be seen working without a mic
  * (e.g. in browsers or embedded views that block microphone access).
  */
 const SAMPLE_AUDIO_URL = "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/jfk.wav";
 
 export type AudioSource = "mic" | "sample";
-const MAX_RECONNECTS = 3;
-
-type DeepgramWord = { speaker?: number };
-type DeepgramMessage = {
-  is_final?: boolean;
-  channel?: { alternatives?: { transcript?: string; words?: DeepgramWord[] }[] };
-};
-
 export interface RecorderState {
   isRecording: boolean;
   meetingId: string | null;
   transcriptParts: TranscriptPart[];
+  /** Words heard but not final yet (live preview). */
   interimText: string;
+  /** Activity, shown as a typing indicator when there's no live text yet. */
+  liveStatus: "listening" | "transcribing" | null;
+  /** Finished phrases still waiting to be transcribed (slow devices). */
+  backlog: number;
+  /** Mic loudness 0–1 for the level meter. */
+  micLevel: number;
+  /** True when the mic has delivered (near) silence for several seconds. */
+  noSound: boolean;
   recordingSeconds: number;
   statusMsg: string;
   saveState: "idle" | "saving" | "saved" | "error";
 }
 
-async function fetchDeepgramToken(): Promise<{ token: string; subprotocol: string }> {
-  const res = await fetch("/api/deepgram/token", { method: "POST" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Could not get a Deepgram token.");
-  return { token: data.token as string, subprotocol: (data.subprotocol as string) || "bearer" };
+/** Below this RMS for NO_SOUND_MS the mic is treated as silent/wrong device. */
+const NO_SOUND_RMS = 0.0004;
+const NO_SOUND_MS = 5000;
+
+/** rms → 0–1 on a −60 dB…0 dB scale, so quiet mics still move the meter. */
+function levelFromRms(rms: number): number {
+  if (rms <= 0) return 0;
+  return Math.max(0, Math.min(1, (20 * Math.log10(rms) + 60) / 60));
 }
 
-function pickMimeType(): MediaRecorderOptions | undefined {
-  if (typeof MediaRecorder.isTypeSupported !== "function") return undefined;
-  for (const mimeType of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]) {
-    if (MediaRecorder.isTypeSupported(mimeType)) return { mimeType };
-  }
-  return undefined;
-}
-
-export function useRecorder(opts: { language: string; captureSystemAudio: boolean; engine: Engine }) {
+export function useRecorder(opts: {
+  captureSystemAudio: boolean;
+  /** Microphone to use (from enumerateDevices); empty = browser default. */
+  deviceId?: string;
+}) {
   const [state, setState] = useState<RecorderState>({
     isRecording: false,
     meetingId: null,
     transcriptParts: [],
     interimText: "",
+    liveStatus: null,
+    backlog: 0,
+    micLevel: 0,
+    noSound: false,
     recordingSeconds: 0,
     statusMsg: "Ready",
     saveState: "idle",
@@ -68,10 +70,7 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
   const dirtyRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
   const wantRecordingRef = useRef(false);
-  const reconnectsRef = useRef(0);
 
-  const socketRef = useRef<WebSocket | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
   const streamsRef = useRef<MediaStream[]>([]);
   const recordStreamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -79,7 +78,7 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autosaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Moonshine (on-device) engine
+  // On-device transcription (Moonshine)
   const chunkerRef = useRef<VoiceChunker | null>(null);
   const moonCtxRef = useRef<AudioContext | null>(null);
   const pendingSegmentsRef = useRef<Set<Promise<void>>>(new Set());
@@ -89,6 +88,10 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
   const lastEmittedPhraseRef = useRef(0);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Level meter / no-sound detection
+  const lastLevelPaintRef = useRef(0);
+  const quietSinceRef = useRef<number | null>(null);
+  const noSoundRef = useRef(false);
 
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
 
@@ -117,15 +120,11 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
     }
   }, []);
 
-  const appendFinal = (speaker: number, text: string) => {
-    const clean = text.trim();
+  /** Adds a finished phrase to the transcript, as its own chat bubble. */
+  const appendFinal = (text: string) => {
+    const clean = cleanPhrase(text);
     if (!clean) return;
-    const prev = partsRef.current;
-    const last = prev[prev.length - 1];
-    partsRef.current =
-      last && last.speaker === speaker
-        ? [...prev.slice(0, -1), { speaker, text: `${last.text} ${clean}` }]
-        : [...prev, { speaker, text: clean }];
+    partsRef.current = [...partsRef.current, { speaker: 0, text: clean }];
     dirtyRef.current = true;
     patch({ transcriptParts: partsRef.current, interimText: "" });
   };
@@ -148,93 +147,42 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [save]);
 
-  // ---- Deepgram socket ---------------------------------------------------
-  const openSocket = useCallback(async () => {
-    const recordStream = recordStreamRef.current;
-    if (!recordStream) return;
-
-    const { token, subprotocol } = await fetchDeepgramToken();
-    const lang = opts.language;
-    const modelParam = lang === "en" || lang === "hi" ? "model=nova-2&" : "";
-    const url =
-      `wss://api.deepgram.com/v1/listen?${modelParam}language=${lang}` +
-      `&smart_format=true&punctuate=true&diarize=true&interim_results=true&utterance_end_ms=1000`;
-
-    const socket = new WebSocket(url, [subprotocol, token]);
-    socketRef.current = socket;
-
-    socket.onopen = () => {
-      reconnectsRef.current = 0;
-      patch({ statusMsg: "Recording (live transcription)…", isRecording: true });
-      if (audioCtxRef.current?.state === "suspended") audioCtxRef.current.resume();
-
-      // A fresh MediaRecorder per socket so each connection gets a valid container header.
-      const mimeOpts = pickMimeType();
-      const recorder = mimeOpts ? new MediaRecorder(recordStream, mimeOpts) : new MediaRecorder(recordStream);
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) socket.send(e.data);
-      };
-      recorder.start(200);
-      recorderRef.current = recorder;
-      playSampleIfAny();
-    };
-
-    socket.onmessage = (message) => {
-      try {
-        const data = JSON.parse(message.data) as DeepgramMessage;
-        const alt = data.channel?.alternatives?.[0];
-        if (!alt) return;
-        if (data.is_final) {
-          const speaker = alt.words?.find((w) => typeof w.speaker === "number")?.speaker ?? 0;
-          if (alt.transcript) appendFinal(speaker, alt.transcript);
-        } else {
-          patch({ interimText: alt.transcript || "" });
-        }
-      } catch (err) {
-        console.error("Deepgram parse error:", err);
-      }
-    };
-
-    socket.onclose = (event) => {
-      if (recorderRef.current?.state !== "inactive") recorderRef.current?.stop();
-      if (!wantRecordingRef.current) return;
-
-      // Unexpected drop (network blip, phone switching Wi-Fi → data): try to resume.
-      if (reconnectsRef.current < MAX_RECONNECTS) {
-        reconnectsRef.current += 1;
-        patch({ statusMsg: `Connection lost — reconnecting (${reconnectsRef.current}/${MAX_RECONNECTS})…` });
-        setTimeout(() => {
-          if (wantRecordingRef.current) openSocket().catch(() => socket.onclose?.(event));
-        }, 1000 * reconnectsRef.current);
-      } else {
-        patch({ statusMsg: `Connection closed (code ${event.code}). Transcript so far is saved.` });
-        // eslint-disable-next-line @typescript-eslint/no-use-before-define
-        stop();
-      }
-    };
-
-    socket.onerror = (e) => console.error("Deepgram WebSocket error:", e);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.language]);
-
-  // ---- Moonshine (on-device) ---------------------------------------------
+  // ---- On-device transcription ---------------------------------------------
   const showMoonshineActivity = () => {
     const waiting = pendingSegmentsRef.current.size;
     const live = [...previewsRef.current.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([, t]) => t)
       .join(" ");
-    // On slow phones phrases can queue up; say so instead of looking frozen.
-    const backlog = waiting > 1 ? ` (${waiting} phrases waiting)` : "";
     patch({
-      interimText: live
-        ? `${live}${backlog}`
-        : speakingRef.current
-          ? "(listening…)"
-          : waiting
-            ? `(transcribing…${backlog})`
-            : "",
+      interimText: live,
+      liveStatus: speakingRef.current ? "listening" : waiting ? "transcribing" : null,
+      // On slow phones phrases can queue up; the UI says so instead of looking frozen.
+      backlog: waiting,
     });
+  };
+
+  /** Level meter + "is the mic actually delivering sound?" check. */
+  const onMicLevel = (rms: number) => {
+    const now = performance.now();
+    if (rms < NO_SOUND_RMS) {
+      quietSinceRef.current ??= now;
+      if (!noSoundRef.current && now - quietSinceRef.current > NO_SOUND_MS) {
+        noSoundRef.current = true;
+        patch({ noSound: true });
+      }
+    } else {
+      quietSinceRef.current = null;
+      if (noSoundRef.current) {
+        noSoundRef.current = false;
+        patch({ noSound: false });
+      }
+    }
+    // ~12 repaints a second is plenty for a meter.
+    if (now - lastLevelPaintRef.current > 80) {
+      lastLevelPaintRef.current = now;
+      patch({ micLevel: levelFromRms(rms) });
+    }
   };
 
   /**
@@ -271,8 +219,11 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
     if (!ctx || !recordStream) return;
     previewsRef.current.clear();
     lastEmittedPhraseRef.current = 0;
+    quietSinceRef.current = null;
+    noSoundRef.current = false;
 
     const chunker = new VoiceChunker(ctx, {
+      onLevel: onMicLevel,
       onSpeechChange: (speaking) => {
         speakingRef.current = speaking;
         showMoonshineActivity();
@@ -280,7 +231,7 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
       onSegment: (audio, phraseId) => {
         lastEmittedPhraseRef.current = phraseId;
         const job = transcribeSegment(audio)
-          .then((text) => appendFinal(0, text))
+          .then(appendFinal) // one chat bubble per phrase
           .catch((err) => console.error("Moonshine transcription error:", err))
           .finally(() => {
             // The live preview for this phrase stays visible until its final text replaces it.
@@ -295,7 +246,7 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
     await chunker.start(recordStream);
     chunkerRef.current = chunker;
     previewTimerRef.current = setTimeout(previewTick, PREVIEW_MIN_INTERVAL_MS);
-    patch({ statusMsg: "Recording (on-device, English)…", isRecording: true });
+    patch({ statusMsg: "Recording…", isRecording: true });
   };
 
   // ---- Start / stop ------------------------------------------------------
@@ -326,26 +277,14 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
 
   const stop = useCallback(async () => {
     wantRecordingRef.current = false;
-    const usingMoonshine = !!chunkerRef.current;
     chunkerRef.current?.flush(); // send the phrase that was mid-way when Stop was tapped
-    if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
-    const socket = socketRef.current;
-    if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: "CloseStream" })); // flush final words
-      setTimeout(() => socket.close(), 1500);
-    }
     cleanupMedia();
-    patch({ isRecording: false, interimText: "", statusMsg: "Stopped. Saving…" });
-    if (usingMoonshine) {
-      // Wait for the device to finish transcribing the last phrases.
-      if (pendingSegmentsRef.current.size) patch({ statusMsg: "Finishing transcription…" });
-      await Promise.all([...pendingSegmentsRef.current]);
-    } else {
-      // Give Deepgram a moment to deliver the last final segment before saving.
-      await new Promise((r) => setTimeout(r, 1600));
-    }
+    patch({ isRecording: false, interimText: "", micLevel: 0, noSound: false, statusMsg: "Stopped. Saving…" });
+    // Wait for the device to finish transcribing the last phrases.
+    if (pendingSegmentsRef.current.size) patch({ statusMsg: "Finishing transcription…" });
+    await Promise.all([...pendingSegmentsRef.current]);
     await save("DONE");
-    patch({ statusMsg: "Saved to your account." });
+    patch({ statusMsg: "Saved to your account.", liveStatus: null, backlog: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save]);
 
@@ -375,33 +314,36 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
     partsRef.current = [];
     secondsRef.current = 0;
     dirtyRef.current = false;
-    reconnectsRef.current = 0;
     speakingRef.current = false;
     pendingSegmentsRef.current.clear();
     patch({
-      transcriptParts: [], interimText: "", recordingSeconds: 0,
+      transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
+      recordingSeconds: 0,
       statusMsg: useSample ? "Loading sample audio…" : "Requesting microphone…", saveState: "idle", meetingId: null,
     });
 
-    const useMoonshine = opts.engine === "moonshine";
-    // Audio contexts are created before any await so they count as part of the tap
+    // The audio context is created before any await so it counts as part of the tap
     // (iOS only allows audio to start then).
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (useMoonshine) {
-      moonCtxRef.current = new Ctx();
-      moonCtxRef.current.resume().catch(() => {});
-    } else if (useSample) {
-      audioCtxRef.current = new Ctx();
-      audioCtxRef.current.resume().catch(() => {});
-    }
+    const ctx = new Ctx();
+    moonCtxRef.current = ctx;
+    ctx.resume().catch(() => {});
 
     try {
       const mic = useSample
-        ? await createSampleStream((moonCtxRef.current ?? audioCtxRef.current)!)
+        ? await createSampleStream(ctx)
         : await navigator.mediaDevices
             .getUserMedia({
-              audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: true },
+              audio: {
+                // A chosen mic (Windows PCs often have several, and the default can be a silent one).
+                ...(opts.deviceId ? { deviceId: { exact: opts.deviceId } } : {}),
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: false,
+                autoGainControl: true,
+              },
             })
+            // Chosen mic unplugged, or constraints unsupported: fall back to the default mic.
             .catch(() => navigator.mediaDevices.getUserMedia({ audio: true }));
       streamsRef.current.push(mic);
 
@@ -422,24 +364,22 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
       }
       recordStreamRef.current = recordStream;
 
-      if (useMoonshine) {
-        // First use downloads the model (tens of MB); after that it loads from the browser cache.
-        patch({ statusMsg: "Loading on-device speech model…" });
-        await loadMoonshine((pct) => patch({ statusMsg: `Downloading speech model… ${pct}%` }), {
-          onModelChange: () => {
-            if (wantRecordingRef.current) {
-              patch({ statusMsg: "Recording (on-device, English) — switched to the faster model for this phone…" });
-            }
-          },
-        });
-      }
+      // First use downloads the model (tens of MB); after that it loads from the browser cache.
+      patch({ statusMsg: "Loading speech model…" });
+      await loadMoonshine((pct) => patch({ statusMsg: `Downloading speech model… ${pct}%` }), {
+        onModelChange: () => {
+          if (wantRecordingRef.current) {
+            patch({ statusMsg: "Recording — switched to the faster model for this phone…" });
+          }
+        },
+      });
 
       patch({ statusMsg: "Creating meeting…" });
       const res = await fetch("/api/meetings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          language: useMoonshine ? "en" : opts.language,
+          language: "en",
           deviceName: detectDeviceName(),
           ...(useSample
             ? { title: `Sample recording – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` }
@@ -449,16 +389,12 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not create meeting");
       meetingIdRef.current = data.meeting.id;
-      patch({ meetingId: data.meeting.id, statusMsg: useMoonshine ? "Starting…" : "Connecting to Deepgram…" });
+      patch({ meetingId: data.meeting.id, statusMsg: "Starting…" });
 
       wantRecordingRef.current = true;
       await acquireWakeLock();
-      if (useMoonshine) {
-        await startMoonshine();
-        playSampleIfAny();
-      } else {
-        await openSocket(); // the sample starts playing once the Deepgram socket is open
-      }
+      await startMoonshine();
+      playSampleIfAny();
 
       timerRef.current = setInterval(() => {
         secondsRef.current += 1;
@@ -476,7 +412,7 @@ export function useRecorder(opts: { language: string; captureSystemAudio: boolea
       patch({ statusMsg: msg, isRecording: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.language, opts.captureSystemAudio, opts.engine, openSocket, save]);
+  }, [opts.captureSystemAudio, opts.deviceId, save]);
 
   // Save whatever we have if the page is closed mid-recording.
   useEffect(() => {

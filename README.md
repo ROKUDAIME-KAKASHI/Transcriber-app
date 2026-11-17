@@ -9,14 +9,19 @@ It started as part of Life OS and is now its own repository, with its own
 
 ## What it does
 
-- **Two transcription engines**, chosen on the Record screen (the choice is remembered per device):
-  - **Free · on-device** — [Moonshine](https://github.com/moonshine-ai/moonshine) Base running in the
-    browser via Transformers.js. English only, no speaker labels, no API cost, and audio never leaves
-    the device. Words appear live as you speak, and each phrase is finalised at the next pause.
-  - **Deepgram** — cloud, live word-by-word text with speaker labels (Nova-2), in English, Hindi,
-    Tamil, Malayalam, Kannada.
+- **Free, on-device transcription**: [Moonshine](https://github.com/moonshine-ai/moonshine) Base
+  runs in the browser via Transformers.js. English only, no speaker labels, no API cost, and audio
+  never leaves the device. Words appear live as you speak, and each phrase is finalised at the
+  next pause. (Deepgram cloud transcription was removed; older meetings recorded with it still
+  open normally, with their speaker labels.)
+- **Live chat view**: the transcript is shown as chat bubbles, one per phrase, both while
+  recording and on saved meetings. Words still being spoken appear in a faded bubble with
+  typing dots.
+- **Microphone picker, level meter and no-sound warning**: choose the input device (Windows
+  PCs often have several, and the default can be a silent one), watch the level while recording
+  and get a warning if the mic delivers silence for 5 seconds.
 - **"No mic? Try with sample audio"** on the Record screen plays a short public-domain speech
-  clip (JFK, 1961, fetched from Hugging Face) through the selected engine instead of the
+  clip (JFK, 1961, fetched from Hugging Face) through the transcriber instead of the
   microphone, then stops and saves it as a "Sample recording". Handy for demos and for
   browsers or embedded views that block the microphone.
 - **Per-account storage**: every recording is a `Meeting` row tied to the signed-in user.
@@ -25,20 +30,10 @@ It started as part of Life OS and is now its own repository, with its own
   up in that account's *Meetings* list, labelled with the device that recorded them.
 - **Autosave every 5 seconds** while recording, plus a save when the app is backgrounded or
   closed, so a dropped call or dead battery doesn't lose the transcript.
-- **Auto-reconnect** (up to 3 tries) if the network blips mid-meeting.
 - **Screen wake lock** while recording so phones don't sleep and cut the mic.
 - **AI documents**: Minutes of Meeting or Report via Gemini, saved on the meeting.
 - **Export / share**: TXT, Word, PDF, and the phone's native share sheet.
 - **Installable**: web manifest, generated icons, service worker with an offline page.
-
-## Security change vs Life OS
-
-Life OS sends the Deepgram key to the browser (`NEXT_PUBLIC_DEEPGRAM_API_KEY`). That's fine
-for a personal app but would let anyone steal the key in a public one. Here the key stays on
-the server; `/api/deepgram/token` gives signed-in users a 60-second token instead.
-The Deepgram key must have the **Member** role or higher to mint tokens. If it doesn't,
-recording fails with a clear error; the server never falls back to sending the real key,
-because anyone can sign up and would be able to copy it.
 
 ## On-device engine (Moonshine)
 
@@ -46,10 +41,40 @@ because anyone can sign up and would be able to copy it.
   Hugging Face and caches it; later recordings load it from the cache in a few seconds.
 - Runs in a Web Worker on the CPU (WASM, 8-bit), using up to 4 cores. WebGPU was tried and
   dropped: a 154 MB download and slower per phrase.
-- Audio is cut into phrases at pauses (700 ms of quiet), using simple loudness-based voice
-  detection (`src/lib/moonshine/voiceChunker.ts`). Long monologues are split after 15 s at the
-  quietest moment in the last 1.5 s, so words aren't chopped in half.
-- Very noisy rooms can make the voice detection cut phrases badly; switch to Deepgram there.
+- Very noisy rooms can make the voice detection cut phrases badly; a close or headset mic helps.
+
+### How audio becomes text
+
+```
+mic ─▶ AudioWorklet ─▶ resampler (anti-alias low-pass 7.2 kHz → 16 kHz, 80 Hz high-pass)
+                         │
+                         ▼
+                   phrase chunker ── live preview every ≥350 ms ─▶ worker (partial) ─▶ grey bubble
+                   (pause detection)
+                         │ phrase ended
+                         ▼
+                   boost quiet audio ─▶ worker (final, first in line) ─▶ clean-up ─▶ chat bubble ─▶ autosave
+```
+
+What each step does for accuracy:
+
+- **Resampler** (`src/lib/moonshine/resampler.ts`). Mics deliver 44.1/48 kHz; the model wants
+  16 kHz. The old straight interpolation folded sound above 8 kHz back into the speech band,
+  smearing consonants like *s*, *f* and *t*. It now low-pass filters first (windowed sinc) and
+  keeps filter state between chunks, and removes DC offset and mains hum so they don't count as
+  speech.
+- **Phrase cutting** (`src/lib/moonshine/voiceChunker.ts`). Speech = louder than 2.5× the quietest
+  level in the last 3 s (absolute minimum RMS 0.0006, so very quiet but clean mics still work).
+  A phrase ends after 650 ms of quiet, or 1.1 s if it is still under 1.5 s long, so fragments like
+  "So, um" join the sentence after them instead of being transcribed without context. Trailing
+  silence is trimmed to 350 ms. Long monologues are split after 15 s at the quietest moment in the
+  last 1.5 s, so words aren't chopped in half. Quiet phrases are boosted (up to 20×).
+- **Clean-up** (`src/lib/moonshine/cleanText.ts`). If the model gets stuck repeating itself on a
+  final phrase, the worker decodes it again with repeated 3-word runs blocked; any loop left is
+  collapsed. Punctuation-only results (coughs) are dropped, and phrases start with a capital.
+
+Tested with the sample clip at 100%, 3% and 1% volume: all three come out word-perfect. Before
+these changes, 3% lost a word ("As not") and 1% dropped words.
 
 ### Word-by-word live text
 
@@ -139,12 +164,11 @@ Deploy it anywhere with HTTPS (e.g. Vercel, with the same env vars as `.env`), t
 
 ```
 prisma/schema.prisma          User, Meeting
-src/hooks/useRecorder.ts      mic → Deepgram socket or Moonshine, autosave, reconnect, wake lock
-src/lib/moonshine/            worker client + pause-based phrase chunker
+src/hooks/useRecorder.ts      mic → on-device transcription, autosave, wake lock
+src/lib/moonshine/            worker client, resampler, phrase chunker, text clean-up
 src/workers/moonshine.worker.ts   runs the Moonshine model off the main thread
 src/app/page.tsx              Record screen
 src/app/meetings/             list + detail (AI, export, rename, delete)
-src/app/api/deepgram/token    short-lived Deepgram tokens
 src/app/api/meetings/         CRUD + /[id]/process (Gemini)
 src/app/manifest.ts, public/sw.js, src/app/api/icons/[size]   PWA bits
 ```

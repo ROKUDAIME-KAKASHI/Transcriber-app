@@ -11,6 +11,14 @@
   --accent: #4f46e5;
   --accent-foreground: #ffffff;
   --danger: #dc2626;
+
+  /* Chat-bubble colours per speaker */
+  --speaker-0: #4f46e5;
+  --speaker-1: #0d9488;
+  --speaker-2: #d97706;
+  --speaker-3: #db2777;
+  --speaker-4: #2563eb;
+  --speaker-5: #65a30d;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,6 +32,13 @@
     --accent: #818cf8;
     --accent-foreground: #0c0a09;
     --danger: #f87171;
+
+    --speaker-0: #818cf8;
+    --speaker-1: #2dd4bf;
+    --speaker-2: #fbbf24;
+    --speaker-3: #f472b6;
+    --speaker-4: #60a5fa;
+    --speaker-5: #a3e635;
   }
 }
 

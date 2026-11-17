@@ -8,7 +8,7 @@ import { parseTranscript, transcriptToText } from "@/lib/transcript";
 export const maxDuration = 60;
 
 const PROMPTS: Record<"MOM" | "Report", string> = {
-  Report: `You are an expert executive assistant. You will be given a raw, diarized meeting transcript (e.g. Speaker 0: ...).
+  Report: `You are an expert executive assistant. You will be given a raw meeting transcript from an on-device speech recogniser, one phrase per line (older recordings may have "Speaker N:" labels). It may contain misheard words; fix them only when the correct word is clear from context. The recogniser does not separate speakers, so do not invent names or attribute statements to people unless the transcript itself makes it clear.
 Your job is to generate a professional Report with the following structure in Markdown:
 
 # Report Overview
@@ -21,8 +21,8 @@ Your job is to generate a professional Report with the following structure in Ma
 - (List steps or follow-ups)
 
 # Full Transcript
-(Provide the fully cleaned transcript. Fix obvious typos and add perfect punctuation. Keep the "Speaker X" tags perfectly intact. Do not change the original meaning.)`,
-  MOM: `You are an expert executive assistant. You will be given a raw, diarized meeting transcript (e.g. Speaker 0: ...).
+(Provide the fully cleaned transcript. Fix obvious typos and add perfect punctuation. Write it as flowing paragraphs without "Speaker X" tags. Do not change the original meaning.)`,
+  MOM: `You are an expert executive assistant. You will be given a raw meeting transcript from an on-device speech recogniser, one phrase per line (older recordings may have "Speaker N:" labels). It may contain misheard words; fix them only when the correct word is clear from context. The recogniser does not separate speakers, so do not invent names or attribute statements to people unless the transcript itself makes it clear.
 Your job is to generate a professional Meeting Document with the following structure in Markdown:
 
 # Executive Summary
@@ -34,7 +34,7 @@ Your job is to generate a professional Meeting Document with the following struc
 - **Key Discussion Points:** (Bullet points of main topics discussed)
 
 # Full Transcript
-(Provide the fully cleaned transcript. Fix obvious typos and add perfect punctuation. Keep the "Speaker X" tags perfectly intact. Do not change the original meaning.)`,
+(Provide the fully cleaned transcript. Fix obvious typos and add perfect punctuation. Write it as flowing paragraphs without "Speaker X" tags. Do not change the original meaning.)`,
 };
 
 const Body = z.object({ template: z.enum(["MOM", "Report"]).default("MOM") });
@@ -57,14 +57,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const meeting = await prisma.meeting.findFirst({ where: { id, userId } });
   if (!meeting) return Response.json({ error: "Meeting not found" }, { status: 404 });
 
-  const raw = transcriptToText(parseTranscript(meeting.transcript));
+  const parts = parseTranscript(meeting.transcript);
+  // One speaker (the normal case now): plain text reads better to the model than a
+  // "Speaker 1:" prefix on every phrase. Older meetings with several speakers keep their labels.
+  const singleSpeaker = new Set(parts.map((p) => p.speaker)).size <= 1;
+  const raw = singleSpeaker ? parts.map((p) => p.text).join("\n") : transcriptToText(parts);
   if (!raw.trim()) return Response.json({ error: "This meeting has no transcript yet." }, { status: 400 });
 
   try {
     const result = await generateText({
       model: google("gemini-flash-latest"),
       system: PROMPTS[template],
-      prompt: `Here is the raw diarized transcript from Deepgram:\n\n${raw}`,
+      prompt: `Here is the raw transcript:\n\n${raw}`,
     });
     const document = unwrapFence(result.text);
     if (!document) throw new Error("The AI returned an empty response.");

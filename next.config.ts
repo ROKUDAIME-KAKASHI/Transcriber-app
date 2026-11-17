@@ -11,8 +11,7 @@ const nextConfig: NextConfig = {
         // Cross-origin isolation unlocks SharedArrayBuffer, which the on-device
         // speech model needs to use several CPU cores (2–3× faster on phones).
         // Side effect: cross-origin resources must be CORS/CORP-enabled. The app
-        // only loads Hugging Face model files (CORS) and connects to Deepgram
-        // (WebSocket, not affected).
+        // only loads Hugging Face model files and the sample clip (both CORS-enabled).
         source: "/:path*",
         headers: [
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },

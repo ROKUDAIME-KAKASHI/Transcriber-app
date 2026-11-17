@@ -9,12 +9,33 @@
  *  - while a phrase is still being spoken, `peek()` returns the audio so far, which the
  *    recorder re-transcribes every fraction of a second to show words live.
  */
-const TARGET_RATE = 16000;
-const SILENCE_TO_END_MS = 700; // pause length that ends a phrase
+import { Resampler } from "./resampler";
+
+// A phrase ends at a pause. Short fragments ("So, um") are poor input on their own: the model
+// lacks context and tends to mishear or drop them, so a phrase under SHORT_PHRASE_MS waits for a
+// longer pause and usually joins up with what comes next.
+const SILENCE_TO_END_MS = 650;
+const SHORT_PHRASE_MS = 1500;
+const SILENCE_TO_END_SHORT_MS = 1100;
+// Keep at most this much trailing silence: enough for the last word to finish, without long
+// quiet tails that waste compute and invite the model to invent words.
+const TRAILING_SILENCE_MS = 350;
 const MAX_SEGMENT_MS = 15000; // long monologues are split so live previews stay cheap on phones
 const CUT_SEARCH_MS = 1500; // when splitting, look this far back for the quietest moment
 const MIN_SPEECH_MS = 300; // ignore coughs and clicks
 const PREROLL_MS = 300; // keep a little audio before speech starts so first syllables aren't clipped
+
+// Speech detection. Quiet laptop/Windows mics can deliver speech at RMS ≈ 0.002–0.01, so the
+// threshold is relative to the measured background noise, with only a very low absolute floor.
+// (A fixed 0.01 floor missed speech entirely at ~3% input volume.)
+const MIN_THRESHOLD = 0.0006;
+const NOISE_MULTIPLIER = 2.5;
+// Background noise = the quietest moment in a rolling window. Tracking it continuously (also
+// while someone talks) lets the gaps between phrases register as pauses in hissy rooms.
+const NOISE_WINDOW_MS = 3000;
+// Quiet phrases are boosted toward this peak before transcription (max 20×), which helps the model.
+const TARGET_PEAK = 0.9;
+const MAX_BOOST = 20;
 
 // Buffers ~2048 samples in the audio thread before posting, to keep message traffic low.
 const WORKLET_SRC = `
@@ -34,20 +55,8 @@ class Tap extends AudioWorkletProcessor {
 registerProcessor("moonshine-tap", Tap);
 `;
 
+/** `samples` are already filtered and resampled to 16 kHz. */
 type Frame = { samples: Float32Array; rms: number; voiced: boolean };
-
-function resample(input: Float32Array, fromRate: number): Float32Array {
-  if (fromRate === TARGET_RATE) return input;
-  const ratio = fromRate / TARGET_RATE;
-  const out = new Float32Array(Math.floor(input.length / ratio));
-  for (let i = 0; i < out.length; i++) {
-    const pos = i * ratio;
-    const i0 = Math.floor(pos);
-    const i1 = Math.min(i0 + 1, input.length - 1);
-    out[i] = input[i0] + (input[i1] - input[i0]) * (pos - i0);
-  }
-  return out;
-}
 
 function concat(frames: Frame[]): Float32Array {
   const out = new Float32Array(frames.reduce((n, f) => n + f.samples.length, 0));
@@ -56,10 +65,22 @@ function concat(frames: Frame[]): Float32Array {
   return out;
 }
 
+/** Boosts quiet audio toward TARGET_PEAK (in place). Loud audio is left alone. */
+function normalize(audio: Float32Array): Float32Array {
+  let peak = 0;
+  for (let i = 0; i < audio.length; i++) peak = Math.max(peak, Math.abs(audio[i]));
+  if (peak <= 0 || peak >= TARGET_PEAK) return audio;
+  const gain = Math.min(MAX_BOOST, TARGET_PEAK / peak);
+  for (let i = 0; i < audio.length; i++) audio[i] *= gain;
+  return audio;
+}
+
 export interface VoiceChunkerEvents {
   /** A finished phrase. `phraseId` matches the ids `peek()` returned while it was being spoken. */
   onSegment: (audio16k: Float32Array, phraseId: number) => void;
   onSpeechChange?: (speaking: boolean) => void;
+  /** Mic loudness for a level meter: RMS of the latest frame and the current speech threshold. */
+  onLevel?: (rms: number, threshold: number) => void;
 }
 
 export class VoiceChunker {
@@ -72,12 +93,15 @@ export class VoiceChunker {
   private inSpeech = false;
   private silenceMs = 0;
   private speechMs = 0;
-  private noiseFloor = 0.005;
+  private rmsHistory: number[] = [];
   private frameMs = 0;
   private phraseId = 0;
   private peekedLength = 0;
+  private resampler: Resampler;
 
-  constructor(private ctx: AudioContext, private events: VoiceChunkerEvents) {}
+  constructor(private ctx: AudioContext, private events: VoiceChunkerEvents) {
+    this.resampler = new Resampler(ctx.sampleRate);
+  }
 
   async start(stream: MediaStream) {
     const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
@@ -105,20 +129,27 @@ export class VoiceChunker {
     if (!this.inSpeech || this.speechMs < MIN_SPEECH_MS) return null;
     if (this.segment.length === this.peekedLength) return null;
     this.peekedLength = this.segment.length;
-    return { audio: resample(concat(this.segment), this.ctx.sampleRate), phraseId: this.phraseId };
+    return { audio: normalize(concat(this.segment)), phraseId: this.phraseId };
   }
 
-  private onFrame(samples: Float32Array) {
-    this.frameMs = (samples.length / this.ctx.sampleRate) * 1000;
+  private onFrame(raw: Float32Array) {
+    this.frameMs = (raw.length / this.ctx.sampleRate) * 1000;
+    const samples = this.resampler.process(raw);
+    if (samples.length === 0) return;
+    // Loudness is measured after filtering, so hum and DC offset don't count as speech.
     let sum = 0;
     for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
     const rms = Math.sqrt(sum / samples.length);
-    const voiced = rms > Math.max(0.01, this.noiseFloor * 3);
+    this.rmsHistory.push(rms);
+    const maxHistory = Math.max(1, Math.round(NOISE_WINDOW_MS / this.frameMs));
+    if (this.rmsHistory.length > maxHistory) this.rmsHistory.shift();
+    const noiseFloor = Math.min(...this.rmsHistory);
+    const threshold = Math.max(MIN_THRESHOLD, noiseFloor * NOISE_MULTIPLIER);
+    const voiced = rms > threshold;
     const frame: Frame = { samples, rms, voiced };
+    this.events.onLevel?.(rms, threshold);
 
     if (!this.inSpeech) {
-      // Track background noise only while nobody is talking.
-      this.noiseFloor = this.noiseFloor * 0.95 + rms * 0.05;
       this.preroll.push(frame);
       while (this.preroll.length * this.frameMs > PREROLL_MS && this.preroll.length > 1) this.preroll.shift();
       if (voiced) {
@@ -142,7 +173,8 @@ export class VoiceChunker {
       this.silenceMs += this.frameMs;
     }
 
-    if (this.silenceMs >= SILENCE_TO_END_MS) {
+    const endAfter = this.speechMs < SHORT_PHRASE_MS ? SILENCE_TO_END_SHORT_MS : SILENCE_TO_END_MS;
+    if (this.silenceMs >= endAfter) {
       this.emit(this.segment);
       this.segment = [];
       this.inSpeech = false;
@@ -173,7 +205,11 @@ export class VoiceChunker {
     const voicedMs = frames.filter((f) => f.voiced).length * this.frameMs;
     this.silenceMs = 0;
     if (voicedMs < MIN_SPEECH_MS || frames.length === 0) return;
-    this.events.onSegment(resample(concat(frames), this.ctx.sampleRate), this.phraseId);
+    // Trim the trailing pause down to TRAILING_SILENCE_MS.
+    let end = frames.length;
+    while (end > 0 && !frames[end - 1].voiced) end--;
+    end = Math.min(frames.length, end + Math.round(TRAILING_SILENCE_MS / this.frameMs));
+    this.events.onSegment(normalize(concat(frames.slice(0, end))), this.phraseId);
   }
 
   /** Sends whatever is mid-phrase (used when recording stops). */

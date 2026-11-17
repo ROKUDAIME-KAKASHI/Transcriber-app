@@ -2,53 +2,85 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Mic, Square, Volume2, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle } from "lucide-react";
-import { useRecorder, type Engine } from "@/hooks/useRecorder";
-import { LANGUAGES, formatDuration } from "@/lib/transcript";
+import { Mic, Square, MessagesSquare, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff } from "lucide-react";
+import { useRecorder } from "@/hooks/useRecorder";
+import { formatDuration } from "@/lib/transcript";
 import { TranscriptView } from "./TranscriptView";
 
-const ENGINE_KEY = "transcriber.engine";
+const MIC_KEY = "transcriber.micId";
 
-const ENGINES: { value: Engine; label: string; hint: string }[] = [
-  { value: "moonshine", label: "Free · on-device", hint: "English only, no speaker labels. Audio never leaves this device." },
-  { value: "deepgram", label: "Deepgram", hint: "Live words, speaker labels, Indian languages." },
-];
+/** Lists microphones. Names only appear after the user has allowed mic access once. */
+function useMicrophones() {
+  const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
+  useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const refresh = () =>
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((all) => setMics(all.filter((d) => d.kind === "audioinput" && d.deviceId !== "")))
+        .catch(() => {});
+    refresh();
+    navigator.mediaDevices.addEventListener("devicechange", refresh);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", refresh);
+  }, []);
+  return { mics, refresh: () => navigator.mediaDevices?.enumerateDevices().then((all) => setMics(all.filter((d) => d.kind === "audioinput" && d.deviceId !== ""))) };
+}
+
+function LevelMeter({ level }: { level: number }) {
+  const bars = 12;
+  const lit = Math.round(level * bars);
+  return (
+    <div className="flex items-end gap-0.5 h-4" role="meter" aria-label="Microphone level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level * 100)}>
+      {Array.from({ length: bars }, (_, i) => (
+        <span
+          key={i}
+          className={`w-1 rounded-sm transition-colors ${i < lit ? (i >= bars - 2 ? "bg-danger" : "bg-accent") : "bg-muted"}`}
+          style={{ height: `${30 + (i / (bars - 1)) * 70}%` }}
+        />
+      ))}
+    </div>
+  );
+}
 
 export function Recorder() {
-  const [engine, setEngine] = useState<Engine>("deepgram");
-  const [language, setLanguage] = useState("en");
   const [captureSystemAudio, setCaptureSystemAudio] = useState(false);
   const [canCaptureSystem, setCanCaptureSystem] = useState(false);
-  const rec = useRecorder({ language, captureSystemAudio, engine });
+  const [micId, setMicId] = useState("");
+  const { mics, refresh: refreshMics } = useMicrophones();
+  const rec = useRecorder({ captureSystemAudio, deviceId: micId });
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // getDisplayMedia (tab/system audio) is desktop-only.
   useEffect(() => {
     setCanCaptureSystem(!!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad/i.test(navigator.userAgent));
     try {
-      const saved = localStorage.getItem(ENGINE_KEY);
-      if (saved === "moonshine" || saved === "deepgram") setEngine(saved);
+      setMicId(localStorage.getItem(MIC_KEY) ?? "");
     } catch {
-      /* storage blocked — keep the default */
+      /* storage blocked — keep the defaults */
     }
   }, []);
 
-  const chooseEngine = (value: Engine) => {
-    setEngine(value);
+  // Device names become available once mic permission is granted, i.e. after recording starts.
+  useEffect(() => {
+    if (rec.isRecording) refreshMics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rec.isRecording]);
+
+  const chooseMic = (id: string) => {
+    setMicId(id);
     try {
-      localStorage.setItem(ENGINE_KEY, value);
+      localStorage.setItem(MIC_KEY, id);
     } catch {
       /* ignore */
     }
   };
 
-  const isFree = engine === "moonshine";
-
   useEffect(() => {
     if (rec.isRecording) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [rec.transcriptParts, rec.interimText, rec.isRecording]);
+  }, [rec.transcriptParts, rec.interimText, rec.liveStatus, rec.isRecording]);
 
   const hasTranscript = rec.transcriptParts.length > 0;
+  const hasLive = !!rec.interimText || !!rec.liveStatus;
 
   return (
     <div className="space-y-5">
@@ -85,41 +117,44 @@ export function Recorder() {
             <div className="font-semibold text-lg">Tap to record</div>
           )}
           <p className="text-sm text-muted-foreground mt-1">{rec.statusMsg}</p>
+          {rec.isRecording && (
+            <div className="flex items-center justify-center gap-2 mt-2 text-xs text-muted-foreground">
+              <Mic className="w-3.5 h-3.5" /> <LevelMeter level={rec.micLevel} />
+            </div>
+          )}
         </div>
 
-        <div className="w-full max-w-sm">
-          <div className="grid grid-cols-2 p-1 bg-muted rounded-xl" role="radiogroup" aria-label="Transcription engine">
-            {ENGINES.map((e) => (
-              <button
-                key={e.value}
-                role="radio"
-                aria-checked={engine === e.value}
-                onClick={() => chooseEngine(e.value)}
-                disabled={rec.isRecording}
-                className={`py-2 text-sm font-medium rounded-lg disabled:opacity-60 ${
-                  engine === e.value ? "bg-card shadow-sm" : "text-muted-foreground"
-                }`}
-              >
-                {e.label}
-              </button>
-            ))}
+        {rec.isRecording && rec.noSound && (
+          <div className="w-full max-w-sm rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-left flex gap-2">
+            <MicOff className="w-4 h-4 text-danger shrink-0 mt-0.5" />
+            <span>
+              <strong>No sound from the microphone.</strong> Stop, pick another microphone below, and try again.
+              On Windows also check Settings → System → Sound → Input, and that the mic isn&apos;t muted.
+            </span>
           </div>
-          <p className="text-xs text-muted-foreground mt-1.5">{ENGINES.find((e) => e.value === engine)?.hint}</p>
-        </div>
+        )}
+
+        <p className="text-xs text-muted-foreground max-w-sm -mt-1">
+          English · free · runs on this device, so your audio never leaves it.
+        </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
-          {isFree ? (
-            <span className="bg-muted border border-border rounded-full px-4 py-2 text-sm font-medium">English</span>
-          ) : (
+          {mics.length > 0 && (
             <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              value={mics.some((m) => m.deviceId === micId) ? micId : ""}
+              onChange={(e) => chooseMic(e.target.value)}
               disabled={rec.isRecording}
-              className="bg-muted border border-border rounded-full px-4 py-2 text-sm font-medium outline-none disabled:opacity-50"
+              aria-label="Microphone"
+              className="bg-muted border border-border rounded-full px-4 py-2 text-sm font-medium outline-none disabled:opacity-50 max-w-[16rem] truncate"
             >
-              {LANGUAGES.map((l) => (
-                <option key={l.value} value={l.value}>{l.label}</option>
-              ))}
+              <option value="">🎙 Default microphone</option>
+              {mics
+                .filter((m) => m.deviceId !== "default")
+                .map((m, i) => (
+                  <option key={m.deviceId} value={m.deviceId}>
+                    {m.label || `Microphone ${i + 1}`}
+                  </option>
+                ))}
             </select>
           )}
 
@@ -153,15 +188,20 @@ export function Recorder() {
       </section>
 
       <section className="rounded-2xl border border-border bg-card p-5 min-h-[300px]">
-        {!hasTranscript && !rec.interimText ? (
+        {!hasTranscript && !hasLive ? (
           <div className="h-[260px] flex flex-col items-center justify-center text-muted-foreground text-center gap-2">
-            <Volume2 className="w-12 h-12 opacity-40" />
+            <MessagesSquare className="w-12 h-12 opacity-40" />
             <p className="text-sm max-w-xs">
-              Live transcript with speaker labels appears here. Everything is saved to your account as you go.
+              The conversation appears here as a live chat while you record. Everything is saved to your account as you go.
             </p>
           </div>
         ) : (
-          <TranscriptView parts={rec.transcriptParts} interimText={rec.interimText} />
+          <TranscriptView
+            parts={rec.transcriptParts}
+            interimText={rec.interimText}
+            liveStatus={rec.liveStatus}
+            backlog={rec.backlog}
+          />
         )}
         {/* scroll margin keeps the newest line clear of the phone tab bar when auto-scrolling */}
         <div ref={bottomRef} className="scroll-mb-28 sm:scroll-mb-6" />
