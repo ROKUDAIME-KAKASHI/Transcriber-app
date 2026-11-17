@@ -2,22 +2,47 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Mic, Square, Volume2, Cloud, CloudOff, Loader2, ArrowRight } from "lucide-react";
-import { useRecorder } from "@/hooks/useRecorder";
+import { Mic, Square, Volume2, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle } from "lucide-react";
+import { useRecorder, type Engine } from "@/hooks/useRecorder";
 import { LANGUAGES, formatDuration } from "@/lib/transcript";
 import { TranscriptView } from "./TranscriptView";
 
+const ENGINE_KEY = "transcriber.engine";
+
+const ENGINES: { value: Engine; label: string; hint: string }[] = [
+  { value: "moonshine", label: "Free · on-device", hint: "English only, no speaker labels. Audio never leaves this device." },
+  { value: "deepgram", label: "Deepgram", hint: "Live words, speaker labels, Indian languages." },
+];
+
 export function Recorder() {
+  const [engine, setEngine] = useState<Engine>("deepgram");
   const [language, setLanguage] = useState("en");
   const [captureSystemAudio, setCaptureSystemAudio] = useState(false);
   const [canCaptureSystem, setCanCaptureSystem] = useState(false);
-  const rec = useRecorder({ language, captureSystemAudio });
+  const rec = useRecorder({ language, captureSystemAudio, engine });
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // getDisplayMedia (tab/system audio) is desktop-only.
   useEffect(() => {
     setCanCaptureSystem(!!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad/i.test(navigator.userAgent));
+    try {
+      const saved = localStorage.getItem(ENGINE_KEY);
+      if (saved === "moonshine" || saved === "deepgram") setEngine(saved);
+    } catch {
+      /* storage blocked — keep the default */
+    }
   }, []);
+
+  const chooseEngine = (value: Engine) => {
+    setEngine(value);
+    try {
+      localStorage.setItem(ENGINE_KEY, value);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const isFree = engine === "moonshine";
 
   useEffect(() => {
     if (rec.isRecording) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -29,7 +54,7 @@ export function Recorder() {
     <div className="space-y-5">
       <section className="rounded-2xl border border-border bg-card p-5 flex flex-col items-center gap-4 text-center">
         <button
-          onClick={rec.isRecording ? rec.stop : rec.start}
+          onClick={rec.isRecording ? rec.stop : () => rec.start("mic")}
           className={`w-24 h-24 rounded-full grid place-items-center shadow-lg transition-transform active:scale-95 ${
             rec.isRecording ? "bg-danger text-white" : "bg-accent text-accent-foreground"
           }`}
@@ -37,6 +62,15 @@ export function Recorder() {
         >
           {rec.isRecording ? <Square className="w-9 h-9 fill-current" /> : <Mic className="w-10 h-10" />}
         </button>
+
+        {!rec.isRecording && (
+          <button
+            onClick={() => rec.start("sample")}
+            className="-mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
+          >
+            <PlayCircle className="w-4 h-4" /> No mic? Try with sample audio
+          </button>
+        )}
 
         <div className="min-h-[3rem]">
           {rec.isRecording ? (
@@ -53,17 +87,41 @@ export function Recorder() {
           <p className="text-sm text-muted-foreground mt-1">{rec.statusMsg}</p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            disabled={rec.isRecording}
-            className="bg-muted border border-border rounded-full px-4 py-2 text-sm font-medium outline-none disabled:opacity-50"
-          >
-            {LANGUAGES.map((l) => (
-              <option key={l.value} value={l.value}>{l.label}</option>
+        <div className="w-full max-w-sm">
+          <div className="grid grid-cols-2 p-1 bg-muted rounded-xl" role="radiogroup" aria-label="Transcription engine">
+            {ENGINES.map((e) => (
+              <button
+                key={e.value}
+                role="radio"
+                aria-checked={engine === e.value}
+                onClick={() => chooseEngine(e.value)}
+                disabled={rec.isRecording}
+                className={`py-2 text-sm font-medium rounded-lg disabled:opacity-60 ${
+                  engine === e.value ? "bg-card shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                {e.label}
+              </button>
             ))}
-          </select>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1.5">{ENGINES.find((e) => e.value === engine)?.hint}</p>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {isFree ? (
+            <span className="bg-muted border border-border rounded-full px-4 py-2 text-sm font-medium">English</span>
+          ) : (
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              disabled={rec.isRecording}
+              className="bg-muted border border-border rounded-full px-4 py-2 text-sm font-medium outline-none disabled:opacity-50"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+          )}
 
           {canCaptureSystem && (
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
@@ -105,7 +163,8 @@ export function Recorder() {
         ) : (
           <TranscriptView parts={rec.transcriptParts} interimText={rec.interimText} />
         )}
-        <div ref={bottomRef} />
+        {/* scroll margin keeps the newest line clear of the phone tab bar when auto-scrolling */}
+        <div ref={bottomRef} className="scroll-mb-28 sm:scroll-mb-6" />
       </section>
 
       {!rec.isRecording && rec.meetingId && hasTranscript && (
