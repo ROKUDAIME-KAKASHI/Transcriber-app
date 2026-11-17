@@ -2,8 +2,13 @@ import { getUserId, unauthorized } from "@/lib/auth";
 
 /**
  * Mints a short-lived Deepgram token for a signed-in user.
- * If the key lacks permission to call /v1/auth/grant (e.g. non-admin project keys return 403),
- * it falls back to providing the key with subprotocol "token" to authenticated users.
+ *
+ * The real API key never leaves the server. Anyone can sign up for this app,
+ * so handing out the key (even "only to signed-in users") would let anyone
+ * copy it and run up the Deepgram bill.
+ *
+ * If this returns 403 from Deepgram, the key's role is too low: create a key
+ * with the Member role (or higher) in the Deepgram console.
  */
 export async function POST() {
   const userId = await getUserId();
@@ -14,28 +19,32 @@ export async function POST() {
     return Response.json({ error: "DEEPGRAM_API_KEY is not set on the server." }, { status: 500 });
   }
 
+  let res: Response;
   try {
-    const res = await fetch("https://api.deepgram.com/v1/auth/grant", {
+    res = await fetch("https://api.deepgram.com/v1/auth/grant", {
       method: "POST",
       headers: { Authorization: `Token ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ ttl_seconds: 60 }),
       cache: "no-store",
     });
-
-    if (res.ok) {
-      const data = (await res.json()) as { access_token: string; expires_in: number };
-      return Response.json(
-        { token: data.access_token, subprotocol: "bearer", expiresIn: data.expires_in },
-        { headers: { "Cache-Control": "no-store" } }
-      );
-    }
   } catch (err) {
-    console.warn("Deepgram /v1/auth/grant failed, falling back to direct token:", err);
+    console.error("Deepgram token request failed (network):", err);
+    return Response.json({ error: "Could not reach Deepgram. Try again." }, { status: 502 });
   }
 
-  // Fallback: direct token authentication for signed-in user
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    console.error("Deepgram token error:", res.status, detail);
+    const error =
+      res.status === 401 || res.status === 403
+        ? "Server misconfigured: the Deepgram API key needs the Member role (or higher) to issue tokens."
+        : "Could not get a Deepgram token.";
+    return Response.json({ error }, { status: 502 });
+  }
+
+  const data = (await res.json()) as { access_token: string; expires_in: number };
   return Response.json(
-    { token: apiKey, subprotocol: "token" },
+    { token: data.access_token, subprotocol: "bearer", expiresIn: data.expires_in },
     { headers: { "Cache-Control": "no-store" } }
   );
 }
