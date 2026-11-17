@@ -2,12 +2,34 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Mic, Square, MessagesSquare, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff } from "lucide-react";
+import { Mic, Square, Pause, Play, MessagesSquare, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { formatDuration } from "@/lib/transcript";
+import { WHISPER_LANGUAGES, type Engine } from "@/lib/speech/models";
 import { TranscriptView } from "./TranscriptView";
 
 const MIC_KEY = "transcriber.micId";
+const ENGINE_KEY = "transcriber.engine";
+const LANG_KEY = "transcriber.language";
+
+const ENGINES: { value: Engine; label: string; hint: string }[] = [
+  { value: "moonshine", label: "Fast · English", hint: "Moonshine: quick and light (~63 MB once). Best with clear, standard English." },
+  {
+    value: "whisper",
+    label: "Accurate · Hindi too",
+    hint: "Whisper: better with Indian accents, understands Hindi. ~77 MB once, slower, and live text updates less often.",
+  },
+];
+
+/** Saves a choice for next time on this device. */
+function choose<T extends string>(key: string, value: T, set: (v: T) => void) {
+  set(value);
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
 
 /** Lists microphones. Names only appear after the user has allowed mic access once. */
 function useMicrophones() {
@@ -47,7 +69,9 @@ export function Recorder() {
   const [canCaptureSystem, setCanCaptureSystem] = useState(false);
   const [micId, setMicId] = useState("");
   const { mics, refresh: refreshMics } = useMicrophones();
-  const rec = useRecorder({ captureSystemAudio, deviceId: micId });
+  const [engine, setEngine] = useState<Engine>("moonshine");
+  const [language, setLanguage] = useState("en");
+  const rec = useRecorder({ captureSystemAudio, deviceId: micId, engine, language });
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // getDisplayMedia (tab/system audio) is desktop-only.
@@ -55,6 +79,10 @@ export function Recorder() {
     setCanCaptureSystem(!!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad/i.test(navigator.userAgent));
     try {
       setMicId(localStorage.getItem(MIC_KEY) ?? "");
+      const savedEngine = localStorage.getItem(ENGINE_KEY);
+      if (savedEngine === "moonshine" || savedEngine === "whisper") setEngine(savedEngine);
+      const savedLang = localStorage.getItem(LANG_KEY);
+      if (savedLang && WHISPER_LANGUAGES.some((l) => l.value === savedLang)) setLanguage(savedLang);
     } catch {
       /* storage blocked — keep the defaults */
     }
@@ -85,15 +113,27 @@ export function Recorder() {
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-border bg-card p-5 flex flex-col items-center gap-4 text-center">
-        <button
-          onClick={rec.isRecording ? rec.stop : () => rec.start("mic")}
-          className={`w-24 h-24 rounded-full grid place-items-center shadow-lg transition-transform active:scale-95 ${
-            rec.isRecording ? "bg-danger text-white" : "bg-accent text-accent-foreground"
-          }`}
-          aria-label={rec.isRecording ? "Stop recording" : "Start recording"}
-        >
-          {rec.isRecording ? <Square className="w-9 h-9 fill-current" /> : <Mic className="w-10 h-10" />}
-        </button>
+        <div className="relative">
+          <button
+            onClick={rec.isRecording ? rec.stop : () => rec.start("mic")}
+            className={`w-24 h-24 rounded-full grid place-items-center shadow-lg transition-transform active:scale-95 ${
+              rec.isRecording ? "bg-danger text-white" : "bg-accent text-accent-foreground"
+            }`}
+            aria-label={rec.isRecording ? "Stop recording" : "Start recording"}
+          >
+            {rec.isRecording ? <Square className="w-9 h-9 fill-current" /> : <Mic className="w-10 h-10" />}
+          </button>
+          {rec.isRecording && (
+            // Pause sits beside Stop so a break doesn't end (and save) the meeting.
+            <button
+              onClick={rec.isPaused ? rec.resume : rec.pause}
+              className="absolute top-1/2 -translate-y-1/2 left-full ml-4 w-14 h-14 rounded-full grid place-items-center border border-border bg-muted text-foreground shadow-sm active:scale-95"
+              aria-label={rec.isPaused ? "Resume recording" : "Pause recording"}
+            >
+              {rec.isPaused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
+            </button>
+          )}
+        </div>
 
         {!rec.isRecording && (
           <button
@@ -106,18 +146,26 @@ export function Recorder() {
 
         <div className="min-h-[3rem]">
           {rec.isRecording ? (
-            <div className="flex items-center justify-center gap-2 text-danger font-semibold text-xl tabular-nums">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-danger opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-danger" />
-              </span>
+            <div
+              className={`flex items-center justify-center gap-2 font-semibold text-xl tabular-nums ${
+                rec.isPaused ? "text-muted-foreground" : "text-danger"
+              }`}
+            >
+              {rec.isPaused ? (
+                <Pause className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-danger opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-danger" />
+                </span>
+              )}
               {formatDuration(rec.recordingSeconds)}
             </div>
           ) : (
             <div className="font-semibold text-lg">Tap to record</div>
           )}
           <p className="text-sm text-muted-foreground mt-1">{rec.statusMsg}</p>
-          {rec.isRecording && (
+          {rec.isRecording && !rec.isPaused && (
             <div className="flex items-center justify-center gap-2 mt-2 text-xs text-muted-foreground">
               <Mic className="w-3.5 h-3.5" /> <LevelMeter level={rec.micLevel} />
             </div>
@@ -134,11 +182,44 @@ export function Recorder() {
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground max-w-sm -mt-1">
-          English · free · runs on this device, so your audio never leaves it.
-        </p>
+        <div className="w-full max-w-sm">
+          <div className="grid grid-cols-2 p-1 bg-muted rounded-xl" role="radiogroup" aria-label="Speech model">
+            {ENGINES.map((e) => (
+              <button
+                key={e.value}
+                role="radio"
+                aria-checked={engine === e.value}
+                onClick={() => choose(ENGINE_KEY, e.value, setEngine)}
+                disabled={rec.isRecording}
+                className={`py-2 text-sm font-medium rounded-lg disabled:opacity-60 ${
+                  engine === e.value ? "bg-card shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1.5">
+            {ENGINES.find((e) => e.value === engine)?.hint} Free, and your audio never leaves this device.
+          </p>
+        </div>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
+          {engine === "whisper" ? (
+            <select
+              value={language}
+              onChange={(e) => choose(LANG_KEY, e.target.value, setLanguage)}
+              disabled={rec.isRecording}
+              aria-label="Language"
+              className="bg-muted border border-border rounded-full px-4 py-2 text-sm font-medium outline-none disabled:opacity-50"
+            >
+              {WHISPER_LANGUAGES.map((l) => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="bg-muted border border-border rounded-full px-4 py-2 text-sm font-medium">English</span>
+          )}
           {mics.length > 0 && (
             <select
               value={mics.some((m) => m.deviceId === micId) ? micId : ""}

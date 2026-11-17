@@ -1,6 +1,8 @@
 export interface TranscriptPart {
   speaker: number;
   text: string;
+  /** Seconds into the meeting (pauses excluded) when this phrase started. Missing on older meetings. */
+  t?: number;
 }
 
 export const LANGUAGES = [
@@ -9,6 +11,7 @@ export const LANGUAGES = [
   { value: "ta", label: "Tamil" },
   { value: "ml", label: "Malayalam" },
   { value: "kn", label: "Kannada" },
+  { value: "auto", label: "Auto (mixed)" },
 ] as const;
 
 export const TEMPLATES = [
@@ -16,9 +19,20 @@ export const TEMPLATES = [
   { value: "Report", label: "Report" },
 ] as const;
 
+/**
+ * Plain-text transcript for exports and the AI: one phrase per line, with a [mm:ss] time when
+ * known. "Speaker N:" labels only appear when the meeting actually has several speakers
+ * (older recordings); speakers are numbered from 1 for people (stored 0-based).
+ */
 export function transcriptToText(parts: TranscriptPart[]): string {
-  // Speakers are numbered from 1 for people (stored 0-based).
-  return parts.map((p) => `Speaker ${p.speaker + 1}: ${p.text}`).join("\n\n");
+  const multiSpeaker = new Set(parts.map((p) => p.speaker)).size > 1;
+  return parts
+    .map((p) => {
+      const time = typeof p.t === "number" ? `[${formatDuration(Math.floor(p.t))}] ` : "";
+      const who = multiSpeaker ? `Speaker ${p.speaker + 1}: ` : "";
+      return `${time}${who}${p.text}`;
+    })
+    .join(multiSpeaker ? "\n\n" : "\n");
 }
 
 export function formatDuration(totalSeconds: number): string {
@@ -46,6 +60,7 @@ export function parseTranscript(value: unknown): TranscriptPart[] {
   if (!Array.isArray(value)) return [];
   return value.filter(
     (p): p is TranscriptPart =>
-      !!p && typeof p === "object" && typeof p.speaker === "number" && typeof p.text === "string"
+      !!p && typeof p === "object" && typeof p.speaker === "number" && typeof p.text === "string" &&
+      (p.t === undefined || typeof p.t === "number")
   );
 }

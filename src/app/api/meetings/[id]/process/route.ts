@@ -5,36 +5,67 @@ import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { parseTranscript, transcriptToText } from "@/lib/transcript";
 
-export const maxDuration = 60;
+// Long meetings make long prompts; give the model time (Vercel allows up to 300 s).
+export const maxDuration = 300;
+
+/**
+ * Above this many words, the document skips the cleaned "Full Transcript" section: rewriting an
+ * hour of speech can exceed the model's output limit and the request time, and the raw
+ * transcript is on the meeting page anyway.
+ */
+const FULL_TRANSCRIPT_MAX_WORDS = 3500;
+
+const CONTEXT = `You are an expert executive assistant writing up a meeting.
+You will be given a raw meeting transcript from an on-device speech recogniser: one phrase per line, each starting with a [mm:ss] or [hh:mm:ss] time into the meeting (older recordings may lack times or have "Speaker N:" labels).
+- The recogniser makes mistakes. Fix misheard words only when the right word is clear from context; never invent content.
+- It does not separate speakers. Do not invent names or attribute statements to people unless the transcript makes it clear (e.g. someone is addressed by name, or says "I'll do it").
+- Parts may be in Hindi (Devanagari) or mixed Hindi-English. Write the document in English; quote Hindi only where the exact wording matters.
+- Where useful, cite when something was said with its time in brackets, e.g. (12:40), so readers can find it in the transcript.
+- Be concise and specific: names, numbers, dates and deadlines exactly as said. If a section has nothing, write "None recorded."
+- Output Markdown only.`;
+
+const FULL_TRANSCRIPT_SECTION = `
+
+# Full Transcript
+(The transcript cleaned up: fix obvious recognition errors, add punctuation, and join phrases into readable paragraphs. Start each paragraph with the time of its first phrase in brackets. Keep the original language and meaning; do not summarise.)`;
 
 const PROMPTS: Record<"MOM" | "Report", string> = {
-  Report: `You are an expert executive assistant. You will be given a raw meeting transcript from an on-device speech recogniser, one phrase per line (older recordings may have "Speaker N:" labels). It may contain misheard words; fix them only when the correct word is clear from context. The recogniser does not separate speakers, so do not invent names or attribute statements to people unless the transcript itself makes it clear.
-Your job is to generate a professional Report with the following structure in Markdown:
+  MOM: `${CONTEXT}
 
-# Report Overview
-(Write a cohesive paragraph summarizing the meeting topic and overall context.)
+Produce Minutes of Meeting with exactly this structure:
 
-# Key Findings
-- (List major findings or points discussed)
+# Summary
+(One short paragraph: purpose of the meeting and the outcome.)
 
-# Conclusion & Next Steps
-- (List steps or follow-ups)
+# Decisions
+- (Each decision made, with its time.)
 
-# Full Transcript
-(Provide the fully cleaned transcript. Fix obvious typos and add perfect punctuation. Write it as flowing paragraphs without "Speaker X" tags. Do not change the original meaning.)`,
-  MOM: `You are an expert executive assistant. You will be given a raw meeting transcript from an on-device speech recogniser, one phrase per line (older recordings may have "Speaker N:" labels). It may contain misheard words; fix them only when the correct word is clear from context. The recogniser does not separate speakers, so do not invent names or attribute statements to people unless the transcript itself makes it clear.
-Your job is to generate a professional Meeting Document with the following structure in Markdown:
+# Action Items
+| # | Task | Owner | Due | Time |
+|---|------|-------|-----|------|
+(One row per task. Owner and Due only if stated; otherwise "—".)
 
-# Executive Summary
-(Write a cohesive paragraph summarizing the entire meeting.)
+# Discussion
+## (Topic)
+- (Key points per topic, in the order discussed.)
 
-# Minutes of the Meeting
-- **Key Decisions:** (List any decisions made)
-- **Action Items:** (List tasks assigned and to whom, if any)
-- **Key Discussion Points:** (Bullet points of main topics discussed)
+# Open Questions
+- (Unresolved issues, disagreements, or things to follow up.)`,
+  Report: `${CONTEXT}
 
-# Full Transcript
-(Provide the fully cleaned transcript. Fix obvious typos and add perfect punctuation. Write it as flowing paragraphs without "Speaker X" tags. Do not change the original meaning.)`,
+Produce a Meeting Report with exactly this structure:
+
+# Overview
+(One paragraph: context, purpose and participants if mentioned.)
+
+# Key Points
+- (Main findings, figures and arguments, with times.)
+
+# Decisions & Next Steps
+- (What was agreed and what happens next, with owners and dates if stated.)
+
+# Risks & Open Questions
+- (Concerns raised and unresolved issues.)`,
 };
 
 const Body = z.object({ template: z.enum(["MOM", "Report"]).default("MOM") });
@@ -58,17 +89,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!meeting) return Response.json({ error: "Meeting not found" }, { status: 404 });
 
   const parts = parseTranscript(meeting.transcript);
-  // One speaker (the normal case now): plain text reads better to the model than a
-  // "Speaker 1:" prefix on every phrase. Older meetings with several speakers keep their labels.
-  const singleSpeaker = new Set(parts.map((p) => p.speaker)).size <= 1;
-  const raw = singleSpeaker ? parts.map((p) => p.text).join("\n") : transcriptToText(parts);
+  // [mm:ss] text per line; "Speaker N:" only for older multi-speaker meetings.
+  const raw = transcriptToText(parts);
+  const words = parts.reduce((n, p) => n + p.text.split(/\s+/).length, 0);
+  const includeFullTranscript = words <= FULL_TRANSCRIPT_MAX_WORDS;
   if (!raw.trim()) return Response.json({ error: "This meeting has no transcript yet." }, { status: 400 });
 
   try {
     const result = await generateText({
       model: google("gemini-flash-latest"),
-      system: PROMPTS[template],
-      prompt: `Here is the raw transcript:\n\n${raw}`,
+      system: PROMPTS[template] + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
+      prompt: `Meeting: ${meeting.title}\nLength: ${Math.round(meeting.durationSec / 60)} min\n\nRaw transcript:\n\n${raw}`,
     });
     const document = unwrapFence(result.text);
     if (!document) throw new Error("The AI returned an empty response.");

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { detectDeviceName, type TranscriptPart } from "@/lib/transcript";
-import { loadMoonshine, transcribePartial, transcribeSegment } from "@/lib/moonshine/client";
-import { VoiceChunker } from "@/lib/moonshine/voiceChunker";
-import { cleanPhrase } from "@/lib/moonshine/cleanText";
+import { loadSpeechModel, transcribePartial, transcribeSegment } from "@/lib/speech/client";
+import type { Engine, ModelName } from "@/lib/speech/models";
+import { VoiceChunker } from "@/lib/speech/voiceChunker";
+import { cleanPhrase } from "@/lib/speech/cleanText";
 
 const AUTOSAVE_MS = 5000;
 
@@ -31,9 +32,22 @@ export interface RecorderState {
   /** True when the mic has delivered (near) silence for several seconds. */
   noSound: boolean;
   recordingSeconds: number;
+  /** Recording is on hold (mic open, nothing transcribed, clock stopped). */
+  isPaused: boolean;
   statusMsg: string;
   saveState: "idle" | "saving" | "saved" | "error";
 }
+
+/**
+ * Live (word-by-word) previews per model. Each Whisper preview processes a full 30 s window,
+ * so Whisper previews are rarer. (null would turn previews off for a model too slow for them.)
+ */
+const PREVIEW_INTERVAL_MS: Record<ModelName, number | null> = {
+  "moonshine-base": 350,
+  "moonshine-tiny": 350,
+  "whisper-base": 1500,
+};
+const previewIntervalFor = (m: ModelName) => PREVIEW_INTERVAL_MS[m];
 
 /** Below this RMS for NO_SOUND_MS the mic is treated as silent/wrong device. */
 const NO_SOUND_RMS = 0.0004;
@@ -47,6 +61,10 @@ function levelFromRms(rms: number): number {
 
 export function useRecorder(opts: {
   captureSystemAudio: boolean;
+  /** "moonshine" (fast, English) or "whisper" (accents, Hindi). */
+  engine: Engine;
+  /** Whisper only: "en", "hi" or "auto". */
+  language: string;
   /** Microphone to use (from enumerateDevices); empty = browser default. */
   deviceId?: string;
 }) {
@@ -60,6 +78,7 @@ export function useRecorder(opts: {
     micLevel: 0,
     noSound: false,
     recordingSeconds: 0,
+    isPaused: false,
     statusMsg: "Ready",
     saveState: "idle",
   });
@@ -67,6 +86,11 @@ export function useRecorder(opts: {
   // Mutable refs for things callbacks need without re-rendering.
   const partsRef = useRef<TranscriptPart[]>([]);
   const secondsRef = useRef(0);
+  // Wall-clock timing. Counting setInterval ticks undercounts in background tabs (Chrome throttles
+  // timers while you're in the Zoom tab), so elapsed time is computed from timestamps instead.
+  const startedAtRef = useRef(0);
+  const pausedMsRef = useRef(0);
+  const pausedAtRef = useRef<number | null>(null);
   const dirtyRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
   const wantRecordingRef = useRef(false);
@@ -87,6 +111,8 @@ export function useRecorder(opts: {
   const previewsRef = useRef<Map<number, string>>(new Map());
   const lastEmittedPhraseRef = useRef(0);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Minimum gap between live previews for the loaded model, or null for no live previews. */
+  const previewIntervalRef = useRef<number | null>(PREVIEW_INTERVAL_MS["moonshine-base"]);
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
   // Level meter / no-sound detection
   const lastLevelPaintRef = useRef(0);
@@ -121,10 +147,10 @@ export function useRecorder(opts: {
   }, []);
 
   /** Adds a finished phrase to the transcript, as its own chat bubble. */
-  const appendFinal = (text: string) => {
-    const clean = cleanPhrase(text);
+  const appendFinal = (text: string, whisper: boolean, startSec: number) => {
+    const clean = cleanPhrase(text, { whisper });
     if (!clean) return;
-    partsRef.current = [...partsRef.current, { speaker: 0, text: clean }];
+    partsRef.current = [...partsRef.current, { speaker: 0, text: clean, t: Math.round(startSec * 10) / 10 }];
     dirtyRef.current = true;
     patch({ transcriptParts: partsRef.current, interimText: "" });
   };
@@ -190,16 +216,16 @@ export function useRecorder(opts: {
    * Paced by how long the last preview took, so slower phones refresh less often and keep their
    * CPU for finishing phrases. Previews pause entirely while finished phrases are waiting.
    */
-  const PREVIEW_MIN_INTERVAL_MS = 350;
   const previewTick = async () => {
     const chunker = chunkerRef.current;
-    if (!chunker || !wantRecordingRef.current) return;
-    let delay = PREVIEW_MIN_INTERVAL_MS;
+    const minInterval = previewIntervalRef.current;
+    if (!chunker || !wantRecordingRef.current || minInterval === null) return;
+    let delay = minInterval;
     const snap = pendingSegmentsRef.current.size === 0 ? chunker.peek() : null;
     if (snap) {
       const t0 = performance.now();
       const text = await transcribePartial(snap.audio).catch(() => null);
-      delay = Math.max(PREVIEW_MIN_INTERVAL_MS, (performance.now() - t0) * 1.5);
+      delay = Math.max(minInterval, (performance.now() - t0) * 1.5);
       // The last word of a live preview is usually cut off mid-syllable and misheard
       // (e.g. half of "country"), so hold it back; the final transcript has every word.
       const words = (text ?? "").trim().split(/\s+/).filter(Boolean);
@@ -228,10 +254,10 @@ export function useRecorder(opts: {
         speakingRef.current = speaking;
         showMoonshineActivity();
       },
-      onSegment: (audio, phraseId) => {
+      onSegment: (audio, phraseId, startSec) => {
         lastEmittedPhraseRef.current = phraseId;
         const job = transcribeSegment(audio)
-          .then(appendFinal) // one chat bubble per phrase
+          .then((text) => appendFinal(text, opts.engine === "whisper", startSec)) // one chat bubble per phrase
           .catch((err) => console.error("Moonshine transcription error:", err))
           .finally(() => {
             // The live preview for this phrase stays visible until its final text replaces it.
@@ -245,7 +271,7 @@ export function useRecorder(opts: {
     });
     await chunker.start(recordStream);
     chunkerRef.current = chunker;
-    previewTimerRef.current = setTimeout(previewTick, PREVIEW_MIN_INTERVAL_MS);
+    if (previewIntervalRef.current !== null) previewTimerRef.current = setTimeout(previewTick, previewIntervalRef.current);
     patch({ statusMsg: "Recording…", isRecording: true });
   };
 
@@ -275,11 +301,52 @@ export function useRecorder(opts: {
     if (autosaveRef.current) clearInterval(autosaveRef.current);
   };
 
+  /** Seconds recorded so far, not counting pauses. */
+  const elapsedSeconds = () => {
+    if (!startedAtRef.current) return 0;
+    const pausedNow = pausedAtRef.current !== null ? Date.now() - pausedAtRef.current : 0;
+    return Math.max(0, Math.floor((Date.now() - startedAtRef.current - pausedMsRef.current - pausedNow) / 1000));
+  };
+
+  const tick = () => {
+    const s = elapsedSeconds();
+    if (s !== secondsRef.current) {
+      secondsRef.current = s;
+      patch({ recordingSeconds: s });
+    }
+  };
+
+  /** Breaks, side conversations: stop transcribing without ending the meeting. */
+  const pause = () => {
+    if (!wantRecordingRef.current || pausedAtRef.current !== null) return;
+    chunkerRef.current?.pause(); // the phrase in progress is finished and kept
+    pausedAtRef.current = Date.now();
+    patch({ isPaused: true, micLevel: 0, noSound: false, statusMsg: "Paused — nothing is being transcribed." });
+    save();
+  };
+
+  const resume = () => {
+    if (pausedAtRef.current === null) return;
+    pausedMsRef.current += Date.now() - pausedAtRef.current;
+    pausedAtRef.current = null;
+    quietSinceRef.current = null;
+    chunkerRef.current?.resume();
+    patch({ isPaused: false, statusMsg: "Recording…" });
+  };
+
   const stop = useCallback(async () => {
     wantRecordingRef.current = false;
+    secondsRef.current = elapsedSeconds();
     chunkerRef.current?.flush(); // send the phrase that was mid-way when Stop was tapped
     cleanupMedia();
-    patch({ isRecording: false, interimText: "", micLevel: 0, noSound: false, statusMsg: "Stopped. Saving…" });
+    if (pausedAtRef.current !== null) {
+      pausedMsRef.current += Date.now() - pausedAtRef.current;
+      pausedAtRef.current = null;
+    }
+    patch({
+      isRecording: false, isPaused: false, interimText: "", micLevel: 0, noSound: false,
+      recordingSeconds: secondsRef.current, statusMsg: "Stopped. Saving…",
+    });
     // Wait for the device to finish transcribing the last phrases.
     if (pendingSegmentsRef.current.size) patch({ statusMsg: "Finishing transcription…" });
     await Promise.all([...pendingSegmentsRef.current]);
@@ -313,12 +380,15 @@ export function useRecorder(opts: {
     const useSample = source === "sample";
     partsRef.current = [];
     secondsRef.current = 0;
+    startedAtRef.current = 0;
+    pausedMsRef.current = 0;
+    pausedAtRef.current = null;
     dirtyRef.current = false;
     speakingRef.current = false;
     pendingSegmentsRef.current.clear();
     patch({
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
-      recordingSeconds: 0,
+      recordingSeconds: 0, isPaused: false,
       statusMsg: useSample ? "Loading sample audio…" : "Requesting microphone…", saveState: "idle", meetingId: null,
     });
 
@@ -366,20 +436,29 @@ export function useRecorder(opts: {
 
       // First use downloads the model (tens of MB); after that it loads from the browser cache.
       patch({ statusMsg: "Loading speech model…" });
-      await loadMoonshine((pct) => patch({ statusMsg: `Downloading speech model… ${pct}%` }), {
-        onModelChange: () => {
+      const language = opts.engine === "whisper" ? opts.language : "en";
+      const { model } = await loadSpeechModel(opts.engine, language, (pct) => patch({ statusMsg: `Downloading speech model… ${pct}%` }), {
+        onModelChange: (m) => {
+          const hadPreviews = previewIntervalRef.current !== null;
+          previewIntervalRef.current = previewIntervalFor(m);
+          // Lighter model allows live previews again: restart them.
+          if (!hadPreviews && previewIntervalRef.current !== null && chunkerRef.current) {
+            previewTimerRef.current = setTimeout(previewTick, previewIntervalRef.current);
+          }
           if (wantRecordingRef.current) {
             patch({ statusMsg: "Recording — switched to the faster model for this phone…" });
           }
         },
       });
 
+      previewIntervalRef.current = previewIntervalFor(model);
+
       patch({ statusMsg: "Creating meeting…" });
       const res = await fetch("/api/meetings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          language: "en",
+          language,
           deviceName: detectDeviceName(),
           ...(useSample
             ? { title: `Sample recording – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` }
@@ -396,10 +475,8 @@ export function useRecorder(opts: {
       await startMoonshine();
       playSampleIfAny();
 
-      timerRef.current = setInterval(() => {
-        secondsRef.current += 1;
-        patch({ recordingSeconds: secondsRef.current });
-      }, 1000);
+      startedAtRef.current = Date.now();
+      timerRef.current = setInterval(tick, 500);
       autosaveRef.current = setInterval(() => save(), AUTOSAVE_MS);
     } catch (e) {
       wantRecordingRef.current = false;
@@ -412,7 +489,7 @@ export function useRecorder(opts: {
       patch({ statusMsg: msg, isRecording: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.captureSystemAudio, opts.deviceId, save]);
+  }, [opts.captureSystemAudio, opts.deviceId, opts.engine, opts.language, save]);
 
   // Save whatever we have if the page is closed mid-recording.
   useEffect(() => {
@@ -421,5 +498,5 @@ export function useRecorder(opts: {
     return () => window.removeEventListener("pagehide", onUnload);
   }, [save]);
 
-  return { ...state, start, stop };
+  return { ...state, start, stop, pause, resume };
 }

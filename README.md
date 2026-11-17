@@ -9,11 +9,17 @@ It started as part of Life OS and is now its own repository, with its own
 
 ## What it does
 
-- **Free, on-device transcription**: [Moonshine](https://github.com/moonshine-ai/moonshine) Base
-  runs in the browser via Transformers.js. English only, no speaker labels, no API cost, and audio
-  never leaves the device. Words appear live as you speak, and each phrase is finalised at the
-  next pause. (Deepgram cloud transcription was removed; older meetings recorded with it still
-  open normally, with their speaker labels.)
+- **Free, on-device transcription** with two models, chosen on the Record screen (remembered per device):
+  - **Fast · English** — [Moonshine](https://github.com/moonshine-ai/moonshine) Base (~63 MB once).
+    Quick and light, with live word-by-word text. Best with clear, standard English.
+  - **Accurate · Hindi too** — [Whisper](https://github.com/openai/whisper) Base (~77 MB once).
+    Better with Indian-accented English, and understands Hindi; language choice English, Hindi
+    (written in Devanagari) or Auto (detects each phrase). Slower: live text updates every
+    1.5 s or so, and a phrase's final text lands a few seconds after the pause.
+
+  Both run in the browser via Transformers.js: no API cost, and audio never leaves the device.
+  No speaker labels. (Deepgram cloud transcription was removed; older meetings recorded with it
+  still open normally, with their speaker labels.)
 - **Live chat view**: the transcript is shown as chat bubbles, one per phrase, both while
   recording and on saved meetings. Words still being spoken appear in a faded bubble with
   typing dots.
@@ -24,6 +30,19 @@ It started as part of Life OS and is now its own repository, with its own
   clip (JFK, 1961, fetched from Hugging Face) through the transcriber instead of the
   microphone, then stops and saves it as a "Sample recording". Handy for demos and for
   browsers or embedded views that block the microphone.
+- **Built for meetings**:
+  - **Pause / Resume** beside Stop, for breaks and side conversations. While paused nothing is
+    transcribed and the clock stops; the mic stays open so resuming is instant.
+  - **Timestamps**: every phrase stores when it was said (seconds into the meeting, pauses
+    excluded). The chat shows a time divider about once a minute, exports have `[mm:ss]` on each
+    line, and the AI minutes cite times so you can find things in the transcript.
+  - **Correct duration in background tabs**: the clock is computed from wall-clock time, so it
+    stays right while you're in the Zoom/Meet tab (Chrome slows timers in background tabs).
+  - **Meeting-style AI minutes**: Summary, Decisions, an Action Items table (task, owner, due,
+    time), Discussion by topic, and Open Questions. The Report template covers overview, key
+    points, decisions & next steps, risks. Meetings over ~3,500 words skip the cleaned "Full
+    Transcript" section (it would hit the model's output limit; the raw transcript is on the
+    meeting page). The request may run up to 300 s.
 - **Per-account storage**: every recording is a `Meeting` row tied to the signed-in user.
   Nobody can read or edit another account's meetings (every query is scoped by `userId`).
 - **Record on many devices at once**: each device creates its own meeting; they all show
@@ -35,7 +54,7 @@ It started as part of Life OS and is now its own repository, with its own
 - **Export / share**: TXT, Word, PDF, and the phone's native share sheet.
 - **Installable**: web manifest, generated icons, service worker with an offline page.
 
-## On-device engine (Moonshine)
+## On-device models
 
 - The first time someone picks *Free · on-device*, the browser downloads the model from
   Hugging Face and caches it; later recordings load it from the cache in a few seconds.
@@ -58,18 +77,18 @@ mic ─▶ AudioWorklet ─▶ resampler (anti-alias low-pass 7.2 kHz → 16 kHz
 
 What each step does for accuracy:
 
-- **Resampler** (`src/lib/moonshine/resampler.ts`). Mics deliver 44.1/48 kHz; the model wants
+- **Resampler** (`src/lib/speech/resampler.ts`). Mics deliver 44.1/48 kHz; the model wants
   16 kHz. The old straight interpolation folded sound above 8 kHz back into the speech band,
   smearing consonants like *s*, *f* and *t*. It now low-pass filters first (windowed sinc) and
   keeps filter state between chunks, and removes DC offset and mains hum so they don't count as
   speech.
-- **Phrase cutting** (`src/lib/moonshine/voiceChunker.ts`). Speech = louder than 2.5× the quietest
+- **Phrase cutting** (`src/lib/speech/voiceChunker.ts`). Speech = louder than 2.5× the quietest
   level in the last 3 s (absolute minimum RMS 0.0006, so very quiet but clean mics still work).
   A phrase ends after 650 ms of quiet, or 1.1 s if it is still under 1.5 s long, so fragments like
   "So, um" join the sentence after them instead of being transcribed without context. Trailing
   silence is trimmed to 350 ms. Long monologues are split after 15 s at the quietest moment in the
   last 1.5 s, so words aren't chopped in half. Quiet phrases are boosted (up to 20×).
-- **Clean-up** (`src/lib/moonshine/cleanText.ts`). If the model gets stuck repeating itself on a
+- **Clean-up** (`src/lib/speech/cleanText.ts`). If the model gets stuck repeating itself on a
   final phrase, the worker decodes it again with repeated 3-word runs blocked; any loop left is
   collapsed. Punctuation-only results (coughs) are dropped, and phrases start with a capital.
 
@@ -95,6 +114,19 @@ next pause the finished phrase is transcribed once more and replaces the live te
 - The model does a warm-up run on a second of silence after loading, so the first real phrase
   isn't the slow one.
 - Live previews cost extra CPU and battery compared with phrase-only transcription.
+
+### Whisper notes
+
+- Whisper always encodes a full 30-second window, however short the phrase, so each run costs
+  the same. Live previews are therefore spaced at least 1.5 s apart (Moonshine: 0.35 s).
+- **Whisper Small was tried and dropped**: word-perfect on the sample, but on an 8-core laptop
+  (CPU/WASM) it needed ~1.2× real time per phrase, so it falls behind in a live meeting. It
+  could come back later via WebGPU on desktops, at a ~0.5 GB download.
+- Whisper sometimes invents subtitle-style lines on noise ("Thanks for watching!", "[Music]");
+  these are filtered out. "Thank you." is kept, because people say it.
+- On the JFK sample, Whisper Base heard "asked not" for "ask not"; Moonshine got it right. The
+  sample is American English, so it can't show Whisper's advantage on Indian accents and Hindi.
+- Hindi is not tested yet.
 
 ### Normal / low-end smartphones
 
@@ -165,8 +197,8 @@ Deploy it anywhere with HTTPS (e.g. Vercel, with the same env vars as `.env`), t
 ```
 prisma/schema.prisma          User, Meeting
 src/hooks/useRecorder.ts      mic → on-device transcription, autosave, wake lock
-src/lib/moonshine/            worker client, resampler, phrase chunker, text clean-up
-src/workers/moonshine.worker.ts   runs the Moonshine model off the main thread
+src/lib/speech/               models, worker client, resampler, phrase chunker, text clean-up
+src/workers/speech.worker.ts  runs Moonshine or Whisper off the main thread
 src/app/page.tsx              Record screen
 src/app/meetings/             list + detail (AI, export, rename, delete)
 src/app/api/meetings/         CRUD + /[id]/process (Gemini)

@@ -56,7 +56,7 @@ registerProcessor("moonshine-tap", Tap);
 `;
 
 /** `samples` are already filtered and resampled to 16 kHz. */
-type Frame = { samples: Float32Array; rms: number; voiced: boolean };
+type Frame = { samples: Float32Array; rms: number; voiced: boolean; /** start, in 16 kHz samples of recorded (unpaused) audio */ at: number };
 
 function concat(frames: Frame[]): Float32Array {
   const out = new Float32Array(frames.reduce((n, f) => n + f.samples.length, 0));
@@ -77,7 +77,7 @@ function normalize(audio: Float32Array): Float32Array {
 
 export interface VoiceChunkerEvents {
   /** A finished phrase. `phraseId` matches the ids `peek()` returned while it was being spoken. */
-  onSegment: (audio16k: Float32Array, phraseId: number) => void;
+  onSegment: (audio16k: Float32Array, phraseId: number, startSec: number) => void;
   onSpeechChange?: (speaking: boolean) => void;
   /** Mic loudness for a level meter: RMS of the latest frame and the current speech threshold. */
   onLevel?: (rms: number, threshold: number) => void;
@@ -96,6 +96,9 @@ export class VoiceChunker {
   private rmsHistory: number[] = [];
   private frameMs = 0;
   private phraseId = 0;
+  /** 16 kHz samples heard so far, excluding pauses: the clock for phrase timestamps. */
+  private heard = 0;
+  private paused = false;
   private peekedLength = 0;
   private resampler: Resampler;
 
@@ -134,8 +137,11 @@ export class VoiceChunker {
 
   private onFrame(raw: Float32Array) {
     this.frameMs = (raw.length / this.ctx.sampleRate) * 1000;
+    if (this.paused) return;
     const samples = this.resampler.process(raw);
     if (samples.length === 0) return;
+    const at = this.heard;
+    this.heard += samples.length;
     // Loudness is measured after filtering, so hum and DC offset don't count as speech.
     let sum = 0;
     for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
@@ -146,7 +152,7 @@ export class VoiceChunker {
     const noiseFloor = Math.min(...this.rmsHistory);
     const threshold = Math.max(MIN_THRESHOLD, noiseFloor * NOISE_MULTIPLIER);
     const voiced = rms > threshold;
-    const frame: Frame = { samples, rms, voiced };
+    const frame: Frame = { samples, rms, voiced, at };
     this.events.onLevel?.(rms, threshold);
 
     if (!this.inSpeech) {
@@ -209,10 +215,23 @@ export class VoiceChunker {
     let end = frames.length;
     while (end > 0 && !frames[end - 1].voiced) end--;
     end = Math.min(frames.length, end + Math.round(TRAILING_SILENCE_MS / this.frameMs));
-    this.events.onSegment(normalize(concat(frames.slice(0, end))), this.phraseId);
+    // Timestamp = where the speech starts, after the pre-roll.
+    const firstVoiced = frames.find((f) => f.voiced) ?? frames[0];
+    this.events.onSegment(normalize(concat(frames.slice(0, end))), this.phraseId, firstVoiced.at / 16000);
   }
 
   /** Sends whatever is mid-phrase (used when recording stops). */
+  /** Pause: finish the current phrase and ignore audio until resume(). The mic stays open. */
+  pause() {
+    this.flush();
+    this.paused = true;
+  }
+
+  resume() {
+    this.paused = false;
+    this.preroll = []; // don't stitch pre-pause audio onto the next phrase
+  }
+
   flush() {
     if (this.inSpeech) this.emit(this.segment);
     this.segment = [];

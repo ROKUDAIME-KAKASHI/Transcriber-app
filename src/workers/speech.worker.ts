@@ -1,50 +1,51 @@
 /// <reference lib="webworker" />
 /**
- * Runs Moonshine speech-to-text entirely on the device, off the main thread.
+ * Runs speech-to-text entirely on the device, off the main thread.
+ *
+ * Two model families:
+ *  - Moonshine (English only): fast and small. Base ~63 MB, Tiny ~28 MB for slow phones.
+ *  - Whisper Base (multilingual, ~77 MB): copes better with Indian-accented English and
+ *    understands Hindi. Slower, because Whisper always encodes a full 30-second window,
+ *    however short the phrase.
  *
  * Messages in:
- *   { type: "load", model?: "base" | "tiny", slowRtf?: number }
+ *   { type: "load", model: ModelName, language?: string, slowRtf?: number }
  *   { type: "transcribe", id, audio, kind: "final" | "partial" }   audio = 16 kHz mono Float32Array
  * Messages out:
  *   { type: "progress", progress }            first-time download, 0–100
  *   { type: "ready", model, threads }
  *   { type: "result", id, text, rtf }         rtf = processing time ÷ audio length
  *   { type: "skipped", id }                   a partial was replaced by a newer one before it ran
- *   { type: "model", model: "tiny" }          switched to Tiny because the device was too slow
+ *   { type: "model", model }                  switched to a lighter model because the device was too slow
  *   { type: "error", id?, message }
  *
  * Scheduling (matters on phones): "final" jobs (finished phrases) always run first and in order.
  * "partial" jobs (live word-by-word previews of the phrase being spoken) run only when no final is
  * waiting, and only the newest one is kept — so a slow phone shows fewer previews but never falls
  * behind on the real transcript.
- *
- * Model choice (measured on the JFK sample clip, laptop):
- *  - Base, 8-bit, CPU: ~63 MB, 0.2–1 s per phrase, word-perfect.  ← default
- *  - Tiny, 8-bit, CPU: ~28 MB, ~2× faster, but drops some short phrases. ← slow phones
- *  - Base on WebGPU: ~154 MB and slower per phrase, so not used.
  */
 import { env, pipeline, type ProgressInfo } from "@huggingface/transformers";
-import { hasLoop } from "../lib/moonshine/cleanText";
-
-const MODELS = {
-  base: "onnx-community/moonshine-base-ONNX",
-  tiny: "onnx-community/moonshine-tiny-ONNX",
-} as const;
-type ModelName = keyof typeof MODELS;
+import { hasLoop } from "../lib/speech/cleanText";
+import { MODELS, type ModelName } from "../lib/speech/models";
 
 const SAMPLE_RATE = 16000;
-/** Switch to Tiny when finishing phrases takes longer than this fraction of real time, on average. */
+/** Switch to the lighter model when finishing phrases takes longer than this fraction of real time. */
 const DEFAULT_SLOW_RTF = 0.8;
 const RTF_SAMPLES_BEFORE_DECIDING = 3;
 
-type Transcriber = (
-  audio: Float32Array,
-  options?: { max_new_tokens?: number; no_repeat_ngram_size?: number }
-) => Promise<{ text: string } | { text: string }[]>;
+type GenerateOptions = {
+  max_new_tokens?: number;
+  no_repeat_ngram_size?: number;
+  language?: string;
+  task?: "transcribe";
+};
+type Transcriber = ((audio: Float32Array, options?: GenerateOptions) => Promise<{ text: string } | { text: string }[]>) & {
+  dispose?: () => Promise<void>;
+};
 
 type Job = { id: number; audio: Float32Array; kind: "final" | "partial" };
 type InMessage =
-  | { type: "load"; model?: ModelName; slowRtf?: number }
+  | { type: "load"; model: ModelName; language?: string; slowRtf?: number }
   | ({ type: "transcribe" } & Job);
 
 // ---- Runtime setup -----------------------------------------------------------
@@ -64,7 +65,9 @@ if (onnx.wasm) {
 
 // ---- Model loading -------------------------------------------------------------
 const loaded = new Map<ModelName, Promise<Transcriber>>();
-let active: ModelName = "base";
+let active: ModelName = "moonshine-base";
+/** Whisper only: "en", "hi", … or undefined to auto-detect per phrase. */
+let language: string | undefined;
 let slowRtf = DEFAULT_SLOW_RTF;
 let rtfSamples: number[] = [];
 let switching = false;
@@ -79,7 +82,7 @@ function loadModel(name: ModelName, reportProgress: boolean): Promise<Transcribe
   const existing = loaded.get(name);
   if (existing) return existing;
   let lastPct = -1;
-  const p = pipeline("automatic-speech-recognition", MODELS[name], {
+  const p = pipeline("automatic-speech-recognition", MODELS[name].repo, {
     device: "wasm",
     dtype: "q8",
     progress_callback: (info: ProgressInfo) => {
@@ -99,9 +102,19 @@ function loadModel(name: ModelName, reportProgress: boolean): Promise<Transcribe
   return p;
 }
 
-/** Called after each finished phrase. If this device can't keep up with Base, fetch Tiny in the background. */
+/** Frees models that aren't needed any more (switching Moonshine ↔ Whisper), to save phone memory. */
+function unloadOthers(keep: ModelName[]) {
+  for (const [name, p] of loaded) {
+    if (keep.includes(name)) continue;
+    loaded.delete(name);
+    p.then((t) => t.dispose?.()).catch(() => {});
+  }
+}
+
+/** Called after each finished phrase. If this device can't keep up, fetch the lighter model in the background. */
 function trackSpeed(rtf: number) {
-  if (active !== "base" || switching) return;
+  const fallback = MODELS[active].fallback;
+  if (!fallback || switching) return;
   rtfSamples.push(rtf);
   if (rtfSamples.length > 5) rtfSamples.shift();
   if (rtfSamples.length < RTF_SAMPLES_BEFORE_DECIDING) return;
@@ -109,34 +122,44 @@ function trackSpeed(rtf: number) {
   if (avg <= slowRtf) return;
 
   switching = true;
-  // Base keeps transcribing while Tiny downloads; new phrases use Tiny once it's ready.
-  loadModel("tiny", false)
+  const from = active;
+  // The current model keeps transcribing while the lighter one downloads.
+  loadModel(fallback, false)
     .then(() => {
-      active = "tiny";
-      self.postMessage({ type: "model", model: "tiny" });
+      active = fallback;
+      unloadOthers([fallback]);
+      self.postMessage({ type: "model", model: fallback });
     })
-    .catch((err) => console.warn("Could not load Tiny model, staying on Base:", err))
+    .catch((err) => console.warn(`Could not load ${fallback}, staying on ${from}:`, err))
     .finally(() => { switching = false; rtfSamples = []; });
 }
 
-// ---- Scheduling ------------------------------------------------------------------
-const finals: Job[] = [];
-let partial: Job | null = null;
-let running = false;
+// ---- Transcription ---------------------------------------------------------------
+function optionsFor(job: Job, seconds: number): GenerateOptions {
+  const whisper = MODELS[active].family === "whisper";
+  // Cap the output length to stop runaway repetition. English needs ~6.5 tokens per second of
+  // speech; Hindi in Devanagari takes several times more tokens per word.
+  const perSecond = whisper && language !== "en" ? 15 : 6.5;
+  const cap = Math.min(440, Math.ceil(seconds * perSecond) + 8);
+  // Live previews end mid-word, which makes models prone to looping, so they get a tighter cap
+  // and no repeated 3-word runs. Finals keep normal settings so genuine repetitions survive.
+  const opts: GenerateOptions =
+    job.kind === "final"
+      ? { max_new_tokens: cap }
+      : { max_new_tokens: Math.max(8, Math.round(cap * 0.65)), no_repeat_ngram_size: 3 };
+  if (whisper) {
+    opts.task = "transcribe"; // never translate
+    if (language) opts.language = language;
+  }
+  return opts;
+}
 
 async function run(job: Job) {
   try {
     const transcriber = await loadModel(active, false);
     const seconds = job.audio.length / SAMPLE_RATE;
     const t0 = performance.now();
-    // Moonshine emits up to ~6.5 tokens per second of speech; capping stops runaway repetition.
-    // Live previews end mid-word, which makes the model prone to looping ("…for you and what
-    // your country can do for you and…"), so they get a tighter cap and no repeated 3-word runs.
-    // Final transcripts keep the normal settings so genuine repetitions in speech survive.
-    const options =
-      job.kind === "final"
-        ? { max_new_tokens: Math.ceil(seconds * 6.5) + 8 }
-        : { max_new_tokens: Math.ceil(seconds * 4) + 4, no_repeat_ngram_size: 3 };
+    const options = optionsFor(job, seconds);
     const textOf = (o: Awaited<ReturnType<Transcriber>>) => ((Array.isArray(o) ? o[0]?.text : o.text) ?? "").trim();
     let text = textOf(await transcriber(job.audio, options));
     // Rarely, a final phrase gets stuck repeating itself (noise, a cough mid-word). Decoding it
@@ -144,13 +167,20 @@ async function run(job: Job) {
     if (job.kind === "final" && hasLoop(text)) {
       text = textOf(await transcriber(job.audio, { ...options, no_repeat_ngram_size: 3 }));
     }
-    const rtf = (performance.now() - t0) / 1000 / Math.max(seconds, 0.5);
+    // Whisper pays for a 30 s window even on a 1 s phrase, so judge its speed on at least 2 s.
+    const minSeconds = MODELS[active].family === "whisper" ? 2 : 0.5;
+    const rtf = (performance.now() - t0) / 1000 / Math.max(seconds, minSeconds);
     self.postMessage({ type: "result", id: job.id, text, rtf });
     if (job.kind === "final") trackSpeed(rtf);
   } catch (err) {
     self.postMessage({ type: "error", id: job.id, message: String((err as Error)?.message ?? err) });
   }
 }
+
+// ---- Scheduling ------------------------------------------------------------------
+const finals: Job[] = [];
+let partial: Job | null = null;
+let running = false;
 
 function pump() {
   if (running) return;
@@ -168,8 +198,11 @@ self.onmessage = (event: MessageEvent<InMessage>) => {
   const msg = event.data;
 
   if (msg.type === "load") {
-    active = msg.model ?? "base";
+    active = msg.model;
+    language = msg.language && msg.language !== "auto" ? msg.language : undefined;
     if (msg.slowRtf) slowRtf = msg.slowRtf;
+    rtfSamples = [];
+    unloadOthers([active]);
     loadModel(active, true)
       .then(() => self.postMessage({ type: "ready", model: active, threads: onnx.wasm?.numThreads ?? 1 }))
       .catch((err) => self.postMessage({ type: "error", message: String(err?.message ?? err) }));

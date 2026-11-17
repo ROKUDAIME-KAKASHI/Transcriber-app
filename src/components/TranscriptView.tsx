@@ -1,4 +1,4 @@
-import type { TranscriptPart } from "@/lib/transcript";
+import { formatDuration, type TranscriptPart } from "@/lib/transcript";
 
 /**
  * Transcript as a chat: one bubble per phrase.
@@ -7,6 +7,8 @@ import type { TranscriptPart } from "@/lib/transcript";
  * all bubbles sit on the left without names.
  */
 const SPEAKER_COLORS = 6;
+/** A time divider is shown before the first phrase, then at most once per this many seconds. */
+const TIME_MARK_EVERY_S = 60;
 
 function speakerVars(speaker: number): React.CSSProperties {
   const c = `var(--speaker-${speaker % SPEAKER_COLORS})`;
@@ -44,6 +46,16 @@ export function TranscriptView({
   const multiSpeaker = new Set(parts.map((p) => p.speaker)).size > 1;
   const showLive = !!interimText || !!liveStatus;
 
+  // Indexes of phrases that get a time divider above them.
+  const timeMarks = new Set<number>();
+  let lastMark = -Infinity;
+  parts.forEach((p, i) => {
+    if (typeof p.t === "number" && p.t - lastMark >= TIME_MARK_EVERY_S) {
+      timeMarks.add(i);
+      lastMark = p.t;
+    }
+  });
+
   return (
     <div className="flex flex-col gap-1.5" role="log" aria-live="polite">
       {parts.map((part, i) => {
@@ -51,6 +63,13 @@ export function TranscriptView({
         const firstOfRun = i === 0 || parts[i - 1].speaker !== part.speaker;
         return (
           <div key={i} className={`flex flex-col ${right ? "items-end" : "items-start"} ${firstOfRun && i > 0 ? "mt-2" : ""}`}>
+            {timeMarks.has(i) && (
+              <div className="self-stretch flex items-center gap-2 my-1.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+                <span className="h-px flex-1 bg-border" />
+                {formatDuration(Math.floor(part.t ?? 0))}
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            )}
             {multiSpeaker && firstOfRun && (
               <span
                 className="text-[11px] font-bold uppercase tracking-wider mb-0.5 px-1"
@@ -64,6 +83,7 @@ export function TranscriptView({
                 right ? "rounded-br-md" : "rounded-bl-md"
               }`}
               style={speakerVars(part.speaker)}
+              title={typeof part.t === "number" ? formatDuration(Math.floor(part.t)) : undefined}
             >
               {part.text}
             </div>

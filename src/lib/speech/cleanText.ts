@@ -43,9 +43,27 @@ function collapseLoops(words: string[]): string[] {
   return out;
 }
 
-export function cleanPhrase(raw: string): string {
+/**
+ * Lines Whisper is known to invent on noise or silence (it learned them from video subtitles).
+ * Only whole-phrase matches are dropped; "Thank you." is kept because people do say it.
+ */
+const WHISPER_PHANTOMS = [
+  /^thanks? (you )?for watching[.!]*$/i,
+  /^(please )?(like and )?subscribe.*$/i,
+  /^subtitles? (by|from) .*$/i,
+  /amara\.org/i,
+  /^\[?(music|applause|silence|blank_audio|no speech)\]?[.!]*$/i,
+  /^\(?(music|applause|silence)\)?[.!]*$/i,
+];
+
+export function cleanPhrase(raw: string, opts: { whisper?: boolean } = {}): string {
   let text = raw.replace(/\s+/g, " ").trim();
   if (!/[\p{L}\p{N}]/u.test(text)) return ""; // only punctuation / symbols
+  if (opts.whisper) {
+    // Sound-effect tags like "[Music]" or "(laughs)" anywhere in the phrase, then known phantom lines.
+    text = text.replace(/\[[^\]]*\]|\((?:music|applause|laughs?|laughter|silence|inaudible)\)/gi, "").replace(/\s+/g, " ").trim();
+    if (!text || WHISPER_PHANTOMS.some((re) => re.test(text))) return "";
+  }
   text = collapseLoops(text.split(" ")).join(" ");
   // Model output sometimes starts lowercase after a cut; bubbles read better capitalised.
   text = text.replace(/^(["'(]?)(\p{Ll})/u, (_, q: string, c: string) => q + c.toUpperCase());

@@ -17,7 +17,10 @@ export async function GET(_req: Request, { params }: Ctx) {
 
 const PatchBody = z.object({
   title: z.string().trim().min(1).max(200).optional(),
-  transcript: z.array(z.object({ speaker: z.number().int(), text: z.string() })).optional(),
+  transcript: z
+    .array(z.object({ speaker: z.number().int(), text: z.string(), t: z.number().min(0).optional() }))
+    .max(20000)
+    .optional(),
   durationSec: z.number().int().min(0).optional(),
   status: z.enum(["RECORDING", "DONE"]).optional(),
 });
