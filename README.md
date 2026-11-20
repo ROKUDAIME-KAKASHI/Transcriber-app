@@ -60,7 +60,7 @@ It started as part of Life OS and is now its own repository, with its own
 - **Autosave every 5 seconds** while recording, plus a save when the app is backgrounded or
   closed, so a dropped call or dead battery doesn't lose the transcript.
 - **Screen wake lock** while recording so phones don't sleep and cut the mic.
-- **AI documents**: Minutes of Meeting or Report via Gemini, saved on the meeting.
+- **AI documents**: Minutes of Meeting or Report, saved on the meeting. Uses [AICredits.in](https://aicredits.in) (`AICREDITS_API_KEY`) when set, with a per-meeting choice of **Economy · GLM Flash** (`z-ai/glm-flash-latest`, default) or **Best · Claude Haiku** (`anthropic/claude-haiku-latest`), otherwise Gemini (`GOOGLE_GENERATIVE_AI_API_KEY`).
 - **Export / share**: TXT, Word, PDF, and the phone's native share sheet.
 - **Installable**: web manifest, generated icons, service worker with an offline page.
 
@@ -211,6 +211,6 @@ src/lib/speech/               models, worker client, resampler, phrase chunker, 
 src/workers/speech.worker.ts  runs Moonshine or Whisper off the main thread
 src/app/page.tsx              Record screen
 src/app/meetings/             list + detail (AI, export, rename, delete)
-src/app/api/meetings/         CRUD + /[id]/process (Gemini)
+src/app/api/meetings/         CRUD + /[id]/process (AI minutes, see src/lib/ai.ts)
 src/app/manifest.ts, public/sw.js, src/app/api/icons/[size]   PWA bits
 ```

@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ArrowLeft, Download, Loader2, Pencil, Share2, Sparkles, Trash2, Check } from "lucide-react";
 import { TEMPLATES, formatDuration, transcriptToText, type TranscriptPart } from "@/lib/transcript";
+import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/aiModels";
 import { TranscriptView } from "./TranscriptView";
 
 export interface MeetingData {
@@ -32,6 +34,8 @@ function download(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+const MODEL_KEY = "transcriber.summaryModel";
+
 const btn =
   "inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
 
@@ -48,6 +52,25 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const rawText = transcriptToText(meeting.transcript);
   const [canShare, setCanShare] = useState(false);
   useEffect(() => setCanShare(!!navigator.share), []);
+
+  // AI model for Minutes / Reports; the last choice is remembered on this device.
+  const [model, setModel] = useState<SummaryModel>(DEFAULT_SUMMARY_MODEL);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MODEL_KEY);
+      if (SUMMARY_MODELS.some((m) => m.value === saved)) setModel(saved as SummaryModel);
+    } catch {
+      /* storage blocked: keep the default */
+    }
+  }, []);
+  const chooseModel = (value: SummaryModel) => {
+    setModel(value);
+    try {
+      localStorage.setItem(MODEL_KEY, value);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const saveTitle = async () => {
     setEditingTitle(false);
@@ -67,7 +90,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
       const res = await fetch(`/api/meetings/${meeting.id}/process`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ template }),
+        body: JSON.stringify({ template, model }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Processing failed");
@@ -170,6 +193,15 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
         >
           {TEMPLATES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
+        <select
+          value={model}
+          onChange={(e) => chooseModel(e.target.value as SummaryModel)}
+          disabled={busy}
+          aria-label="AI model"
+          className="rounded-lg border border-border bg-muted px-3 py-2 text-sm font-medium outline-none"
+        >
+          {SUMMARY_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </select>
         <button
           onClick={generate}
           disabled={busy || meeting.transcript.length === 0}
@@ -178,6 +210,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {busy ? "Generating…" : document ? "Regenerate with AI" : "Generate with AI"}
         </button>
+        <p className="w-full text-xs text-muted-foreground">{SUMMARY_MODELS.find((m) => m.value === model)?.hint}</p>
         {error && <p className="w-full text-sm text-danger">{error}</p>}
       </section>
 
@@ -200,7 +233,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
         <div id="export-body">
           {tab === "document" && document ? (
             <article className="prose prose-stone dark:prose-invert max-w-none">
-              <Markdown>{document}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]}>{document}</Markdown>
             </article>
           ) : meeting.transcript.length > 0 ? (
             <TranscriptView parts={meeting.transcript} />

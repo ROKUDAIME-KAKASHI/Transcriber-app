@@ -1,6 +1,7 @@
 import { generateText } from "ai";
-import { google } from "@ai-sdk/google";
 import { z } from "zod";
+import { summaryModel } from "@/lib/ai";
+import { DEFAULT_SUMMARY_MODEL } from "@/lib/aiModels";
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { parseTranscript, transcriptToText } from "@/lib/transcript";
@@ -69,7 +70,10 @@ Produce a Meeting Report with exactly this structure:
 - (Concerns raised and unresolved issues.)`,
 };
 
-const Body = z.object({ template: z.enum(["MOM", "Report"]).default("MOM") });
+const Body = z.object({
+  template: z.enum(["MOM", "Report"]).default("MOM"),
+  model: z.enum(["glm", "haiku"]).default(DEFAULT_SUMMARY_MODEL),
+});
 
 /** Strip a ```markdown fence if the model wraps its whole answer in one. */
 function unwrapFence(text: string): string {
@@ -84,7 +88,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return Response.json({ error: "Invalid template" }, { status: 400 });
-  const { template } = parsed.data;
+  const { template, model } = parsed.data;
 
   const meeting = await prisma.meeting.findFirst({ where: { id, userId } });
   if (!meeting) return Response.json({ error: "Meeting not found" }, { status: 404 });
@@ -98,7 +102,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const result = await generateText({
-      model: google("gemini-flash-latest"),
+      model: summaryModel(model),
+      maxOutputTokens: 16000,
       system: PROMPTS[template] + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
       prompt: `Meeting: ${meeting.title}\nLength: ${Math.round(meeting.durationSec / 60)} min\n\nRaw transcript:\n\n${raw}`,
     });
