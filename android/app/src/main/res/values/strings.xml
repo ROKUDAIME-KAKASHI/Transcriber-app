@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Transcriber</string>
+    <string name="title_activity_main">Transcriber</string>
+    <string name="package_name">in.transcriber.app</string>
+    <string name="custom_url_scheme">in.transcriber.app</string>
+</resources>

@@ -218,19 +218,45 @@ Deploy it anywhere with HTTPS (e.g. Vercel, with the same env vars as `.env`), t
 - **Android (Chrome)**: menu ⋮ → *Install app* (or the install banner).
 - **iPhone (Safari)**: Share → *Add to Home Screen*.
 
+## Android app (records with the screen off)
+
+`android/` is a [Capacitor](https://capacitorjs.com/) app: the screens come from the server, and
+**cloud recording runs in a native foreground service** (`android/app/src/main/java/in/transcriber/app/recorder/`)
+instead of the web page. It keeps recording with the screen off or in another app, shows a
+notification with a timer and Pause/Stop, streams to Deepgram, and autosaves to the server by
+itself, the same way the web recorder does. If the internet drops it keeps recording (up to 4 hours
+of audio is held on the phone) and transcribes that audio once the connection is back.
+
+The on-device engines (Fast, Accurate) still run in the page inside the app, so they need the screen on.
+
+Build the APK (needs the Android SDK; JDK 21+):
+
+```bash
+# Which server the app opens. Default: http://192.168.100.152:3001 (the laptop's dev server on Wi-Fi).
+CAP_SERVER_URL=https://your-app.vercel.app npx cap sync android
+cd android && ./gradlew assembleDebug
+# → android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+For a long meeting, allow **Unrestricted** battery use when the app asks (Xiaomi, Oppo, Vivo,
+Realme and Samsung battery savers otherwise stop background apps). During a phone call Android
+gives the microphone to the call; recording continues after it.
+
 ## Known limits of a PWA
 
 - On iPhone, recording stops if the user switches apps or locks the screen. Android is
   more forgiving but can also pause. The app autosaves, so nothing already transcribed is lost.
 - "Capture tab audio" (Zoom/Meet) only works on desktop browsers, so it's hidden on phones.
-- For true background recording and Play Store / App Store listing, wrap this app with
-  [Capacitor](https://capacitorjs.com/) later; the backend and APIs stay the same.
+- For background recording on Android, use the Android app (above).
 
 ## Layout
 
 ```
 prisma/schema.prisma          User, Meeting
 src/hooks/useRecorder.ts      mic → on-device transcription, autosave, wake lock
+src/hooks/useNativeRecorder.ts  same interface, backed by the Android app's recording service
+android/                      Capacitor Android app (capacitor.config.ts sets the server URL)
 src/lib/speech/               models, worker client, resampler, phrase chunker, text clean-up
 src/workers/speech.worker.ts  runs Moonshine or Whisper off the main thread
 src/app/page.tsx              Record screen

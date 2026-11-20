@@ -81,7 +81,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Top bar (phones, tablets) */}
-      <header className="sticky top-0 z-20 border-b border-border bg-card pt-[env(safe-area-inset-top)] lg:hidden">
+      <header className="sticky top-0 z-20 border-b border-border bg-card pt-[var(--safe-area-inset-top,env(safe-area-inset-top))] lg:hidden">
         <div className="flex h-14 items-center justify-between gap-4 px-4">
           <Logo />
           <button

@@ -96,7 +96,7 @@ body {
 
 /* Keep content clear of the iPhone home bar when installed. */
 .safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
 }
 
 /* Native selects styled like the rest of the UI, with our own chevron. */

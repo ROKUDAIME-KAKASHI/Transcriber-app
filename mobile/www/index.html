@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Transcriber</title>
+<style>
+  body { margin: 0; min-height: 100dvh; display: grid; place-items: center; background: #f6f6f4; color: #1c1b18;
+         font: 15px/1.5 system-ui, sans-serif; padding: 24px; box-sizing: border-box; text-align: center; }
+  @media (prefers-color-scheme: dark) { body { background: #141412; color: #ecebe7; } }
+  button { margin-top: 16px; min-height: 44px; padding: 0 20px; border: 0; border-radius: 12px; background: #2356d1; color: #fff; font: inherit; }
+</style>
+</head>
+<body>
+  <div>
+    <p><strong>Can't reach the Transcriber server.</strong></p>
+    <p>Check the internet connection and try again.</p>
+    <button onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>
