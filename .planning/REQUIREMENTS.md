@@ -76,8 +76,37 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (filled by roadmap) | | |
+| SHARE-01 | Phase 1 | Pending |
+| SHARE-02 | Phase 1 | Pending |
+| SHARE-03 | Phase 1 | Pending |
+| SHARE-04 | Phase 1 | Pending |
+| SHARE-05 | Phase 1 | Pending |
+| NAV-01 | Phase 1 | Pending |
+| NAV-02 | Phase 1 | Pending |
+| NAV-03 | Phase 1 | Pending |
+| OFF-01 | Phase 3 | Pending |
+| OFF-02 | Phase 3 | Pending |
+| OFF-03 | Phase 2 | Pending |
+| OFF-04 | Phase 3 | Pending |
+| OFF-05 | Phase 3 | Pending |
+| OFF-06 | Phase 3 | Pending |
+| SPK-01 | Phase 4 | Pending |
+| SPK-02 | Phase 4 | Pending |
+| SPK-03 | Phase 4 | Pending |
+| SPK-04 | Phase 4 | Pending |
+| SPK-05 | Phase 4 | Pending |
+| UI-01 | Phase 5 | Pending |
+| UI-02 | Phase 5 | Pending |
+| UI-03 | Phase 5 | Pending |
+| UI-04 | Phase 5 | Pending |
+| UI-05 | Phase 5 | Pending |
+| REL-01 | Phase 5 | Pending |
+
+**Coverage:**
+- v1 requirements: 25 total
+- Mapped to phases: 25
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-11-20*
-*Last updated: 2026-11-20 after initial definition*
+*Last updated: 2026-11-20 after roadmap creation*
