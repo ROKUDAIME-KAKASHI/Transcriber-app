@@ -42,10 +42,14 @@ const WORKLET_SRC = `
 class Tap extends AudioWorkletProcessor {
   constructor() { super(); this.buf = new Float32Array(2048); this.n = 0; }
   process(inputs) {
-    const ch = inputs[0] && inputs[0][0];
+    const chans = inputs[0];
+    const ch = chans && chans[0];
     if (ch) {
+      const k = chans.length; // some phones deliver a stereo mic: mix down instead of dropping a side
       for (let i = 0; i < ch.length; i++) {
-        this.buf[this.n++] = ch[i];
+        let v = ch[i];
+        if (k > 1) { for (let c = 1; c < k; c++) v += chans[c][i]; v /= k; }
+        this.buf[this.n++] = v;
         if (this.n === this.buf.length) { this.port.postMessage(this.buf.slice(0)); this.n = 0; }
       }
     }
@@ -115,7 +119,11 @@ export class VoiceChunker {
     } finally {
       URL.revokeObjectURL(url);
     }
-    if (this.ctx.state === "suspended") await this.ctx.resume();
+    // On iOS a resume() without a fresh tap can stay pending forever, which used to hang "Starting…".
+    // Don't wait on it for long: the recorder's watchdog warns if audio never starts flowing.
+    if (this.ctx.state !== "running") {
+      await Promise.race([this.ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
+    }
 
     this.source = this.ctx.createMediaStreamSource(stream);
     this.node = new AudioWorkletNode(this.ctx, "moonshine-tap");

@@ -14,9 +14,14 @@ type WorkerOut =
   | { type: "model"; model: ModelName }
   | { type: "error"; id?: number; message: string };
 
-/** Remembers when a device turned out too slow for an engine's bigger model. */
+/**
+ * Remembers when a device turned out too slow for an engine's bigger model. Stored as
+ * "model@timestamp" and forgotten after DOWNGRADE_TTL_MS: one slow first run (cold phone, thermal
+ * throttling) used to lock a phone onto the less accurate Tiny model forever.
+ */
 const downgradeKey = (engine: Engine) => `transcriber.model.${engine}`;
 const LEGACY_MOONSHINE_KEY = "transcriber.moonshineModel";
+const DOWNGRADE_TTL_MS = 3 * 24 * 3600 * 1000;
 
 let worker: Worker | null = null;
 let ready: Promise<{ model: ModelName; threads: number }> | null = null;
@@ -25,6 +30,8 @@ let nextId = 1;
 const pending = new Map<number, { resolve: (t: string | null) => void; reject: (e: Error) => void }>();
 let progressListener: ((pct: number) => void) | null = null;
 let modelListener: ((m: ModelName) => void) | null = null;
+/** Rejecters for a model load in progress, called if the worker dies. */
+const failListeners = new Set<(e: Error) => void>();
 
 function readStored(key: string): string | null {
   try {
@@ -40,9 +47,13 @@ export function preferredModel(engine: Engine): ModelName {
   // Whisper Base (~77 MB). Whisper Small was tested and dropped: on an 8-core laptop it needed
   // ~1.2× real time per phrase (CPU/WASM), so it falls behind in a live meeting.
   if (engine === "whisper") return "whisper-base";
-  if (readStored(downgradeKey("moonshine")) === "moonshine-tiny" || readStored(LEGACY_MOONSHINE_KEY) === "tiny") {
-    return "moonshine-tiny";
+  try {
+    localStorage.removeItem(LEGACY_MOONSHINE_KEY); // old permanent flag
+  } catch {
+    /* ignore */
   }
+  const [stored, at] = (readStored(downgradeKey("moonshine")) ?? "").split("@");
+  if (stored === "moonshine-tiny" && Date.now() - Number(at || 0) < DOWNGRADE_TTL_MS) return "moonshine-tiny";
   // Phones that report ≤2 GB of RAM (Chrome/Android only) start on Tiny straight away.
   return mem !== undefined && mem <= 2 ? "moonshine-tiny" : "moonshine-base";
 }
@@ -55,7 +66,7 @@ function getWorker(): Worker {
     if (msg.type === "progress") progressListener?.(msg.progress);
     else if (msg.type === "model") {
       // The device was too slow for the bigger model: remember, so next time it starts on the lighter one.
-      try { localStorage.setItem(downgradeKey(MODELS[msg.model].family), msg.model); } catch { /* ignore */ }
+      try { localStorage.setItem(downgradeKey(MODELS[msg.model].family), `${msg.model}@${Date.now()}`); } catch { /* ignore */ }
       modelListener?.(msg.model);
     } else if (msg.type === "result" || msg.type === "skipped") {
       pending.get(msg.id)?.resolve(msg.type === "result" ? msg.text : null);
@@ -65,6 +76,23 @@ function getWorker(): Worker {
       pending.delete(msg.id);
     }
   };
+  // The worker itself failed (script/WASM didn't load, or the phone killed it for memory).
+  // Without this, "Loading speech model…" and every pending phrase waited forever.
+  const fail = (message: string) => {
+    const err = new Error(message);
+    failListeners.forEach((f) => f(err));
+    for (const p of pending.values()) p.reject(err);
+    pending.clear();
+    worker?.terminate();
+    worker = null;
+    ready = null;
+    readyFor = "";
+  };
+  worker.onerror = (e) => {
+    e.preventDefault();
+    fail(`The speech engine stopped${e.message ? ` (${e.message})` : ""}. This phone may be low on memory — try the Fast or Cloud engine.`);
+  };
+  worker.onmessageerror = () => fail("The speech engine couldn't read the audio.");
   return worker;
 }
 
@@ -85,12 +113,19 @@ export function loadSpeechModel(
   const w = getWorker();
   readyFor = key;
   ready = new Promise((resolve, reject) => {
+    const onFail = (err: Error) => {
+      failListeners.delete(onFail);
+      reject(err);
+    };
+    failListeners.add(onFail);
     const onMsg = (e: MessageEvent<WorkerOut>) => {
       if (e.data.type === "ready") {
         w.removeEventListener("message", onMsg);
+        failListeners.delete(onFail);
         resolve({ model: e.data.model, threads: e.data.threads });
       } else if (e.data.type === "error" && e.data.id === undefined) {
         w.removeEventListener("message", onMsg);
+        failListeners.delete(onFail);
         ready = null;
         readyFor = "";
         reject(new Error(e.data.message));

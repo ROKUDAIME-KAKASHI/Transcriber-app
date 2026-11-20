@@ -4,6 +4,11 @@ import { getUserId, unauthorized } from "@/lib/auth";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+const dbDown = (err: unknown) => {
+  console.error("Meeting DB error:", err);
+  return Response.json({ error: "The database is waking up. Try again in a few seconds." }, { status: 503 });
+};
+
 const notFound = () => Response.json({ error: "Meeting not found" }, { status: 404 });
 
 export async function GET(_req: Request, { params }: Ctx) {
@@ -11,8 +16,12 @@ export async function GET(_req: Request, { params }: Ctx) {
   if (!userId) return unauthorized();
   const { id } = await params;
 
-  const meeting = await prisma.meeting.findFirst({ where: { id, userId } });
-  return meeting ? Response.json({ meeting }) : notFound();
+  try {
+    const meeting = await prisma.meeting.findFirst({ where: { id, userId } });
+    return meeting ? Response.json({ meeting }) : notFound();
+  } catch (err) {
+    return dbDown(err);
+  }
 }
 
 const PatchBody = z.object({
@@ -35,8 +44,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!parsed.success) return Response.json({ error: "Invalid request" }, { status: 400 });
 
   // updateMany scoped by userId so nobody can write to another account's meeting.
-  const { count } = await prisma.meeting.updateMany({ where: { id, userId }, data: parsed.data });
-  return count ? Response.json({ ok: true }) : notFound();
+  try {
+    const { count } = await prisma.meeting.updateMany({ where: { id, userId }, data: parsed.data });
+    return count ? Response.json({ ok: true }) : notFound();
+  } catch (err) {
+    return dbDown(err);
+  }
 }
 
 export async function DELETE(_req: Request, { params }: Ctx) {
@@ -44,6 +57,10 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (!userId) return unauthorized();
   const { id } = await params;
 
-  const { count } = await prisma.meeting.deleteMany({ where: { id, userId } });
-  return count ? Response.json({ ok: true }) : notFound();
+  try {
+    const { count } = await prisma.meeting.deleteMany({ where: { id, userId } });
+    return count ? Response.json({ ok: true }) : notFound();
+  } catch (err) {
+    return dbDown(err);
+  }
 }

@@ -100,7 +100,7 @@ function RecDot({ paused }: { paused: boolean }) {
 
 const fieldLabel = "block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2";
 const selectCls =
-  "select w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-medium outline-none focus:border-accent disabled:opacity-60";
+  "select w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-base sm:text-sm font-medium outline-none focus:border-accent disabled:opacity-60";
 
 export function Recorder() {
   const [captureSystemAudio, setCaptureSystemAudio] = useState(false);
@@ -136,10 +136,19 @@ export function Recorder() {
     if (rec.isRecording) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [rec.transcriptParts, rec.interimText, rec.liveStatus, rec.isRecording]);
 
+  // Phones opening the laptop's http://192.168.x.x address: no mic, no audio processing. Say so up front.
+  const [insecure, setInsecure] = useState(false);
+  useEffect(() => setInsecure(!window.isSecureContext), []);
+
   const hasTranscript = rec.transcriptParts.length > 0;
   const hasLive = !!rec.interimText || !!rec.liveStatus;
   const current = ENGINES.find((e) => e.value === engine) ?? ENGINES[0];
   const busy = rec.isRecording;
+  const starting = rec.isStarting;
+  /** Settings are locked while starting or recording. */
+  const locked = busy || starting;
+  /** Finished and fully saved: safe to open the meeting page. */
+  const finished = !busy && !starting && !!rec.meetingId && hasTranscript && rec.saveState === "saved";
   const words = rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0);
 
   const saveBadge = rec.meetingId && (
@@ -159,7 +168,7 @@ export function Recorder() {
         }`}
         aria-label="Recording controls"
       >
-        {!busy && rec.meetingId && hasTranscript && (
+        {finished && (
           // Phones: the transcript and its button are below the fold after Stop, so offer it up here.
           <Link
             href={`/meetings/${rec.meetingId}`}
@@ -176,14 +185,21 @@ export function Recorder() {
         <div className="flex flex-col items-center text-center">
           <div className="flex items-center gap-4">
             <button
-              onClick={busy ? rec.stop : () => rec.start("mic")}
-              className={`relative w-24 h-24 rounded-full grid place-items-center shadow-lg transition-transform active:scale-95 ${
+              onClick={busy ? rec.stop : starting ? undefined : () => rec.start("mic")}
+              disabled={starting || insecure}
+              className={`relative w-24 h-24 rounded-full grid place-items-center shadow-lg transition-transform active:scale-95 disabled:active:scale-100 ${
                 busy ? "bg-danger text-white" : "bg-accent text-accent-foreground"
-              }`}
-              aria-label={busy ? "Stop recording" : "Start recording"}
+              } ${insecure ? "opacity-50" : ""}`}
+              aria-label={busy ? "Stop recording" : starting ? "Starting recording" : "Start recording"}
             >
-              {!busy && <span className="absolute inset-0 rounded-full ring-8 ring-accent/15" aria-hidden />}
-              {busy ? <Square className="w-8 h-8 fill-current" /> : <Mic className="w-10 h-10" />}
+              {!busy && <span className={`absolute inset-0 rounded-full ring-8 ring-accent/15 ${starting ? "animate-pulse" : ""}`} aria-hidden />}
+              {busy ? (
+                <Square className="w-8 h-8 fill-current" />
+              ) : starting ? (
+                <Loader2 className="w-10 h-10 animate-spin" />
+              ) : (
+                <Mic className="w-10 h-10" />
+              )}
             </button>
             {busy && (
               // Pause sits beside Stop so a break doesn't end (and save) the meeting.
@@ -207,6 +223,8 @@ export function Recorder() {
                 <RecDot paused={rec.isPaused} />
                 {formatDuration(rec.recordingSeconds)}
               </div>
+            ) : starting ? (
+              <div className="text-lg font-semibold">Getting ready…</div>
             ) : (
               <div className="text-lg font-semibold">Tap to record</div>
             )}
@@ -219,13 +237,30 @@ export function Recorder() {
             </div>
           )}
 
-          {!busy && (
+          {starting && (
+            <button
+              onClick={rec.cancelStart}
+              className="mt-2 min-h-11 inline-flex items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+          )}
+          {!busy && !starting && !insecure && (
             <button
               onClick={() => rec.start("sample")}
-              className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
+              className="mt-1 min-h-11 inline-flex items-center gap-1.5 px-2 text-sm font-medium text-accent hover:underline"
             >
               <PlayCircle className="w-4 h-4" /> No mic? Try with sample audio
             </button>
+          )}
+          {insecure && (
+            <div className="mt-4 w-full rounded-2xl border border-danger/40 bg-danger/10 px-4 py-3 text-left text-sm" role="alert">
+              <strong className="block">Recording needs a secure https:// address</strong>
+              <span className="text-muted-foreground">
+                This page was opened over plain http://, so the browser blocks the microphone. On a phone, open
+                the app&apos;s <strong className="text-foreground">https://</strong> link instead (see “Testing on a phone” in the README).
+              </span>
+            </div>
           )}
         </div>
 
@@ -242,7 +277,7 @@ export function Recorder() {
                     key={e.value}
                     role="radio"
                     aria-checked={on}
-                    disabled={busy}
+                    disabled={locked}
                     onClick={() => {
                       setEngine(e.value);
                       remember(ENGINE_KEY, e.value);
@@ -287,7 +322,7 @@ export function Recorder() {
                     setLanguage(e.target.value);
                     remember(LANG_KEY, e.target.value);
                   }}
-                  disabled={busy}
+                  disabled={locked}
                   className={selectCls}
                 >
                   {WHISPER_LANGUAGES.map((l) => (
@@ -305,7 +340,7 @@ export function Recorder() {
                   setMicId(e.target.value);
                   remember(MIC_KEY, e.target.value);
                 }}
-                disabled={busy || mics.length === 0}
+                disabled={locked || mics.length === 0}
                 className={selectCls}
               >
                 <option value="">Default microphone</option>
@@ -329,7 +364,7 @@ export function Recorder() {
                 type="checkbox"
                 checked={captureSystemAudio}
                 onChange={(e) => setCaptureSystemAudio(e.target.checked)}
-                disabled={busy}
+                disabled={locked}
                 className="mt-1 w-4 h-4 accent-[var(--accent)]"
               />
             </label>
@@ -394,7 +429,7 @@ export function Recorder() {
           <div ref={bottomRef} className="scroll-mb-48 lg:scroll-mb-6" />
         </div>
 
-        {!busy && rec.meetingId && hasTranscript && (
+        {finished && (
           <div className="p-4 sm:px-6 border-t border-border">
             <Link
               href={`/meetings/${rec.meetingId}`}
@@ -407,16 +442,17 @@ export function Recorder() {
       </section>
 
       {/* ---------- Phone recording dock (above the tab bar) ---------- */}
+      {busy && <div className="lg:hidden h-16" aria-hidden />}
       {busy && (
-        <div className="lg:hidden fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 px-3 pb-2">
-          <div className="mx-auto max-w-md rounded-3xl border border-border bg-card/95 backdrop-blur-md shadow-xl px-4 py-3 flex items-center gap-3">
+        <div className="lg:hidden pointer-events-none fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 px-3 pb-2">
+          <div className="pointer-events-auto mx-auto max-w-md rounded-3xl border border-border bg-card/95 backdrop-blur-md shadow-xl px-4 py-3 flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <div className={`flex items-center gap-2 text-lg font-semibold tabular-nums ${rec.isPaused ? "text-muted-foreground" : ""}`}>
                 <RecDot paused={rec.isPaused} />
                 {formatDuration(rec.recordingSeconds)}
                 {!rec.isPaused && <span className="ml-1"><LevelMeter level={rec.micLevel} bars={8} /></span>}
               </div>
-              <p className="text-xs text-muted-foreground truncate">{rec.statusMsg}</p>
+              <p className="text-xs text-muted-foreground line-clamp-2">{rec.statusMsg}</p>
             </div>
             <button
               onClick={rec.isPaused ? rec.resume : rec.pause}

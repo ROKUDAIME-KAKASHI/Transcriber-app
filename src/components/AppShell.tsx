@@ -76,12 +76,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Top bar (phones, tablets) */}
-      <header className="lg:hidden sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-md">
+      <header className="lg:hidden sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-md pt-[env(safe-area-inset-top)]">
         <div className="px-4 h-14 flex items-center justify-between gap-4">
           <Logo />
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="rounded-lg p-2 -mr-2 text-muted-foreground hover:text-foreground"
+            className="rounded-lg p-2.5 -mr-2.5 text-muted-foreground hover:text-foreground"
             aria-label="Sign out"
             title={email ? `Sign out (${email})` : "Sign out"}
           >

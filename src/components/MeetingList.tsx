@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, Smartphone, Monitor, FileText, Radio, AudioLines, ChevronRight, Mic } from "lucide-react";
 import { LANGUAGES, formatDuration } from "@/lib/transcript";
@@ -28,10 +28,14 @@ function dayLabel(d: Date): string {
 
 export function MeetingList({ meetings }: { meetings: MeetingRow[] }) {
   const [query, setQuery] = useState("");
+  // Day headings and times depend on the viewer's timezone, so they only appear after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     const shown = q ? meetings.filter((m) => m.title.toLowerCase().includes(q)) : meetings;
+    if (!mounted) return [{ label: "", items: shown }];
     const out: { label: string; items: MeetingRow[] }[] = [];
     for (const m of shown) {
       const label = dayLabel(new Date(m.createdAt));
@@ -40,7 +44,7 @@ export function MeetingList({ meetings }: { meetings: MeetingRow[] }) {
       else out.push({ label, items: [m] });
     }
     return out;
-  }, [meetings, query]);
+  }, [meetings, query, mounted]);
 
   if (meetings.length === 0) {
     return (
@@ -74,11 +78,13 @@ export function MeetingList({ meetings }: { meetings: MeetingRow[] }) {
         />
       </label>
 
-      {groups.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">No meetings match “{query}”.</p>}
+      {(mounted ? groups.length === 0 : groups[0].items.length === 0) && <p className="text-sm text-muted-foreground text-center py-10">No meetings match “{query}”.</p>}
 
       {groups.map((g) => (
-        <section key={g.label}>
-          <h2 suppressHydrationWarning className="px-1 mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{g.label}</h2>
+        <section key={g.label || "all"}>
+          {mounted && (
+            <h2 className="px-1 mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{g.label}</h2>
+          )}
           <ul className="rounded-3xl border border-border bg-card shadow-card divide-y divide-border overflow-hidden">
             {g.items.map((m) => {
               const isPhone = /iPhone|iPad|Android/i.test(m.deviceName ?? "");
@@ -105,7 +111,9 @@ export function MeetingList({ meetings }: { meetings: MeetingRow[] }) {
                         )}
                       </span>
                       <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                        <span suppressHydrationWarning>{new Date(m.createdAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</span>
+                        {mounted && (
+                          <span>{new Date(m.createdAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</span>
+                        )}
                         <span className="tabular-nums">{formatDuration(m.durationSec)}</span>
                         <span className="hidden sm:inline">{LANGUAGES.find((l) => l.value === m.language)?.label ?? m.language}</span>
                         {m.deviceName && (

@@ -29,9 +29,14 @@ import { hasLoop } from "../lib/speech/cleanText";
 import { MODELS, type ModelName } from "../lib/speech/models";
 
 const SAMPLE_RATE = 16000;
-/** Switch to the lighter model when finishing phrases takes longer than this fraction of real time. */
-const DEFAULT_SLOW_RTF = 0.8;
-const RTF_SAMPLES_BEFORE_DECIDING = 3;
+/**
+ * Switch to the lighter (less accurate) model only when finishing phrases is slower than real time.
+ * The first phrases after loading are ignored: phones are often slow then (cold JIT, thermal
+ * ramp-up), and judging on them used to push phones onto Tiny for no lasting reason.
+ */
+const DEFAULT_SLOW_RTF = 1.0;
+const RTF_SAMPLES_BEFORE_DECIDING = 4;
+const WARMUP_PHRASES_IGNORED = 2;
 
 type GenerateOptions = {
   max_new_tokens?: number;
@@ -70,12 +75,15 @@ let active: ModelName = "moonshine-base";
 let language: string | undefined;
 let slowRtf = DEFAULT_SLOW_RTF;
 let rtfSamples: number[] = [];
+let phrasesSinceLoad = 0;
 let switching = false;
 
 async function warmUp(t: Transcriber) {
   // The first inference allocates buffers and compiles kernels; doing it on a second of
   // silence now keeps the user's first real phrase from being the slow one.
-  await t(new Float32Array(SAMPLE_RATE), { max_new_tokens: 2 }).catch(() => {});
+  // If this fails the model can't run on this device at all: let the load fail with that error
+  // instead of reporting "ready" and silently losing every phrase.
+  await t(new Float32Array(SAMPLE_RATE), { max_new_tokens: 2 });
 }
 
 function loadModel(name: ModelName, reportProgress: boolean): Promise<Transcriber> {
@@ -115,6 +123,7 @@ function unloadOthers(keep: ModelName[]) {
 function trackSpeed(rtf: number) {
   const fallback = MODELS[active].fallback;
   if (!fallback || switching) return;
+  if (++phrasesSinceLoad <= WARMUP_PHRASES_IGNORED) return;
   rtfSamples.push(rtf);
   if (rtfSamples.length > 5) rtfSamples.shift();
   if (rtfSamples.length < RTF_SAMPLES_BEFORE_DECIDING) return;
@@ -202,6 +211,7 @@ self.onmessage = (event: MessageEvent<InMessage>) => {
     language = msg.language && msg.language !== "auto" ? msg.language : undefined;
     if (msg.slowRtf) slowRtf = msg.slowRtf;
     rtfSamples = [];
+    phrasesSinceLoad = 0;
     unloadOthers([active]);
     loadModel(active, true)
       .then(() => self.postMessage({ type: "ready", model: active, threads: onnx.wasm?.numThreads ?? 1 }))

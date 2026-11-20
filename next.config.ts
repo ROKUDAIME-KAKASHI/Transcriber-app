@@ -5,6 +5,11 @@ const nextConfig: NextConfig = {
   turbopack: { root: process.cwd() },
   outputFileTracingRoot: process.cwd(),
 
+  // Dev only: Next blocks its dev scripts for any host other than localhost, so a phone opening
+  // http(s)://<laptop-ip>:3001 got the page but no JavaScript (every button dead). Allow private
+  // LAN addresses and the HTTPS tunnels used for phone testing (see README "Testing on a phone").
+  allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*", "*.local", "*.ngrok-free.app", "*.ngrok.app", "*.trycloudflare.com"],
+
   async headers() {
     return [
       {

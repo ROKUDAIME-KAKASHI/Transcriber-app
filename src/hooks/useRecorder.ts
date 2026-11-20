@@ -31,6 +31,8 @@ const SAMPLE_AUDIO_URL = "https://huggingface.co/datasets/Xenova/transformers.js
 export type AudioSource = "mic" | "sample";
 export interface RecorderState {
   isRecording: boolean;
+  /** Between the tap and recording actually running (mic prompt, model download, connecting). */
+  isStarting: boolean;
   meetingId: string | null;
   transcriptParts: TranscriptPart[];
   /** Words heard but not final yet (live preview). */
@@ -65,6 +67,31 @@ const previewIntervalFor = (m: ModelName) => PREVIEW_INTERVAL_MS[m];
 const NO_SOUND_RMS = 0.0004;
 const NO_SOUND_MS = 5000;
 
+/** No audio frames at all for this long (phone suspended the audio, mic track ended) counts as "no sound". */
+const NO_FRAMES_MS = 3000;
+/** After this many phrases in a row fail to transcribe, tell the user instead of silently dropping them. */
+const MAX_FAILED_PHRASES = 3;
+
+/** Thrown when the user cancels while recording is still starting. */
+class StartCancelled extends Error {}
+
+/**
+ * Microphone settings for speech recognition.
+ * Echo cancellation is off: on phones it switches the mic into "phone call" mode (band-limited,
+ * gated, ducked audio that garbles words), and in meetings it would also cancel the other side's
+ * voice coming out of the speakers. Noise suppression is off for the same reason. Auto gain is
+ * only on for Deepgram: the on-device path already normalises each phrase's loudness itself.
+ */
+function micConstraints(engine: RecordEngine, deviceId?: string): MediaTrackConstraints {
+  return {
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    channelCount: 1,
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: engine === "deepgram",
+  };
+}
+
 /** rms → 0–1 on a −60 dB…0 dB scale, so quiet mics still move the meter. */
 function levelFromRms(rms: number): number {
   if (rms <= 0) return 0;
@@ -82,6 +109,7 @@ export function useRecorder(opts: {
 }) {
   const [state, setState] = useState<RecorderState>({
     isRecording: false,
+    isStarting: false,
     meetingId: null,
     transcriptParts: [],
     interimText: "",
@@ -130,6 +158,12 @@ export function useRecorder(opts: {
   const lastLevelPaintRef = useRef(0);
   const quietSinceRef = useRef<number | null>(null);
   const noSoundRef = useRef(false);
+  /** When the last audio frame arrived (watchdog for audio the phone silently suspended). */
+  const lastFrameAtRef = useRef(0);
+  const failedPhrasesRef = useRef(0);
+  /** Each start() gets a token; cancelling or a newer start makes the old one bail out. */
+  const startTokenRef = useRef(0);
+  const startingRef = useRef(false);
 
   // Deepgram (cloud)
   const socketRef = useRef<WebSocket | null>(null);
@@ -149,27 +183,36 @@ export function useRecorder(opts: {
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
 
   // ---- Persistence -------------------------------------------------------
-  const save = useCallback(async (status?: "DONE") => {
+  /**
+   * Saves the transcript so far. `closing` is for the page being closed: it uses keepalive so the
+   * request outlives the page. Browsers cap keepalive bodies at 64 KB, so it must NOT be used for
+   * normal saves — once a meeting passed ~64 KB of text every save failed ("Offline — will retry"
+   * forever) and the transcript never reached the server.
+   */
+  const save = useCallback(async (status?: "DONE", closing = false): Promise<boolean> => {
     const id = meetingIdRef.current;
-    if (!id || (!dirtyRef.current && !status)) return;
+    if (!id || (!dirtyRef.current && !status)) return true;
     dirtyRef.current = false;
     patch({ saveState: "saving" });
     try {
+      const body = JSON.stringify({
+        transcript: partsRef.current,
+        durationSec: secondsRef.current,
+        ...(status ? { status } : {}),
+      });
       const res = await fetch(`/api/meetings/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript: partsRef.current,
-          durationSec: secondsRef.current,
-          ...(status ? { status } : {}),
-        }),
-        keepalive: true, // lets the final save finish even if the tab is closing
+        body,
+        keepalive: closing && body.length < 60_000,
       });
       if (!res.ok) throw new Error();
       patch({ saveState: "saved" });
+      return true;
     } catch {
       dirtyRef.current = true; // retry on next tick
       patch({ saveState: "error" });
+      return false;
     }
   }, []);
 
@@ -218,6 +261,7 @@ export function useRecorder(opts: {
   /** Level meter + "is the mic actually delivering sound?" check. */
   const onMicLevel = (rms: number) => {
     const now = performance.now();
+    lastFrameAtRef.current = now;
     if (rms < NO_SOUND_RMS) {
       quietSinceRef.current ??= now;
       if (!noSoundRef.current && now - quietSinceRef.current > NO_SOUND_MS) {
@@ -284,8 +328,20 @@ export function useRecorder(opts: {
       onSegment: (audio, phraseId, startSec) => {
         lastEmittedPhraseRef.current = phraseId;
         const job = transcribeSegment(audio)
-          .then((text) => appendFinal(text, opts.engine === "whisper", startSec)) // one chat bubble per phrase
-          .catch((err) => console.error("Moonshine transcription error:", err))
+          .then((text) => {
+            failedPhrasesRef.current = 0;
+            appendFinal(text, opts.engine === "whisper", startSec); // one chat bubble per phrase
+          })
+          .catch((err) => {
+            console.error("On-device transcription error:", err);
+            failedPhrasesRef.current += 1;
+            if (failedPhrasesRef.current === MAX_FAILED_PHRASES) {
+              patch({
+                statusMsg:
+                  "This device is struggling to run the speech model (phrases are being lost). Stop, then try the Fast or Cloud engine.",
+              });
+            }
+          })
           .finally(() => {
             // The live preview for this phrase stays visible until its final text replaces it.
             previewsRef.current.delete(phraseId);
@@ -353,10 +409,11 @@ export function useRecorder(opts: {
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
       let opened = false;
+      let openedAt = 0;
 
       socket.onopen = () => {
         opened = true;
-        reconnectsRef.current = 0;
+        openedAt = Date.now();
         openBubbleRef.current = false;
         // Deepgram's times start at 0 for each socket; map them onto the meeting clock.
         socketOffsetRef.current = queueRef.current.length ? queueStartRef.current : heardRef.current;
@@ -395,6 +452,9 @@ export function useRecorder(opts: {
           return;
         }
         if (!wantRecordingRef.current) return;
+        // A connection that lasted a while earns a fresh set of retries; one that drops right after
+        // opening doesn't (otherwise a socket that opens and dies at once would retry forever).
+        if (Date.now() - openedAt > 30_000) reconnectsRef.current = 0;
         // Unexpected drop (network blip, Wi-Fi → mobile data): reconnect; audio queues meanwhile.
         const retry = async () => {
           while (wantRecordingRef.current && reconnectsRef.current < MAX_RECONNECTS) {
@@ -431,9 +491,8 @@ export function useRecorder(opts: {
     quietSinceRef.current = null;
     noSoundRef.current = false;
 
-    patch({ statusMsg: "Connecting to Deepgram…" });
-    await openSocket();
-
+    // Start the mic graph first: audio queues (sendAudio) while the socket connects, so Deepgram
+    // gets audio the moment it opens and doesn't drop an idle socket during slow phone setup.
     const chunker = new VoiceChunker(ctx, {
       onLevel: onMicLevel,
       onAudio: sendAudio,
@@ -449,6 +508,18 @@ export function useRecorder(opts: {
       const socket = socketRef.current;
       if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "KeepAlive" }));
     }, KEEPALIVE_MS);
+
+    patch({ statusMsg: "Connecting to Deepgram…" });
+    try {
+      await openSocket();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        /code \d+/.test(msg)
+          ? `${msg} Check the internet connection, and that a VPN or ad-blocker isn't blocking api.deepgram.com.`
+          : msg
+      );
+    }
     patch({ statusMsg: "Recording (cloud, speaker labels)…", isRecording: true });
   };
 
@@ -507,6 +578,18 @@ export function useRecorder(opts: {
       secondsRef.current = s;
       patch({ recordingSeconds: s });
     }
+    // Watchdog: phones can suspend the audio (incoming call, Siri, screen lock, another app taking
+    // the mic) without any error. No frames at all → warn and try to wake the audio up.
+    if (wantRecordingRef.current && pausedAtRef.current === null && chunkerRef.current) {
+      const silentFor = performance.now() - lastFrameAtRef.current;
+      if (silentFor > NO_FRAMES_MS) {
+        moonCtxRef.current?.resume().catch(() => {});
+        if (!noSoundRef.current) {
+          noSoundRef.current = true;
+          patch({ noSound: true, micLevel: 0 });
+        }
+      }
+    }
   };
 
   /** Breaks, side conversations: stop transcribing without ending the meeting. */
@@ -549,12 +632,24 @@ export function useRecorder(opts: {
     patch({
       isRecording: false, isPaused: false, interimText: "", micLevel: 0, noSound: false,
       recordingSeconds: secondsRef.current, statusMsg: "Stopped. Saving…",
+      // Not "saved" until the final save below: the meeting link only appears once everything is in.
+      saveState: "saving",
     });
     // Wait for the device to finish transcribing the last phrases.
     if (pendingSegmentsRef.current.size) patch({ statusMsg: "Finishing transcription…" });
     await Promise.all([...pendingSegmentsRef.current]);
-    await save("DONE");
-    patch({ statusMsg: "Saved to your account.", interimText: "", liveStatus: null, backlog: 0 });
+    // Autosave has stopped by now, so retry the final save a few times (phones drop requests).
+    let saved = false;
+    for (let attempt = 0; attempt < 4 && !saved; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 2000 * attempt));
+      saved = await save("DONE");
+    }
+    patch({
+      statusMsg: saved
+        ? "Saved to your account."
+        : "Couldn't save the last part — check the connection. Your earlier autosaves are kept.",
+      interimText: "", liveStatus: null, backlog: 0,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save]);
   stopRef.current = stop;
@@ -580,8 +675,41 @@ export function useRecorder(opts: {
     audio.play().catch((err) => console.error("Sample playback failed:", err));
   };
 
+  /** Cancels a start that's still in progress (mic prompt, model download, connecting). */
+  const cancelStart = useCallback(() => {
+    startTokenRef.current += 1;
+    startingRef.current = false;
+    wantRecordingRef.current = false;
+    socketRef.current?.close();
+    socketRef.current = null;
+    cleanupMedia();
+    patch({ isStarting: false, isRecording: false, statusMsg: "Cancelled." });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const start = useCallback(async (source: AudioSource = "mic") => {
+    // Ignore taps while already starting or recording (a second tap used to start a second recording).
+    if (startingRef.current || wantRecordingRef.current) return;
     const useSample = source === "sample";
+
+    // Microphone, audio processing and fast on-device models all need a secure page: https://, or
+    // localhost. Phones opening the laptop's http://192.168.x.x address get none of them.
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!window.isSecureContext || !Ctx || (!useSample && !navigator.mediaDevices?.getUserMedia)) {
+      patch({
+        statusMsg: !window.isSecureContext
+          ? "Recording needs a secure (https://) address. On a phone, open the app's https link instead of http://."
+          : "This browser can't record audio. Try the latest Chrome or Safari.",
+      });
+      return;
+    }
+
+    const token = ++startTokenRef.current;
+    /** Bails out if the user cancelled (or a newer start began) while we were waiting. */
+    const check = () => {
+      if (startTokenRef.current !== token) throw new StartCancelled();
+    };
+    startingRef.current = true;
     partsRef.current = [];
     secondsRef.current = 0;
     startedAtRef.current = 0;
@@ -590,36 +718,43 @@ export function useRecorder(opts: {
     dirtyRef.current = false;
     speakingRef.current = false;
     pendingSegmentsRef.current.clear();
+    failedPhrasesRef.current = 0;
+    lastFrameAtRef.current = performance.now();
     patch({
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
-      recordingSeconds: 0, isPaused: false,
+      recordingSeconds: 0, isPaused: false, isStarting: true, isRecording: false,
       statusMsg: useSample ? "Loading sample audio…" : "Requesting microphone…", saveState: "idle", meetingId: null,
     });
 
     // The audio context is created before any await so it counts as part of the tap
     // (iOS only allows audio to start then).
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
     moonCtxRef.current = ctx;
     ctx.resume().catch(() => {});
+    // iOS can suspend/interrupt the context when the mic switches the audio session, or later
+    // (calls, Siri). Try to bring it back whenever that happens.
+    ctx.onstatechange = () => {
+      if (ctx.state !== "running" && ctx.state !== "closed" && wantRecordingRef.current) ctx.resume().catch(() => {});
+    };
 
     try {
-      const mic = useSample
-        ? await createSampleStream(ctx)
-        : await navigator.mediaDevices
-            .getUserMedia({
-              audio: {
-                // A chosen mic (Windows PCs often have several, and the default can be a silent one).
-                ...(opts.deviceId ? { deviceId: { exact: opts.deviceId } } : {}),
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: false,
-                autoGainControl: true,
-              },
-            })
-            // Chosen mic unplugged, or constraints unsupported: fall back to the default mic.
-            .catch(() => navigator.mediaDevices.getUserMedia({ audio: true }));
+      let mic: MediaStream;
+      if (useSample) {
+        mic = await createSampleStream(ctx);
+      } else {
+        const constraints = micConstraints(opts.engine, opts.deviceId);
+        mic = await navigator.mediaDevices.getUserMedia({ audio: constraints }).catch((err: DOMException) => {
+          // Chosen mic unplugged, or a setting this device can't do: retry with the default mic.
+          // (Never retry after the user said no — that's a real answer.)
+          if (err?.name !== "OverconstrainedError" && err?.name !== "NotFoundError" && err?.name !== "NotReadableError") throw err;
+          const { deviceId: _unused, ...rest } = constraints;
+          return navigator.mediaDevices.getUserMedia({ audio: rest });
+        });
+        // Getting the mic changes the phone's audio session; resume again so iOS doesn't leave it suspended.
+        ctx.resume().catch(() => {});
+      }
       streamsRef.current.push(mic);
+      check();
 
       let recordStream: MediaStream = mic;
       // System audio (Zoom/Teams tab) only exists on desktop browsers.
@@ -657,6 +792,7 @@ export function useRecorder(opts: {
           },
         });
         previewIntervalRef.current = previewIntervalFor(model);
+        check();
       }
 
       patch({ statusMsg: "Creating meeting…" });
@@ -666,13 +802,19 @@ export function useRecorder(opts: {
         body: JSON.stringify({
           language,
           deviceName: detectDeviceName(),
-          ...(useSample
-            ? { title: `Sample recording – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` }
-            : {}),
+          // Titled with the device's local time (the server may run in UTC, which gave 6:58 am for 12:28 pm).
+          title: `${useSample ? "Sample recording" : "Meeting"} – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not create meeting");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.meeting) {
+        throw new Error(
+          res.status === 401
+            ? "You've been signed out. Sign in again."
+            : data.error || `Could not create the meeting (error ${res.status}).`
+        );
+      }
+      check();
       meetingIdRef.current = data.meeting.id;
       patch({ meetingId: data.meeting.id, statusMsg: "Starting…" });
 
@@ -680,12 +822,17 @@ export function useRecorder(opts: {
       await acquireWakeLock();
       if (engine === "deepgram") await startDeepgram();
       else await startMoonshine();
+      check();
       playSampleIfAny();
 
       startedAtRef.current = Date.now();
+      lastFrameAtRef.current = performance.now();
       timerRef.current = setInterval(tick, 500);
       autosaveRef.current = setInterval(() => save(), AUTOSAVE_MS);
+      patch({ isStarting: false });
     } catch (e) {
+      // Cancelled (or superseded) while starting: cancelStart already cleaned up and set the message.
+      if (e instanceof StartCancelled || startTokenRef.current !== token) return;
       wantRecordingRef.current = false;
       socketRef.current?.close();
       socketRef.current = null;
@@ -693,19 +840,34 @@ export function useRecorder(opts: {
       const err = e as { name?: string; message?: string };
       const msg =
         err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
-          ? "Microphone access was denied. Allow microphone permission for this site, or tap “Try with sample audio”."
-          : `Recording error: ${err?.message || "Unknown error"}`;
-      patch({ statusMsg: msg, isRecording: false });
+          ? "Microphone access was denied. Allow microphone permission for this site in the browser settings, or tap “Try with sample audio”."
+          : err?.name === "NotReadableError"
+            ? "Another app is using the microphone (a call or voice recorder?). Close it and try again."
+            : err?.message?.startsWith("Failed to fetch") || err?.message === "Load failed"
+              ? "Network problem — check the connection and try again."
+              : `Recording error: ${err?.message || "Unknown error"}`;
+      patch({ statusMsg: msg, isRecording: false, isStarting: false });
+    } finally {
+      if (startTokenRef.current === token) startingRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.captureSystemAudio, opts.deviceId, opts.engine, opts.language, save]);
 
   // Save whatever we have if the page is closed mid-recording.
   useEffect(() => {
-    const onUnload = () => { if (wantRecordingRef.current) save(); };
+    const onUnload = () => { if (wantRecordingRef.current) save(undefined, true); };
     window.addEventListener("pagehide", onUnload);
     return () => window.removeEventListener("pagehide", onUnload);
   }, [save]);
 
-  return { ...state, start, stop, pause, resume };
+  // Leaving the Record screen (e.g. tapping "Meetings" in the tab bar) used to leave the mic and
+  // timers running with no Stop button. Stop and save instead; cancel a start in progress.
+  useEffect(() => {
+    return () => {
+      if (wantRecordingRef.current) stopRef.current();
+      else if (startingRef.current) cancelStart();
+    };
+  }, [cancelStart]);
+
+  return { ...state, start, stop, pause, resume, cancelStart };
 }

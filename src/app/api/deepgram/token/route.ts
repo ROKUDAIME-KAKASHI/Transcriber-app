@@ -27,7 +27,8 @@ export async function POST() {
     res = await fetch("https://api.deepgram.com/v1/auth/grant", {
       method: "POST",
       headers: { Authorization: `Token ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ ttl_seconds: 60 }),
+      body: JSON.stringify({ ttl_seconds: 120 }),
+      signal: AbortSignal.timeout(10_000),
       cache: "no-store",
     });
   } catch (err) {

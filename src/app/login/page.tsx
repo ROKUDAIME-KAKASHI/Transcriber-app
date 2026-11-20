@@ -106,7 +106,7 @@ export default function LoginPage() {
                 role="tab"
                 aria-selected={mode === m}
                 onClick={() => { setMode(m); setError(""); }}
-                className={`py-2 text-sm font-medium rounded-lg ${mode === m ? "bg-card shadow-card" : "text-muted-foreground"}`}
+                className={`min-h-11 py-2 text-sm font-medium rounded-lg ${mode === m ? "bg-card shadow-card" : "text-muted-foreground"}`}
               >
                 {m === "signin" ? "Sign in" : "Create account"}
               </button>

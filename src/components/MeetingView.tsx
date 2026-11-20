@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Markdown from "react-markdown";
@@ -34,14 +34,18 @@ function download(blob: Blob, filename: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  // Revoking straight away breaks downloads on iOS and Android WebViews.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 const card = "rounded-3xl border border-border bg-card shadow-card";
 const panelTitle = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
 const outlineBtn =
-  "inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 min-h-11 rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50";
 
 export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const router = useRouter();
@@ -50,10 +54,15 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [template, setTemplate] = useState(meeting.template ?? "MOM");
   const [docTemplate, setDocTemplate] = useState(meeting.template ?? "MOM");
-  const [document, setDocument] = useState(meeting.document);
+  const [doc, setDoc] = useState(meeting.document);
   const [tab, setTab] = useState<"document" | "transcript">(meeting.document ? "document" : "transcript");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
 
   const rawText = transcriptToText(meeting.transcript);
   const speakers = new Set(meeting.transcript.map((p) => p.speaker)).size;
@@ -82,55 +91,154 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
 
   const saveTitle = async () => {
     setEditingTitle(false);
+    setTitleError(null);
     const next = title.trim();
     if (!next || next === savedTitle) return setTitle(savedTitle);
-    await fetch(`/api/meetings/${meeting.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: next }),
-    });
-    setSavedTitle(next);
-    router.refresh();
+    try {
+      const res = await fetch(`/api/meetings/${meeting.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      setSavedTitle(next);
+      router.refresh();
+    } catch {
+      setTitle(savedTitle);
+      setTitleError("Couldn't rename the meeting. Check your connection and try again.");
+    }
   };
+
+  // Phones kill the request when the screen locks, but the server still finishes and saves the
+  // document. So after a network failure we poll the meeting until the new document shows up.
+  const prevDoc = useRef<string | null>(meeting.document);
+  const polling = useRef(false);
+  const pollDeadline = useRef(0);
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimer.current) clearInterval(pollTimer.current);
+    pollTimer.current = null;
+    polling.current = false;
+  }, []);
+
+  const checkForResult = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/meetings/${meeting.id}`, { cache: "no-store" });
+      if (!res.ok) return false;
+      const data = await res.json().catch(() => ({}));
+      const m = data?.meeting as { document?: string | null; template?: string | null } | undefined;
+      if (m?.document && m.document !== prevDoc.current) {
+        setDoc(m.document);
+        if (m.template) setDocTemplate(m.template);
+        setTab("document");
+        setStatus(null);
+        setError(null);
+        setBusy(false);
+        stopPolling();
+        return true;
+      }
+    } catch {
+      /* still offline: try again on the next tick */
+    }
+    return false;
+  }, [meeting.id, stopPolling]);
+
+  const startPolling = useCallback(() => {
+    if (polling.current) return;
+    polling.current = true;
+    pollDeadline.current = Date.now() + 4 * 60_000;
+    setStatus("Still working… checking for the result");
+    pollTimer.current = setInterval(async () => {
+      if (await checkForResult()) return;
+      if (Date.now() > pollDeadline.current) {
+        stopPolling();
+        setStatus(null);
+        setBusy(false);
+        setError("We couldn't get the result. Check your connection and try again.");
+      }
+    }, 4000);
+  }, [checkForResult, stopPolling]);
+
+  useEffect(() => stopPolling, [stopPolling]);
+
+  // Coming back to the app (screen unlocked): look for the result straight away.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && polling.current) void checkForResult();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [checkForResult]);
 
   const generate = async () => {
     setBusy(true);
     setError(null);
+    setStatus(null);
+    prevDoc.current = doc;
+    let res: Response;
     try {
-      const res = await fetch(`/api/meetings/${meeting.id}/process`, {
+      res = await fetch(`/api/meetings/${meeting.id}/process`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ template, model }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Processing failed");
-      setDocument(data.document);
+    } catch {
+      // Network error, e.g. "Failed to fetch" / "Load failed" after the screen locked.
+      startPolling();
+      return;
+    }
+    const data = (await res.json().catch(() => null)) as { document?: string; error?: string } | null;
+    if (res.ok && data?.document) {
+      setDoc(data.document);
       setDocTemplate(template);
       setTab("document");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Processing failed");
-    } finally {
       setBusy(false);
+      return;
     }
+    if (!data) {
+      // Not JSON (gateway page or a cut-off response): the server may still have finished.
+      startPolling();
+      return;
+    }
+    setError(
+      data.error ||
+        (res.status === 504 || res.status === 502
+          ? "The AI took too long or the server is busy. Try again, or pick GLM Flash."
+          : "Processing failed. Please try again.")
+    );
+    setBusy(false);
   };
 
   const remove = async () => {
-    if (!confirm("Delete this meeting and its transcript? This cannot be undone.")) return;
-    await fetch(`/api/meetings/${meeting.id}`, { method: "DELETE" });
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      setTimeout(() => setConfirmDelete(false), 4000);
+      return;
+    }
+    setConfirmDelete(false);
+    setError(null);
+    try {
+      const res = await fetch(`/api/meetings/${meeting.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+    } catch {
+      setError("Couldn't delete the meeting. Check your connection and try again.");
+      return;
+    }
     router.push("/meetings");
     router.refresh();
   };
 
   const docName = docTemplate === "Report" ? "Report" : "Minutes";
-  const showingDoc = tab === "document" && !!document;
-  const currentText = showingDoc ? document! : rawText;
+  const showingDoc = tab === "document" && !!doc;
+  const currentText = showingDoc ? doc! : rawText;
   const currentName = showingDoc ? docName : "Transcript";
 
   const exportTxt = () =>
     download(new Blob([currentText], { type: "text/plain;charset=utf-8" }), `${currentName}-${fileStamp()}.txt`);
 
   const exportWord = () => {
-    const el = window.document.getElementById("export-body");
+    const el = document.getElementById("export-body");
     const html = el ? el.innerHTML : currentText.replace(/\n/g, "<br>");
     const source =
       "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Export</title></head><body>" +
@@ -140,26 +248,37 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   };
 
   const exportPdf = async () => {
-    const el = window.document.getElementById("export-body");
+    const el = document.getElementById("export-body");
     if (!el) return;
-    const html2pdf = (await import("html2pdf.js")).default;
-    html2pdf()
-      .set({
-        margin: 0.75,
-        filename: `${currentName}-${fileStamp()}.pdf`,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
-      } as Record<string, unknown>)
-      .from(el)
-      .save();
+    setPdfBusy(true);
+    setExportError(null);
+    try {
+      const html2pdf = (await import("html2pdf.js")).default;
+      await html2pdf()
+        .set({
+          margin: 0.75,
+          filename: `${currentName}-${fileStamp()}.pdf`,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: window.innerWidth < 768 ? 1 : 2 },
+          jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
+        } as Record<string, unknown>)
+        .from(el)
+        .save();
+    } catch (e) {
+      console.error("PDF export failed:", e);
+      setExportError("Couldn't make the PDF. Try Word or TXT instead.");
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   const share = async () => {
+    setExportError(null);
     try {
       await navigator.share({ title, text: currentText });
-    } catch {
-      /* user cancelled */
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return; // user cancelled
+      setExportError("Couldn't share. Try TXT instead.");
     }
   };
 
@@ -212,6 +331,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
             </button>
           )}
         </div>
+        {titleError && <p className="mt-2 text-sm text-danger" role="alert">{titleError}</p>}
         <div className="mt-3 flex flex-wrap gap-2">
           <span className={chip} suppressHydrationWarning>
             <Calendar className="w-3.5 h-3.5" />
@@ -229,7 +349,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         {/* ---------- Side panel: AI + export ---------- */}
         {/* Phones: with a document, read it first and keep the AI panel below; without one, the panel leads. */}
-        <aside className={`space-y-4 lg:order-2 lg:sticky lg:top-10 ${document ? "max-lg:order-2" : ""}`}>
+        <aside className={`space-y-4 lg:order-2 lg:sticky lg:top-10 ${doc ? "max-lg:order-2" : ""}`}>
           <section className={`${card} p-5`} aria-label="AI document">
             <div className="flex items-center gap-2">
               <span className="w-8 h-8 rounded-xl bg-accent/10 text-accent grid place-items-center">
@@ -248,7 +368,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
                     aria-checked={template === t.value}
                     disabled={busy}
                     onClick={() => setTemplate(t.value)}
-                    className={`py-2 text-sm font-medium rounded-lg disabled:opacity-60 ${
+                    className={`min-h-11 py-2 text-sm font-medium rounded-lg disabled:opacity-60 ${
                       template === t.value ? "bg-card shadow-card" : "text-muted-foreground"
                     }`}
                   >
@@ -294,7 +414,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
               className="mt-5 w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold hover:opacity-95 disabled:opacity-50"
             >
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {busy ? "Writing… this can take a minute" : document ? "Regenerate" : "Generate"}
+              {busy ? (status ?? "Writing… this can take a minute") : doc ? "Regenerate" : "Generate"}
             </button>
             {meeting.transcript.length === 0 && (
               <p className="mt-2 text-xs text-muted-foreground">This meeting has no transcript to work from.</p>
@@ -302,7 +422,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
             {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
           </section>
 
-          <section className={`${card} p-5 ${document ? "" : "max-lg:hidden"}`} aria-label="Export">
+          <section className={`${card} p-5 ${doc ? "" : "max-lg:hidden"}`} aria-label="Export">
             <ExportButtons
               name={currentName}
               canShare={canShare}
@@ -310,15 +430,22 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
               onTxt={exportTxt}
               onWord={exportWord}
               onPdf={exportPdf}
+              pdfBusy={pdfBusy}
             />
-            <button onClick={remove} className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-danger hover:bg-danger/10">
-              <Trash2 className="w-4 h-4" /> Delete meeting
+            {exportError && <p className="mt-3 text-sm text-danger" role="alert">{exportError}</p>}
+            <button
+              onClick={remove}
+              className={`mt-4 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${
+                confirmDelete ? "bg-danger text-white" : "text-danger hover:bg-danger/10"
+              }`}
+            >
+              <Trash2 className="w-4 h-4" /> {confirmDelete ? "Tap again to delete" : "Delete meeting"}
             </button>
           </section>
         </aside>
 
         {/* ---------- Document / transcript ---------- */}
-        <div className={`min-w-0 space-y-4 lg:order-1 ${document ? "max-lg:order-1" : ""}`}>
+        <div className={`min-w-0 space-y-4 lg:order-1 ${doc ? "max-lg:order-1" : ""}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex gap-1 rounded-xl bg-muted p-1" role="tablist">
               {(["document", "transcript"] as const).map((t) => (
@@ -327,8 +454,8 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
                   role="tab"
                   aria-selected={tab === t}
                   onClick={() => setTab(t)}
-                  disabled={t === "document" && !document}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 ${
+                  disabled={t === "document" && !doc}
+                  className={`min-h-11 px-4 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 ${
                     tab === t ? "bg-card shadow-card" : "text-muted-foreground"
                   }`}
                 >
@@ -343,7 +470,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
             <div id="export-body">
               {showingDoc ? (
                 <article className="prose prose-stone dark:prose-invert max-w-none prose-headings:tracking-tight prose-h1:text-xl prose-h1:mt-8 first:prose-h1:mt-0 prose-h2:text-lg prose-table:text-sm prose-th:bg-muted/60 prose-th:px-3 prose-td:px-3 [&_table]:block [&_table]:overflow-x-auto">
-                  <Markdown remarkPlugins={[remarkGfm]}>{document!}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]}>{doc!}</Markdown>
                 </article>
               ) : meeting.transcript.length > 0 ? (
                 <TranscriptView parts={meeting.transcript} />
@@ -351,7 +478,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
                 <p className="text-muted-foreground text-sm">No transcript was captured.</p>
               )}
             </div>
-            {!document && meeting.transcript.length > 0 && (
+            {!doc && meeting.transcript.length > 0 && (
               <p className="mt-6 border-t border-border pt-4 text-sm text-muted-foreground">
                 Want minutes? Pick a type and model{" "}
                 <span className="lg:hidden">above</span>
@@ -361,7 +488,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
           </section>
 
           {/* Phones/tablets: export + delete below the content (only when the AI panel isn't below it) */}
-          <section className={`${card} p-5 lg:hidden ${document ? "hidden" : ""}`} aria-label="Export">
+          <section className={`${card} p-5 lg:hidden ${doc ? "hidden" : ""}`} aria-label="Export">
             <ExportButtons
               name={currentName}
               canShare={canShare}
@@ -369,9 +496,16 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
               onTxt={exportTxt}
               onWord={exportWord}
               onPdf={exportPdf}
+              pdfBusy={pdfBusy}
             />
-            <button onClick={remove} className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-danger hover:bg-danger/10">
-              <Trash2 className="w-4 h-4" /> Delete meeting
+            {exportError && <p className="mt-3 text-sm text-danger" role="alert">{exportError}</p>}
+            <button
+              onClick={remove}
+              className={`mt-4 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${
+                confirmDelete ? "bg-danger text-white" : "text-danger hover:bg-danger/10"
+              }`}
+            >
+              <Trash2 className="w-4 h-4" /> {confirmDelete ? "Tap again to delete" : "Delete meeting"}
             </button>
           </section>
         </div>
@@ -387,6 +521,7 @@ function ExportButtons(props: {
   onTxt: () => void;
   onWord: () => void;
   onPdf: () => void;
+  pdfBusy: boolean;
 }) {
   return (
     <>
@@ -395,7 +530,10 @@ function ExportButtons(props: {
         <span className="text-xs text-muted-foreground">{props.name}</span>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
-        <button onClick={props.onPdf} className={outlineBtn}><FileDown className="w-4 h-4" /> PDF</button>
+        <button onClick={props.onPdf} disabled={props.pdfBusy} className={outlineBtn}>
+          {props.pdfBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+          {props.pdfBusy ? "Preparing…" : "PDF"}
+        </button>
         <button onClick={props.onWord} className={outlineBtn}><FileType className="w-4 h-4" /> Word</button>
         <button onClick={props.onTxt} className={outlineBtn}><FileText className="w-4 h-4" /> TXT</button>
       </div>

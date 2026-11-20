@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { APICallError, RetryError, generateText } from "ai";
 import { z } from "zod";
 import { summaryModel } from "@/lib/ai";
 import { DEFAULT_SUMMARY_MODEL } from "@/lib/aiModels";
@@ -81,6 +81,24 @@ function unwrapFence(text: string): string {
   return m ? m[1] : text.trim();
 }
 
+/** Turn an AI provider failure into a friendly message and an HTTP status. */
+function aiFailure(error: unknown): { message: string; status: number } {
+  const root = RetryError.isInstance(error) && error.lastError ? error.lastError : error;
+  const name = root instanceof Error ? root.name : "";
+  if (name === "TimeoutError" || name === "AbortError") {
+    return { message: "The AI took too long. Try again, or pick GLM Flash.", status: 504 };
+  }
+  if (APICallError.isInstance(root)) {
+    const code = root.statusCode;
+    if (code === 402) return { message: "Your AI credits have run out. Top up at aicredits.in.", status: 402 };
+    if (code === 429) return { message: "The AI service is busy (too many requests at once). Try again in a minute.", status: 429 };
+    if (code === 401 || code === 403) return { message: "The AI key on the server is invalid.", status: 502 };
+    if (code === 408 || code === 504) return { message: "The AI took too long. Try again, or pick GLM Flash.", status: 504 };
+  }
+  const message = root instanceof Error ? root.message : "Unknown error";
+  return { message, status: 502 };
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getUserId();
   if (!userId) return unauthorized();
@@ -90,7 +108,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!parsed.success) return Response.json({ error: "Invalid template" }, { status: 400 });
   const { template, model } = parsed.data;
 
-  const meeting = await prisma.meeting.findFirst({ where: { id, userId } });
+  let meeting;
+  try {
+    meeting = await prisma.meeting.findFirst({ where: { id, userId } });
+  } catch (err) {
+    console.error("Process lookup error:", err);
+    return Response.json({ error: "The database is waking up. Try again in a few seconds." }, { status: 503 });
+  }
   if (!meeting) return Response.json({ error: "Meeting not found" }, { status: 404 });
 
   const parts = parseTranscript(meeting.transcript);
@@ -104,6 +128,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const result = await generateText({
       model: summaryModel(model),
       maxOutputTokens: 16000,
+      maxRetries: 1,
+      abortSignal: AbortSignal.timeout(240_000),
       system: PROMPTS[template] + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
       prompt: `Meeting: ${meeting.title}\nLength: ${Math.round(meeting.durationSec / 60)} min\n\nRaw transcript:\n\n${raw}`,
     });
@@ -114,7 +140,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return Response.json({ document, template });
   } catch (error) {
     console.error("Process error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return Response.json({ error: message }, { status: 500 });
+    const { message, status } = aiFailure(error);
+    return Response.json({ error: message }, { status });
   }
 }

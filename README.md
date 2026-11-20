@@ -152,8 +152,13 @@ next pause the finished phrase is transcribed once more and replaces the live te
   falls back to one core. If you ever add third-party scripts, images or iframes, they must send
   CORS/CORP headers or the browser will block them.
 - **Automatic downgrade**: the worker measures how long each phrase takes compared to its length.
-  If, after 3 phrases, it averages more than 0.8× real time, it downloads Tiny in the background
-  (Base keeps transcribing meanwhile), switches, and remembers the choice for that phone.
+  Ignoring the first 2 phrases (phones are slow while warming up), if 4 phrases average slower than
+  real time it downloads Tiny in the background (Base keeps transcribing meanwhile), switches, and
+  remembers the choice on that phone for 3 days, then tries Base again.
+- **Microphone settings**: echo cancellation and noise suppression are off. On phones they switch
+  the mic into "phone call" mode, which garbles words for speech recognition (and in meetings
+  would also cancel the other side's voice from the speaker). Auto gain is on only for Deepgram;
+  the on-device path normalises each phrase's loudness itself.
 - Phones reporting ≤2 GB RAM (Chrome on Android) start on Tiny straight away.
 - If phrases still pile up, the transcript shows "(transcribing… N phrases waiting)". Nothing is
   lost: when you tap Stop, the app finishes the queue before saving.
@@ -176,16 +181,35 @@ and the **direct** one in `DATABASE_URL_UNPOOLED` (Prisma uses it for `db push` 
 To work fully offline instead, run `docker compose up -d` (Postgres on port 5433) and set
 both variables to `postgresql://transcriber:transcriber_password@localhost:5433/transcriber_db`.
 
-### Test on your phone
+### Testing on a phone
 
-Browsers only allow the microphone on HTTPS (or localhost). Run
+Phones need an **https://** address: browsers block the microphone (and the audio processing the
+app uses) on plain `http://192.168.x.x`. The Record screen says so if you open it over http.
+
+**Easiest — a tunnel (trusted HTTPS, no warnings, works on mobile data too):**
 
 ```bash
-npm run dev:phone
+npm run dev          # terminal 1
+ngrok http 3001      # terminal 2 — open the https://….ngrok-free.app link on the phone
 ```
 
-then open `https://<your-PC's-LAN-IP>:3001` on a phone on the same Wi-Fi and accept the
-certificate warning. Set `NEXTAUTH_URL` to that same address.
+While the tunnel runs, anyone with the link can reach your dev server; stop it (Ctrl+C) when done.
+
+**Same Wi-Fi, no tunnel:**
+
+```bash
+npm run dev:phone    # https with a self-signed certificate
+```
+
+Open `https://<your-PC's-LAN-IP>:3001` on the phone and accept the certificate warning
+(Android: *Advanced → Proceed*; iPhone: *Show Details → visit this website*).
+
+Notes:
+- `next.config.ts` allows LAN addresses (`192.168.*.*`, `10.*.*.*`, `172.*.*.*`) and ngrok /
+  Cloudflare tunnel hosts in `allowedDevOrigins`. Next.js 16 otherwise blocks its dev scripts for
+  any host but localhost: the page shows, but **no button works**. If your network uses another
+  range, add it there and restart `npm run dev`.
+- Sign-in works on any of these addresses with `NEXTAUTH_URL=http://localhost:3001`.
 
 ## Install on a phone
 
