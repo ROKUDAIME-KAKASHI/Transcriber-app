@@ -2,7 +2,7 @@ import { formatDuration, type TranscriptPart } from "@/lib/transcript";
 
 /**
  * Transcript as a chat: one bubble per phrase.
- * With several speakers (older meetings recorded with speaker labels), even-numbered speakers
+ * With several speakers (cloud recordings, which label who is talking), even-numbered speakers
  * sit on the left and odd ones on the right, each with its own colour. With a single speaker
  * all bubbles sit on the left without names.
  */

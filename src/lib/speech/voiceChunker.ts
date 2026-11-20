@@ -81,6 +81,8 @@ export interface VoiceChunkerEvents {
   onSpeechChange?: (speaking: boolean) => void;
   /** Mic loudness for a level meter: RMS of the latest frame and the current speech threshold. */
   onLevel?: (rms: number, threshold: number) => void;
+  /** Every frame of filtered 16 kHz audio while not paused (used to stream to Deepgram). */
+  onAudio?: (samples16k: Float32Array) => void;
 }
 
 export class VoiceChunker {
@@ -140,6 +142,7 @@ export class VoiceChunker {
     if (this.paused) return;
     const samples = this.resampler.process(raw);
     if (samples.length === 0) return;
+    this.events.onAudio?.(samples);
     const at = this.heard;
     this.heard += samples.length;
     // Loudness is measured after filtering, so hum and DC offset don't count as speech.

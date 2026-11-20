@@ -5,21 +5,28 @@ import Link from "next/link";
 import { Mic, Square, Pause, Play, MessagesSquare, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { formatDuration } from "@/lib/transcript";
-import { WHISPER_LANGUAGES, type Engine } from "@/lib/speech/models";
+import { WHISPER_LANGUAGES } from "@/lib/speech/models";
+import type { RecordEngine } from "@/lib/speech/deepgram";
 import { TranscriptView } from "./TranscriptView";
 
 const MIC_KEY = "transcriber.micId";
 const ENGINE_KEY = "transcriber.engine";
 const LANG_KEY = "transcriber.language";
 
-const ENGINES: { value: Engine; label: string; hint: string }[] = [
+const ENGINES: { value: RecordEngine; label: string; hint: string }[] = [
   { value: "moonshine", label: "Fast · English", hint: "Moonshine: quick and light (~63 MB once). Best with clear, standard English." },
   {
     value: "whisper",
     label: "Accurate · Hindi too",
     hint: "Whisper: better with Indian accents, understands Hindi. ~77 MB once, slower, and live text updates less often.",
   },
+  {
+    value: "deepgram",
+    label: "Cloud · speakers",
+    hint: "Deepgram: live words, labels who is speaking, strong with Indian accents, Hindi and mixed speech. Needs internet; audio is sent to Deepgram and billed per minute.",
+  },
 ];
+const ON_DEVICE_NOTE = " Free, and your audio never leaves this device.";
 
 /** Saves a choice for next time on this device. */
 function choose<T extends string>(key: string, value: T, set: (v: T) => void) {
@@ -69,7 +76,7 @@ export function Recorder() {
   const [canCaptureSystem, setCanCaptureSystem] = useState(false);
   const [micId, setMicId] = useState("");
   const { mics, refresh: refreshMics } = useMicrophones();
-  const [engine, setEngine] = useState<Engine>("moonshine");
+  const [engine, setEngine] = useState<RecordEngine>("moonshine");
   const [language, setLanguage] = useState("en");
   const rec = useRecorder({ captureSystemAudio, deviceId: micId, engine, language });
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -80,7 +87,7 @@ export function Recorder() {
     try {
       setMicId(localStorage.getItem(MIC_KEY) ?? "");
       const savedEngine = localStorage.getItem(ENGINE_KEY);
-      if (savedEngine === "moonshine" || savedEngine === "whisper") setEngine(savedEngine);
+      if (savedEngine === "moonshine" || savedEngine === "whisper" || savedEngine === "deepgram") setEngine(savedEngine);
       const savedLang = localStorage.getItem(LANG_KEY);
       if (savedLang && WHISPER_LANGUAGES.some((l) => l.value === savedLang)) setLanguage(savedLang);
     } catch {
@@ -183,7 +190,7 @@ export function Recorder() {
         )}
 
         <div className="w-full max-w-sm">
-          <div className="grid grid-cols-2 p-1 bg-muted rounded-xl" role="radiogroup" aria-label="Speech model">
+          <div className="grid grid-cols-3 p-1 bg-muted rounded-xl" role="radiogroup" aria-label="Speech model">
             {ENGINES.map((e) => (
               <button
                 key={e.value}
@@ -191,7 +198,7 @@ export function Recorder() {
                 aria-checked={engine === e.value}
                 onClick={() => choose(ENGINE_KEY, e.value, setEngine)}
                 disabled={rec.isRecording}
-                className={`py-2 text-sm font-medium rounded-lg disabled:opacity-60 ${
+                className={`py-2 px-1 text-xs sm:text-sm font-medium rounded-lg disabled:opacity-60 ${
                   engine === e.value ? "bg-card shadow-sm" : "text-muted-foreground"
                 }`}
               >
@@ -200,12 +207,13 @@ export function Recorder() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-1.5">
-            {ENGINES.find((e) => e.value === engine)?.hint} Free, and your audio never leaves this device.
+            {ENGINES.find((e) => e.value === engine)?.hint}
+            {engine !== "deepgram" && ON_DEVICE_NOTE}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
-          {engine === "whisper" ? (
+          {engine !== "moonshine" ? (
             <select
               value={language}
               onChange={(e) => choose(LANG_KEY, e.target.value, setLanguage)}

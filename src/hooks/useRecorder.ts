@@ -3,11 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { detectDeviceName, type TranscriptPart } from "@/lib/transcript";
 import { loadSpeechModel, transcribePartial, transcribeSegment } from "@/lib/speech/client";
-import type { Engine, ModelName } from "@/lib/speech/models";
+import type { ModelName } from "@/lib/speech/models";
 import { VoiceChunker } from "@/lib/speech/voiceChunker";
 import { cleanPhrase } from "@/lib/speech/cleanText";
+import {
+  DEEPGRAM_SAMPLE_RATE, deepgramUrl, fetchDeepgramToken, floatToPcm16, speakerRuns,
+  type DeepgramMessage, type RecordEngine,
+} from "@/lib/speech/deepgram";
 
 const AUTOSAVE_MS = 5000;
+
+/** Deepgram: reconnect attempts after an unexpected drop, and how much audio to hold meanwhile. */
+const MAX_RECONNECTS = 3;
+const MAX_QUEUED_SECONDS = 30;
+/** Deepgram closes idle sockets after ~10 s without audio (e.g. while paused). */
+const KEEPALIVE_MS = 5000;
+/** A speaker's bubble is closed after this many characters even without a pause. */
+const MAX_BUBBLE_CHARS = 400;
 
 /**
  * "Try with sample audio": a short public-domain speech clip (JFK, 1961) fed into the
@@ -61,9 +73,9 @@ function levelFromRms(rms: number): number {
 
 export function useRecorder(opts: {
   captureSystemAudio: boolean;
-  /** "moonshine" (fast, English) or "whisper" (accents, Hindi). */
-  engine: Engine;
-  /** Whisper only: "en", "hi" or "auto". */
+  /** "moonshine" (fast, English), "whisper" (accents, Hindi) or "deepgram" (cloud, speaker labels). */
+  engine: RecordEngine;
+  /** Whisper and Deepgram: "en", "hi" or "auto". */
   language: string;
   /** Microphone to use (from enumerateDevices); empty = browser default. */
   deviceId?: string;
@@ -118,6 +130,21 @@ export function useRecorder(opts: {
   const lastLevelPaintRef = useRef(0);
   const quietSinceRef = useRef<number | null>(null);
   const noSoundRef = useRef(false);
+
+  // Deepgram (cloud)
+  const socketRef = useRef<WebSocket | null>(null);
+  const reconnectsRef = useRef(0);
+  const keepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** 16 kHz samples recorded so far (pauses excluded): the meeting clock for Deepgram. */
+  const heardRef = useRef(0);
+  /** Meeting time (in samples) where the current socket's audio starts; Deepgram times restart at 0 per socket. */
+  const socketOffsetRef = useRef(0);
+  /** Audio recorded while (re)connecting, sent once the socket opens. */
+  const queueRef = useRef<ArrayBuffer[]>([]);
+  const queueStartRef = useRef(0);
+  /** The last bubble can still grow (same speaker, no pause since). */
+  const openBubbleRef = useRef(false);
+  const stopRef = useRef<() => Promise<void>>(async () => {});
 
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
 
@@ -275,8 +302,174 @@ export function useRecorder(opts: {
     patch({ statusMsg: "Recording…", isRecording: true });
   };
 
+  // ---- Deepgram (cloud) ----------------------------------------------------
+  /** Adds a final Deepgram result: one bubble per speaker turn, growing until a pause. */
+  const appendDeepgram = (msg: DeepgramMessage) => {
+    const words = msg.channel?.alternatives?.[0]?.words ?? [];
+    const offsetSec = socketOffsetRef.current / DEEPGRAM_SAMPLE_RATE;
+    let parts = partsRef.current;
+    for (const run of speakerRuns(words)) {
+      const last = parts[parts.length - 1];
+      if (openBubbleRef.current && last && last.speaker === run.speaker && last.text.length < MAX_BUBBLE_CHARS) {
+        parts = [...parts.slice(0, -1), { ...last, text: `${last.text} ${run.text}` }];
+      } else {
+        parts = [...parts, { speaker: run.speaker, text: run.text, t: Math.round((offsetSec + run.start) * 10) / 10 }];
+      }
+      openBubbleRef.current = true;
+    }
+    if (msg.speech_final) openBubbleRef.current = false;
+    if (parts !== partsRef.current) {
+      partsRef.current = parts;
+      dirtyRef.current = true;
+    }
+    patch({ transcriptParts: partsRef.current, interimText: "", liveStatus: speakingRef.current ? "listening" : null });
+  };
+
+  const sendAudio = (samples: Float32Array) => {
+    const pcm = floatToPcm16(samples);
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(pcm);
+    } else if (wantRecordingRef.current) {
+      // Connecting or reconnecting: hold the audio (up to MAX_QUEUED_SECONDS) and send it on open.
+      if (queueRef.current.length === 0) queueStartRef.current = heardRef.current;
+      queueRef.current.push(pcm);
+      const maxBytes = MAX_QUEUED_SECONDS * DEEPGRAM_SAMPLE_RATE * 2;
+      let bytes = queueRef.current.reduce((n, b) => n + b.byteLength, 0);
+      while (bytes > maxBytes && queueRef.current.length > 1) {
+        const dropped = queueRef.current.shift()!;
+        bytes -= dropped.byteLength;
+        queueStartRef.current += dropped.byteLength / 2;
+      }
+    }
+    heardRef.current += samples.length;
+  };
+
+  /** Opens a socket; resolves once it is open, rejects if it fails before that. */
+  const openSocket = async (): Promise<void> => {
+    const token = await fetchDeepgramToken();
+    await new Promise<void>((resolve, reject) => {
+      const socket = new WebSocket(deepgramUrl(opts.language), ["bearer", token]);
+      socket.binaryType = "arraybuffer";
+      socketRef.current = socket;
+      let opened = false;
+
+      socket.onopen = () => {
+        opened = true;
+        reconnectsRef.current = 0;
+        openBubbleRef.current = false;
+        // Deepgram's times start at 0 for each socket; map them onto the meeting clock.
+        socketOffsetRef.current = queueRef.current.length ? queueStartRef.current : heardRef.current;
+        for (const buf of queueRef.current) socket.send(buf);
+        queueRef.current = [];
+        resolve();
+      };
+
+      socket.onmessage = (event) => {
+        if (typeof event.data !== "string") return;
+        let msg: DeepgramMessage;
+        try {
+          msg = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        if (msg.type === "UtteranceEnd") {
+          openBubbleRef.current = false;
+          return;
+        }
+        if (msg.type !== "Results") return;
+        if (msg.is_final) {
+          appendDeepgram(msg);
+        } else {
+          const text = msg.channel?.alternatives?.[0]?.transcript ?? "";
+          patch({ interimText: text, liveStatus: text ? null : speakingRef.current ? "listening" : null });
+        }
+      };
+
+      socket.onerror = () => console.error("Deepgram WebSocket error");
+
+      socket.onclose = (event) => {
+        if (socketRef.current === socket) socketRef.current = null;
+        if (!opened) {
+          reject(new Error(`Could not connect to Deepgram (code ${event.code}).`));
+          return;
+        }
+        if (!wantRecordingRef.current) return;
+        // Unexpected drop (network blip, Wi-Fi → mobile data): reconnect; audio queues meanwhile.
+        const retry = async () => {
+          while (wantRecordingRef.current && reconnectsRef.current < MAX_RECONNECTS) {
+            reconnectsRef.current += 1;
+            patch({ statusMsg: `Connection lost — reconnecting (${reconnectsRef.current}/${MAX_RECONNECTS})…` });
+            await new Promise((r) => setTimeout(r, 1000 * reconnectsRef.current));
+            if (!wantRecordingRef.current) return;
+            try {
+              await openSocket();
+              patch({ statusMsg: "Recording (cloud, speaker labels)…" });
+              return;
+            } catch {
+              /* try again */
+            }
+          }
+          if (wantRecordingRef.current) {
+            patch({ statusMsg: "Lost the connection to Deepgram. The transcript so far is saved." });
+            stopRef.current();
+          }
+        };
+        retry();
+      };
+    });
+  };
+
+  const startDeepgram = async () => {
+    const ctx = moonCtxRef.current;
+    const recordStream = recordStreamRef.current;
+    if (!ctx || !recordStream) return;
+    heardRef.current = 0;
+    queueRef.current = [];
+    reconnectsRef.current = 0;
+    openBubbleRef.current = false;
+    quietSinceRef.current = null;
+    noSoundRef.current = false;
+
+    patch({ statusMsg: "Connecting to Deepgram…" });
+    await openSocket();
+
+    const chunker = new VoiceChunker(ctx, {
+      onLevel: onMicLevel,
+      onAudio: sendAudio,
+      onSpeechChange: (speaking) => {
+        speakingRef.current = speaking;
+        setState((s) => (s.interimText ? s : { ...s, liveStatus: speaking ? "listening" : null }));
+      },
+      onSegment: () => {}, // Deepgram finds the phrases itself
+    });
+    await chunker.start(recordStream);
+    chunkerRef.current = chunker;
+    keepAliveRef.current = setInterval(() => {
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "KeepAlive" }));
+    }, KEEPALIVE_MS);
+    patch({ statusMsg: "Recording (cloud, speaker labels)…", isRecording: true });
+  };
+
+  /** Asks Deepgram for the last words, then closes the socket (waits at most 3 s). */
+  const closeDeepgram = async () => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    if (socket.readyState === WebSocket.OPEN) {
+      const closed = new Promise<void>((r) => socket.addEventListener("close", () => r(), { once: true }));
+      socket.send(JSON.stringify({ type: "CloseStream" }));
+      await Promise.race([closed, new Promise((r) => setTimeout(r, 3000))]);
+    }
+    socket.close();
+    socketRef.current = null;
+  };
+
   // ---- Start / stop ------------------------------------------------------
   const cleanupMedia = () => {
+    if (keepAliveRef.current) clearInterval(keepAliveRef.current);
+    keepAliveRef.current = null;
+    queueRef.current = [];
     const sample = sampleAudioRef.current;
     if (sample) {
       sample.onended = null;
@@ -320,6 +513,9 @@ export function useRecorder(opts: {
   const pause = () => {
     if (!wantRecordingRef.current || pausedAtRef.current !== null) return;
     chunkerRef.current?.pause(); // the phrase in progress is finished and kept
+    // Deepgram: get the words heard so far now, instead of after the break. KeepAlive holds the socket.
+    if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "Finalize" }));
+    openBubbleRef.current = false;
     pausedAtRef.current = Date.now();
     patch({ isPaused: true, micLevel: 0, noSound: false, statusMsg: "Paused — nothing is being transcribed." });
     save();
@@ -338,6 +534,13 @@ export function useRecorder(opts: {
     wantRecordingRef.current = false;
     secondsRef.current = elapsedSeconds();
     chunkerRef.current?.flush(); // send the phrase that was mid-way when Stop was tapped
+    if (socketRef.current) {
+      // Deepgram: stop sending audio, then wait for the last words before closing.
+      chunkerRef.current?.stop();
+      chunkerRef.current = null;
+      patch({ statusMsg: "Finishing transcription…" });
+      await closeDeepgram();
+    }
     cleanupMedia();
     if (pausedAtRef.current !== null) {
       pausedMsRef.current += Date.now() - pausedAtRef.current;
@@ -351,9 +554,10 @@ export function useRecorder(opts: {
     if (pendingSegmentsRef.current.size) patch({ statusMsg: "Finishing transcription…" });
     await Promise.all([...pendingSegmentsRef.current]);
     await save("DONE");
-    patch({ statusMsg: "Saved to your account.", liveStatus: null, backlog: 0 });
+    patch({ statusMsg: "Saved to your account.", interimText: "", liveStatus: null, backlog: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save]);
+  stopRef.current = stop;
 
   /** Builds a MediaStream from the sample clip; it's also played out loud so you can follow along. */
   const createSampleStream = async (ctx: AudioContext): Promise<MediaStream> => {
@@ -434,24 +638,26 @@ export function useRecorder(opts: {
       }
       recordStreamRef.current = recordStream;
 
-      // First use downloads the model (tens of MB); after that it loads from the browser cache.
-      patch({ statusMsg: "Loading speech model…" });
-      const language = opts.engine === "whisper" ? opts.language : "en";
-      const { model } = await loadSpeechModel(opts.engine, language, (pct) => patch({ statusMsg: `Downloading speech model… ${pct}%` }), {
-        onModelChange: (m) => {
-          const hadPreviews = previewIntervalRef.current !== null;
-          previewIntervalRef.current = previewIntervalFor(m);
-          // Lighter model allows live previews again: restart them.
-          if (!hadPreviews && previewIntervalRef.current !== null && chunkerRef.current) {
-            previewTimerRef.current = setTimeout(previewTick, previewIntervalRef.current);
-          }
-          if (wantRecordingRef.current) {
-            patch({ statusMsg: "Recording — switched to the faster model for this phone…" });
-          }
-        },
-      });
-
-      previewIntervalRef.current = previewIntervalFor(model);
+      const engine = opts.engine;
+      const language = engine === "moonshine" ? "en" : opts.language;
+      if (engine !== "deepgram") {
+        // First use downloads the model (tens of MB); after that it loads from the browser cache.
+        patch({ statusMsg: "Loading speech model…" });
+        const { model } = await loadSpeechModel(engine, language, (pct) => patch({ statusMsg: `Downloading speech model… ${pct}%` }), {
+          onModelChange: (m) => {
+            const hadPreviews = previewIntervalRef.current !== null;
+            previewIntervalRef.current = previewIntervalFor(m);
+            // Lighter model allows live previews again: restart them.
+            if (!hadPreviews && previewIntervalRef.current !== null && chunkerRef.current) {
+              previewTimerRef.current = setTimeout(previewTick, previewIntervalRef.current);
+            }
+            if (wantRecordingRef.current) {
+              patch({ statusMsg: "Recording — switched to the faster model for this phone…" });
+            }
+          },
+        });
+        previewIntervalRef.current = previewIntervalFor(model);
+      }
 
       patch({ statusMsg: "Creating meeting…" });
       const res = await fetch("/api/meetings", {
@@ -472,7 +678,8 @@ export function useRecorder(opts: {
 
       wantRecordingRef.current = true;
       await acquireWakeLock();
-      await startMoonshine();
+      if (engine === "deepgram") await startDeepgram();
+      else await startMoonshine();
       playSampleIfAny();
 
       startedAtRef.current = Date.now();
@@ -480,6 +687,8 @@ export function useRecorder(opts: {
       autosaveRef.current = setInterval(() => save(), AUTOSAVE_MS);
     } catch (e) {
       wantRecordingRef.current = false;
+      socketRef.current?.close();
+      socketRef.current = null;
       cleanupMedia();
       const err = e as { name?: string; message?: string };
       const msg =

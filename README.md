@@ -18,8 +18,18 @@ It started as part of Life OS and is now its own repository, with its own
     1.5 s or so, and a phrase's final text lands a few seconds after the pause.
 
   Both run in the browser via Transformers.js: no API cost, and audio never leaves the device.
-  No speaker labels. (Deepgram cloud transcription was removed; older meetings recorded with it
-  still open normally, with their speaker labels.)
+  No speaker labels.
+- **Optional cloud transcription with speaker labels**: **Cloud · speakers** uses
+  [Deepgram](https://deepgram.com) Nova-3 over a live WebSocket. It labels who is talking
+  ("Speaker 1", "Speaker 2"…), is strong with Indian accents, Hindi and mixed Hindi-English
+  ("Auto" = Nova-3's `multi` mode), and needs no model download. It is paid per minute (new
+  Deepgram accounts get free credit) and sends audio to Deepgram. Set `DEEPGRAM_API_KEY` on the
+  server with a key that has the **Member** role or higher: the server swaps it for a 60-second
+  token (`/api/deepgram/token`), so the key itself never reaches the browser. Audio goes through
+  the same filter/resampler and is streamed as 16 kHz PCM, so the level meter, no-sound warning,
+  pause (with KeepAlive) and timestamps work the same. If the connection drops, the app
+  reconnects up to 3 times and holds up to 30 s of audio meanwhile. The AI minutes attribute
+  decisions and action items to speakers when labels are present.
 - **Live chat view**: the transcript is shown as chat bubbles, one per phrase, both while
   recording and on saved meetings. Words still being spoken appear in a faded bubble with
   typing dots.
