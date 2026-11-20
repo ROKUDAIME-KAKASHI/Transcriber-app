@@ -9,3 +9,6 @@ next-env.d.ts
 .neon
 # copied from node_modules on install (scripts/copy-ort.mjs)
 public/ort/
+
+# Built APKs for sharing
+dist/

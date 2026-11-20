@@ -239,6 +239,15 @@ cd android && ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Shareable (signed) APK: `android/keystore.properties` (not in git) points at the release keystore
+and its password. Keep a backup of both: without them, a new version can't be installed over the old one.
+
+```bash
+CAP_SERVER_URL=https://transcriber-app-ten.vercel.app npx cap sync android
+cd android && ./gradlew assembleRelease
+# → android/app/build/outputs/apk/release/app-release.apk
+```
+
 For a long meeting, allow **Unrestricted** battery use when the app asks (Xiaomi, Oppo, Vivo,
 Realme and Samsung battery savers otherwise stop background apps). During a phone call Android
 gives the microphone to the call; recording continues after it.
