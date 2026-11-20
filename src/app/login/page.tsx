@@ -3,7 +3,8 @@
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Mic, AudioLines, Users, Sparkles } from "lucide-react";
+import { Mic, AudioLines, Users, FileText } from "lucide-react";
+import { Button, FieldLabel, Segmented, inputCls } from "@/components/ui";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "register">("signin");
@@ -31,7 +32,7 @@ export default function LoginPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) return setError(data.error || "Failed to create account.");
       }
 
@@ -49,94 +50,103 @@ export default function LoginPage() {
     }
   };
 
-  const input =
-    "w-full rounded-2xl border border-border bg-background px-4 py-3 text-base outline-none focus:border-accent";
+  const features = [
+    { icon: Mic, title: "Record on any device", text: "Phone or laptop. On-device transcription is free and private." },
+    { icon: Users, title: "Know who said what", text: "Cloud mode labels each speaker, with Hindi and Indian accents." },
+    { icon: FileText, title: "Minutes in one step", text: "Decisions and action items, ready to export to PDF or Word." },
+  ];
 
   return (
-    <div className="min-h-dvh grid lg:grid-cols-2">
-      {/* Brand panel (laptops) */}
-      <aside className="hidden lg:flex flex-col justify-between bg-accent text-accent-foreground p-12 xl:p-16 relative overflow-hidden">
-        <div className="absolute -right-24 -top-24 w-96 h-96 rounded-full bg-white/10" aria-hidden />
-        <div className="absolute -left-16 bottom-10 w-72 h-72 rounded-full bg-white/5" aria-hidden />
-        <div className="relative flex items-center gap-2.5 text-lg font-semibold">
-          <span className="w-9 h-9 rounded-xl bg-white/15 grid place-items-center"><AudioLines className="w-5 h-5" /></span>
+    <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      {/* About (laptops) */}
+      <aside className="hidden flex-col justify-between border-r border-border bg-card px-12 py-10 lg:flex xl:px-16">
+        <div className="flex items-center gap-2.5 text-ui font-semibold tracking-tight">
+          <span className="grid h-7 w-7 place-items-center rounded-lg bg-foreground text-background">
+            <AudioLines className="h-4 w-4" />
+          </span>
           Transcriber
         </div>
-        <div className="relative max-w-md">
-          <h2 className="text-4xl font-bold tracking-tight leading-tight">Every meeting, written up for you.</h2>
-          <ul className="mt-8 space-y-4 text-base">
-            {[
-              [Mic, "Live transcript on your phone or laptop: free and on-device, or in the cloud."],
-              [Users, "Cloud mode tells speakers apart, with Hindi and Indian accents."],
-              [Sparkles, "One tap for Minutes of Meeting or a Report, then export to PDF or Word."],
-            ].map(([Icon, text], i) => {
-              const I = Icon as typeof Mic;
-              return (
-                <li key={i} className="flex gap-3">
-                  <span className="w-8 h-8 shrink-0 rounded-lg bg-white/15 grid place-items-center"><I className="w-4 h-4" /></span>
-                  <span className="opacity-90 pt-1">{text as string}</span>
-                </li>
-              );
-            })}
+        <div className="max-w-md">
+          <h2 className="text-[2rem] font-semibold leading-tight tracking-tight">
+            Record the meeting. Get the transcript and the minutes.
+          </h2>
+          <ul className="mt-10 space-y-6">
+            {features.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="flex gap-4">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span>
+                  <span className="block text-ui font-medium">{title}</span>
+                  <span className="mt-0.5 block text-meta text-muted-foreground">{text}</span>
+                </span>
+              </li>
+            ))}
           </ul>
         </div>
-        <p className="relative text-sm opacity-70">Your recordings sync across all your devices.</p>
+        <p className="text-meta text-muted-foreground">Your meetings sync across all your devices.</p>
       </aside>
 
       {/* Form */}
-      <main className="grid place-items-center p-4 sm:p-8">
+      <main className="grid place-items-center px-4 py-10 sm:px-8">
         <div className="w-full max-w-sm">
-          <div className="flex flex-col items-center lg:items-start mb-8">
-            <div className="lg:hidden w-12 h-12 rounded-2xl bg-accent text-accent-foreground grid place-items-center mb-4 shadow-card">
-              <AudioLines className="w-6 h-6" />
+          <div className="mb-8 flex items-center gap-2.5 text-ui font-semibold tracking-tight lg:hidden">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-foreground text-background">
+              <AudioLines className="h-4 w-4" />
+            </span>
+            Transcriber
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">{mode === "signin" ? "Sign in" : "Create your account"}</h1>
+          <p className="mt-1.5 text-ui text-muted-foreground">
+            {mode === "signin" ? "Welcome back. Your meetings are waiting." : "Free to start. Record your first meeting in a minute."}
+          </p>
+
+          <Segmented
+            className="mt-6"
+            label="Account"
+            value={mode}
+            onChange={(m) => {
+              setMode(m);
+              setError("");
+            }}
+            options={[
+              { value: "signin", label: "Sign in" },
+              { value: "register", label: "Create account" },
+            ]}
+          />
+
+          <form onSubmit={submit} className="mt-6 space-y-4">
+            <div>
+              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <input id="email" className={inputCls} type="email" placeholder="you@example.com" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-              {mode === "signin" ? "Welcome back" : "Create your account"}
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1.5">
-              {mode === "signin" ? "Sign in to see your meetings." : "Free to start. Record your first meeting in a minute."}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 p-1 bg-muted rounded-xl mb-5" role="tablist">
-            {(["signin", "register"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                role="tab"
-                aria-selected={mode === m}
-                onClick={() => { setMode(m); setError(""); }}
-                className={`min-h-11 py-2 text-sm font-medium rounded-lg ${mode === m ? "bg-card shadow-card" : "text-muted-foreground"}`}
-              >
-                {m === "signin" ? "Sign in" : "Create account"}
-              </button>
-            ))}
-          </div>
-
-          <form onSubmit={submit} className="space-y-3">
-            <label className="block">
-              <span className="block text-sm font-medium mb-1.5">Email</span>
-              <input className={input} type="email" placeholder="you@example.com" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-            </label>
-            <label className="block">
-              <span className="block text-sm font-medium mb-1.5">Password</span>
-              <input className={input} type="password" placeholder={mode === "register" ? "At least 6 characters" : "Your password"} autoComplete={mode === "signin" ? "current-password" : "new-password"} required value={password} onChange={(e) => setPassword(e.target.value)} />
-            </label>
+            <div>
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <input
+                id="password"
+                className={inputCls}
+                type="password"
+                placeholder={mode === "register" ? "At least 6 characters" : "Your password"}
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
             {mode === "register" && (
-              <label className="block">
-                <span className="block text-sm font-medium mb-1.5">Confirm password</span>
-                <input className={input} type="password" placeholder="Type it again" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-              </label>
+              <div>
+                <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
+                <input id="confirm" className={inputCls} type="password" placeholder="Type it again" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              </div>
             )}
-            {error && <p className="text-sm text-danger" role="alert">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              className="!mt-5 w-full rounded-2xl bg-accent text-accent-foreground py-3 font-semibold flex items-center justify-center gap-2 shadow-card hover:opacity-95 disabled:opacity-60"
-            >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {error && (
+              <p className="text-meta text-danger" role="alert">
+                {error}
+              </p>
+            )}
+            <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full">
               {mode === "signin" ? "Sign in" : "Create account"}
-            </button>
+            </Button>
           </form>
         </div>
       </main>

@@ -6,7 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { parseTranscript, transcriptToText } from "@/lib/transcript";
 
-// Long meetings make long prompts; give the model time (Vercel allows up to 300 s).
+// Long meetings take several AI calls. 300 s is the most every Vercel plan allows; if the platform cuts
+// the request off, the meeting page keeps checking and shows the document once it has been saved.
 export const maxDuration = 300;
 
 /**
@@ -75,6 +76,58 @@ const Body = z.object({
   model: z.enum(["glm", "haiku"]).default(DEFAULT_SUMMARY_MODEL),
 });
 
+/**
+ * Long meetings (hours) are summarised in two steps: detailed notes per part, then the document
+ * from those notes. One request with a 10-hour transcript (~100k words) is slow, can time out,
+ * and models lose detail in the middle of very long inputs.
+ */
+const LONG_MEETING_WORDS = 18_000;
+const CHUNK_WORDS = 12_000;
+/** AICredits rejects too many simultaneous requests ("Concurrency Limit Exceeded"). */
+const CHUNK_CONCURRENCY = 2;
+
+const NOTES_PROMPT = `You are taking detailed notes on ONE PART of a long meeting transcript (lines start with [hh:mm:ss] times; "Speaker N:" labels when present).
+Write concise Markdown notes for this part only, keeping the times in brackets:
+- Topics discussed, with the key points and figures exactly as said
+- Decisions made
+- Action items (task, owner if stated, deadline if stated)
+- Open questions or disagreements
+Fix obviously misheard words only when clear from context; never invent content. Write in English (quote Hindi only where wording matters).`;
+
+type Parts = ReturnType<typeof parseTranscript>;
+
+function splitIntoChunks(parts: Parts): Parts[] {
+  const chunks: Parts[] = [];
+  let current: Parts = [];
+  let words = 0;
+  for (const p of parts) {
+    const n = p.text.split(/\s+/).length;
+    if (words + n > CHUNK_WORDS && current.length) {
+      chunks.push(current);
+      current = [];
+      words = 0;
+    }
+    current.push(p);
+    words += n;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i], i);
+      }
+    })
+  );
+  return out;
+}
+
 /** Strip a ```markdown fence if the model wraps its whole answer in one. */
 function unwrapFence(text: string): string {
   const m = text.trim().match(/^```(?:markdown|md)?\n([\s\S]*?)\n?```$/);
@@ -125,13 +178,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!raw.trim()) return Response.json({ error: "This meeting has no transcript yet." }, { status: 400 });
 
   try {
+    const header = `Meeting: ${meeting.title}\nLength: ${Math.round(meeting.durationSec / 60)} min`;
+    let prompt = `${header}\n\nRaw transcript:\n\n${raw}`;
+    if (words > LONG_MEETING_WORDS) {
+      // Step 1: detailed notes per part (in order), a couple at a time.
+      const chunks = splitIntoChunks(parts);
+      const multiSpeaker = new Set(parts.map((p) => p.speaker)).size > 1;
+      const notes = await mapLimit(chunks, CHUNK_CONCURRENCY, async (chunk, i) => {
+        const r = await generateText({
+          model: summaryModel(model),
+          maxOutputTokens: 4000,
+          maxRetries: 2,
+          abortSignal: AbortSignal.timeout(180_000),
+          system: NOTES_PROMPT,
+          prompt: `Part ${i + 1} of ${chunks.length}${multiSpeaker ? " (speaker labels are consistent across parts)" : ""}:\n\n${transcriptToText(chunk)}`,
+        });
+        return `## Part ${i + 1} of ${chunks.length}\n\n${r.text.trim()}`;
+      });
+      // Step 2: the document, written from the notes.
+      prompt = `${header}\n\nThe transcript was too long to include, so here are detailed notes taken from each consecutive part of it (times are into the meeting). Write the document from these notes; merge topics that span parts.\n\n${notes.join("\n\n")}`;
+    }
     const result = await generateText({
       model: summaryModel(model),
       maxOutputTokens: 16000,
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(240_000),
       system: PROMPTS[template] + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
-      prompt: `Meeting: ${meeting.title}\nLength: ${Math.round(meeting.durationSec / 60)} min\n\nRaw transcript:\n\n${raw}`,
+      prompt,
     });
     const document = unwrapFence(result.text);
     if (!document) throw new Error("The AI returned an empty response.");

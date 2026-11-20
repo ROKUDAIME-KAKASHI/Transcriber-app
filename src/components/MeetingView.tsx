@@ -6,12 +6,13 @@ import Link from "next/link";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  ArrowLeft, Loader2, Pencil, Share2, Sparkles, Trash2, Check, X, Calendar, Clock, Monitor, Smartphone,
-  FileText, FileType, FileDown, Users, Radio,
+  ArrowLeft, Pencil, Share2, Sparkles, Trash2, Check, X, Calendar, Clock, Monitor, Smartphone, FileText, FileType,
+  FileDown, Users,
 } from "lucide-react";
 import { TEMPLATES, formatDuration, transcriptToText, type TranscriptPart } from "@/lib/transcript";
 import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/aiModels";
 import { TranscriptView } from "./TranscriptView";
+import { Badge, Button, FieldLabel, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
 
 export interface MeetingData {
   id: string;
@@ -42,10 +43,6 @@ function download(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-const card = "rounded-3xl border border-border bg-card shadow-card";
-const panelTitle = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
-const outlineBtn =
-  "inline-flex items-center justify-center gap-2 min-h-11 rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50";
 
 export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const router = useRouter();
@@ -147,7 +144,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const startPolling = useCallback(() => {
     if (polling.current) return;
     polling.current = true;
-    pollDeadline.current = Date.now() + 4 * 60_000;
+    pollDeadline.current = Date.now() + 15 * 60_000; // long meetings are summarised in several steps
     setStatus("Still working… checking for the result");
     pollTimer.current = setInterval(async () => {
       if (await checkForResult()) return;
@@ -237,9 +234,29 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const exportTxt = () =>
     download(new Blob([currentText], { type: "text/plain;charset=utf-8" }), `${currentName}-${fileStamp()}.txt`);
 
-  const exportWord = () => {
+  /**
+   * HTML for Word/PDF. The transcript view only draws part of a long meeting, so transcript
+   * exports are built from the full data instead of copying what's on screen.
+   */
+  const exportHtml = (): string => {
     const el = document.getElementById("export-body");
-    const html = el ? el.innerHTML : currentText.replace(/\n/g, "<br>");
+    if (showingDoc && el) return el.innerHTML;
+    const esc = (t: string) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
+    const multi = speakers > 1;
+    return (
+      `<h1 style="font-size:18pt">${esc(title)}</h1>` +
+      meeting.transcript
+        .map((p) => {
+          const time = typeof p.t === "number" ? `<span style="color:#666">[${formatDuration(Math.floor(p.t))}]</span> ` : "";
+          const who = multi ? `<strong>Speaker ${p.speaker + 1}:</strong> ` : "";
+          return `<p style="margin:0 0 6pt">${time}${who}${esc(p.text)}</p>`;
+        })
+        .join("")
+    );
+  };
+
+  const exportWord = () => {
+    const html = exportHtml();
     const source =
       "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Export</title></head><body>" +
       html +
@@ -248,8 +265,6 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   };
 
   const exportPdf = async () => {
-    const el = document.getElementById("export-body");
-    if (!el) return;
     setPdfBusy(true);
     setExportError(null);
     try {
@@ -262,7 +277,11 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
           html2canvas: { scale: window.innerWidth < 768 ? 1 : 2 },
           jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
         } as Record<string, unknown>)
-        .from(el)
+        .from(
+          Object.assign(document.createElement("div"), {
+            innerHTML: `<div style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.5;color:#111">${exportHtml()}</div>`,
+          })
+        )
         .save();
     } catch (e) {
       console.error("PDF export failed:", e);
@@ -284,16 +303,45 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
 
   const isPhone = /iPhone|iPad|Android/i.test(meeting.deviceName ?? "");
   const DeviceIcon = isPhone ? Smartphone : Monitor;
-  const chip = "inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground";
+  const hasTranscript = meeting.transcript.length > 0;
+
+  const deleteButton = (
+    <Button
+      variant={confirmDelete ? "danger-solid" : "danger"}
+      className="w-full"
+      icon={<Trash2 className="h-4 w-4" />}
+      onClick={remove}
+    >
+      {confirmDelete ? "Tap again to delete" : "Delete meeting"}
+    </Button>
+  );
+
+  const exportPanel = (
+    <Panel className="p-5" aria-label="Export">
+      <ExportButtons
+        name={currentName}
+        canShare={canShare}
+        onShare={share}
+        onTxt={exportTxt}
+        onWord={exportWord}
+        onPdf={exportPdf}
+        pdfBusy={pdfBusy}
+      />
+      {exportError && <p className="mt-3 text-meta text-danger" role="alert">{exportError}</p>}
+      <div className="mt-4 border-t border-border pt-4">{deleteButton}</div>
+    </Panel>
+  );
+
+  const docWord = template === "Report" ? "report" : "minutes";
 
   return (
-    <div className="space-y-6">
+    <div>
       {/* ---------- Header ---------- */}
-      <header>
-        <Link href="/meetings" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="w-4 h-4" /> Meetings
+      <header className="mb-6 sm:mb-8">
+        <Link href="/meetings" className="inline-flex min-h-10 items-center gap-1.5 text-meta font-medium text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Meetings
         </Link>
-        <div className="mt-3">
+        <div className="mt-1">
           {editingTitle ? (
             <div className="flex gap-2">
               <input
@@ -308,207 +356,150 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
                   }
                 }}
                 aria-label="Meeting title"
-                className="flex-1 min-w-0 rounded-2xl border border-accent bg-card px-4 py-2.5 text-xl font-semibold outline-none"
+                className={cx(inputCls, "text-xl font-semibold sm:text-xl")}
               />
-              <button onClick={saveTitle} className={outlineBtn} aria-label="Save title"><Check className="w-4 h-4" /></button>
-              <button
+              <Button onClick={saveTitle} aria-label="Save title" icon={<Check className="h-4 w-4" />} />
+              <Button
                 onClick={() => {
                   setTitle(savedTitle);
                   setEditingTitle(false);
                 }}
-                className={outlineBtn}
                 aria-label="Cancel"
-              >
-                <X className="w-4 h-4" />
-              </button>
+                icon={<X className="h-4 w-4" />}
+              />
             </div>
           ) : (
-            <button onClick={() => setEditingTitle(true)} className="group text-left" title="Rename">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight break-words">
+            <button onClick={() => setEditingTitle(true)} className="group -mx-1 rounded-lg px-1 text-left" title="Rename">
+              <h1 className="break-words text-2xl font-semibold tracking-tight sm:text-[1.75rem] sm:leading-tight">
                 {title}
-                <Pencil className="inline w-4 h-4 ml-2 align-middle text-muted-foreground opacity-50 group-hover:opacity-100" />
+                <Pencil className="ml-2 inline h-4 w-4 align-middle text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 max-lg:opacity-60" />
               </h1>
             </button>
           )}
         </div>
-        {titleError && <p className="mt-2 text-sm text-danger" role="alert">{titleError}</p>}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className={chip} suppressHydrationWarning>
-            <Calendar className="w-3.5 h-3.5" />
+        {titleError && <p className="mt-2 text-meta text-danger" role="alert">{titleError}</p>}
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-meta text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5" suppressHydrationWarning>
+            <Calendar className="h-3.5 w-3.5" />
             {new Date(meeting.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
           </span>
-          <span className={`${chip} tabular-nums`}><Clock className="w-3.5 h-3.5" /> {formatDuration(meeting.durationSec)}</span>
-          {speakers > 1 && <span className={chip}><Users className="w-3.5 h-3.5" /> {speakers} speakers</span>}
-          {meeting.deviceName && <span className={chip}><DeviceIcon className="w-3.5 h-3.5" /> {meeting.deviceName}</span>}
+          <span className="inline-flex items-center gap-1.5 tabular-nums">
+            <Clock className="h-3.5 w-3.5" /> {formatDuration(meeting.durationSec)}
+          </span>
+          <span className="tabular-nums">{words.toLocaleString("en-IN")} words</span>
+          {speakers > 1 && (
+            <span className="inline-flex items-center gap-1.5">
+              <Users className="h-3.5 w-3.5" /> {speakers} speakers
+            </span>
+          )}
+          {meeting.deviceName && (
+            <span className="inline-flex items-center gap-1.5">
+              <DeviceIcon className="h-3.5 w-3.5" /> {meeting.deviceName}
+            </span>
+          )}
           {meeting.status === "RECORDING" && (
-            <span className={`${chip} bg-danger/10 text-danger`}><Radio className="w-3.5 h-3.5" /> Still recording on a device</span>
+            <Badge tone="live">
+              <LiveDot /> Still recording on a device
+            </Badge>
           )}
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-        {/* ---------- Side panel: AI + export ---------- */}
-        {/* Phones: with a document, read it first and keep the AI panel below; without one, the panel leads. */}
-        <aside className={`space-y-4 lg:order-2 lg:sticky lg:top-10 ${doc ? "max-lg:order-2" : ""}`}>
-          <section className={`${card} p-5`} aria-label="AI document">
-            <div className="flex items-center gap-2">
-              <span className="w-8 h-8 rounded-xl bg-accent/10 text-accent grid place-items-center">
-                <Sparkles className="w-4 h-4" />
-              </span>
-              <h2 className="font-semibold">AI document</h2>
-            </div>
-
-            <div className="mt-4">
-              <span className={panelTitle}>Type</span>
-              <div className="mt-2 grid grid-cols-2 p-1 bg-muted rounded-xl" role="radiogroup" aria-label="Document type">
-                {TEMPLATES.map((t) => (
-                  <button
-                    key={t.value}
-                    role="radio"
-                    aria-checked={template === t.value}
-                    disabled={busy}
-                    onClick={() => setTemplate(t.value)}
-                    className={`min-h-11 py-2 text-sm font-medium rounded-lg disabled:opacity-60 ${
-                      template === t.value ? "bg-card shadow-card" : "text-muted-foreground"
-                    }`}
-                  >
-                    {t.value === "MOM" ? "Minutes" : t.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-4" role="radiogroup" aria-label="AI model">
-              <span className={panelTitle}>AI model</span>
-              <div className="mt-2 grid gap-2">
-                {SUMMARY_MODELS.map((m) => {
-                  const on = model === m.value;
-                  const [name, tier] = [m.label.split(" · ")[1], m.label.split(" · ")[0]];
-                  return (
-                    <button
-                      key={m.value}
-                      role="radio"
-                      aria-checked={on}
-                      disabled={busy}
-                      onClick={() => chooseModel(m.value)}
-                      className={`rounded-2xl border px-3.5 py-3 text-left transition-colors disabled:opacity-60 ${
-                        on ? "border-accent bg-accent/8" : "border-border hover:bg-muted"
-                      }`}
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold">{name}</span>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider ${on ? "text-accent" : "text-muted-foreground"}`}>
-                          {tier}
-                        </span>
-                      </span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground leading-relaxed">{m.hint}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <button
-              onClick={generate}
-              disabled={busy || meeting.transcript.length === 0}
-              className="mt-5 w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold hover:opacity-95 disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {busy ? (status ?? "Writing… this can take a minute") : doc ? "Regenerate" : "Generate"}
-            </button>
-            {meeting.transcript.length === 0 && (
-              <p className="mt-2 text-xs text-muted-foreground">This meeting has no transcript to work from.</p>
-            )}
-            {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
-          </section>
-
-          <section className={`${card} p-5 ${doc ? "" : "max-lg:hidden"}`} aria-label="Export">
-            <ExportButtons
-              name={currentName}
-              canShare={canShare}
-              onShare={share}
-              onTxt={exportTxt}
-              onWord={exportWord}
-              onPdf={exportPdf}
-              pdfBusy={pdfBusy}
-            />
-            {exportError && <p className="mt-3 text-sm text-danger" role="alert">{exportError}</p>}
-            <button
-              onClick={remove}
-              className={`mt-4 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${
-                confirmDelete ? "bg-danger text-white" : "text-danger hover:bg-danger/10"
-              }`}
-            >
-              <Trash2 className="w-4 h-4" /> {confirmDelete ? "Tap again to delete" : "Delete meeting"}
-            </button>
-          </section>
-        </aside>
-
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
         {/* ---------- Document / transcript ---------- */}
-        <div className={`min-w-0 space-y-4 lg:order-1 ${doc ? "max-lg:order-1" : ""}`}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex gap-1 rounded-xl bg-muted p-1" role="tablist">
-              {(["document", "transcript"] as const).map((t) => (
+        <div className={cx("min-w-0", doc ? "order-1" : "order-2 lg:order-1")}>
+          <div className="mb-4 flex gap-6 border-b border-border" role="tablist">
+            {(["document", "transcript"] as const).map((t) => {
+              const on = tab === t;
+              return (
                 <button
                   key={t}
                   role="tab"
-                  aria-selected={tab === t}
+                  aria-selected={on}
                   onClick={() => setTab(t)}
                   disabled={t === "document" && !doc}
-                  className={`min-h-11 px-4 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 ${
-                    tab === t ? "bg-card shadow-card" : "text-muted-foreground"
-                  }`}
+                  className={cx(
+                    "-mb-px min-h-11 border-b-2 text-ui font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                    on ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
                 >
                   {t === "document" ? docName : "Transcript"}
                 </button>
-              ))}
-            </div>
-            <span className="text-xs text-muted-foreground tabular-nums">{words} words</span>
+              );
+            })}
           </div>
 
-          <section className={`${card} p-5 sm:p-8`}>
+          <Panel className="px-5 py-6 sm:px-8 sm:py-8">
             <div id="export-body">
               {showingDoc ? (
-                <article className="prose prose-stone dark:prose-invert max-w-none prose-headings:tracking-tight prose-h1:text-xl prose-h1:mt-8 first:prose-h1:mt-0 prose-h2:text-lg prose-table:text-sm prose-th:bg-muted/60 prose-th:px-3 prose-td:px-3 [&_table]:block [&_table]:overflow-x-auto">
+                <article className="prose prose-stone max-w-[72ch] dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-h1:mb-3 prose-h1:mt-10 prose-h1:text-lg first:prose-h1:mt-0 prose-h2:text-base prose-p:leading-7 prose-li:my-1 prose-table:text-meta prose-th:bg-muted/60 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 [&_table]:block [&_table]:overflow-x-auto">
                   <Markdown remarkPlugins={[remarkGfm]}>{doc!}</Markdown>
                 </article>
-              ) : meeting.transcript.length > 0 ? (
-                <TranscriptView parts={meeting.transcript} />
+              ) : hasTranscript ? (
+                <TranscriptView parts={meeting.transcript} window="head" />
               ) : (
-                <p className="text-muted-foreground text-sm">No transcript was captured.</p>
+                <p className="text-ui text-muted-foreground">No transcript was captured.</p>
               )}
             </div>
-            {!doc && meeting.transcript.length > 0 && (
-              <p className="mt-6 border-t border-border pt-4 text-sm text-muted-foreground">
-                Want minutes? Pick a type and model{" "}
-                <span className="lg:hidden">above</span>
-                <span className="hidden lg:inline">on the right</span> and tap <strong className="text-foreground">Generate</strong>.
-              </p>
-            )}
-          </section>
-
-          {/* Phones/tablets: export + delete below the content (only when the AI panel isn't below it) */}
-          <section className={`${card} p-5 lg:hidden ${doc ? "hidden" : ""}`} aria-label="Export">
-            <ExportButtons
-              name={currentName}
-              canShare={canShare}
-              onShare={share}
-              onTxt={exportTxt}
-              onWord={exportWord}
-              onPdf={exportPdf}
-              pdfBusy={pdfBusy}
-            />
-            {exportError && <p className="mt-3 text-sm text-danger" role="alert">{exportError}</p>}
-            <button
-              onClick={remove}
-              className={`mt-4 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${
-                confirmDelete ? "bg-danger text-white" : "text-danger hover:bg-danger/10"
-              }`}
-            >
-              <Trash2 className="w-4 h-4" /> {confirmDelete ? "Tap again to delete" : "Delete meeting"}
-            </button>
-          </section>
+          </Panel>
         </div>
+
+        {/* ---------- Side panel ---------- */}
+        {/* Phones: with a document, read it first; without one, the AI panel leads. */}
+        <aside className={cx("space-y-4 lg:sticky lg:top-10 lg:order-2", doc ? "order-2" : "order-1")}>
+          <Panel aria-label="AI document">
+            <PanelHeader title={doc ? "Regenerate with AI" : "Create with AI"} />
+            <div className="space-y-4 p-5">
+              <div>
+                <FieldLabel>Document</FieldLabel>
+                <Segmented
+                  label="Document type"
+                  value={template as "MOM" | "Report"}
+                  onChange={setTemplate}
+                  disabled={busy}
+                  options={TEMPLATES.map((t) => ({ value: t.value, label: t.value === "MOM" ? "Minutes" : t.label }))}
+                />
+              </div>
+              <div>
+                <FieldLabel>Model</FieldLabel>
+                <OptionList
+                  label="AI model"
+                  value={model}
+                  disabled={busy}
+                  onChange={chooseModel}
+                  options={SUMMARY_MODELS.map((m) => ({
+                    value: m.value,
+                    title: m.label.split(" · ")[1],
+                    aside: m.label.split(" · ")[0],
+                    description: m.hint,
+                  }))}
+                />
+              </div>
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                loading={busy}
+                icon={<Sparkles className="h-4 w-4" />}
+                disabled={!hasTranscript}
+                onClick={generate}
+              >
+                {busy ? (status ?? "Writing… this can take a minute") : doc ? `Regenerate ${docWord}` : `Create ${docWord}`}
+              </Button>
+              {!hasTranscript && <p className="text-meta text-muted-foreground">This meeting has no transcript to work from.</p>}
+              {error && (
+                <p className="text-meta text-danger" role="alert">
+                  {error}
+                </p>
+              )}
+            </div>
+          </Panel>
+
+          <div className={cx(!doc && "max-lg:hidden")}>{exportPanel}</div>
+        </aside>
+
+        {/* Phones without a document: export + delete after the transcript */}
+        {!doc && <div className="order-3 lg:hidden">{exportPanel}</div>}
       </div>
     </div>
   );
@@ -526,21 +517,24 @@ function ExportButtons(props: {
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="font-semibold">Export</h2>
-        <span className="text-xs text-muted-foreground">{props.name}</span>
+        <h2 className="text-ui font-semibold">Export</h2>
+        <span className="text-meta text-muted-foreground">{props.name}</span>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
-        <button onClick={props.onPdf} disabled={props.pdfBusy} className={outlineBtn}>
-          {props.pdfBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-          {props.pdfBusy ? "Preparing…" : "PDF"}
-        </button>
-        <button onClick={props.onWord} className={outlineBtn}><FileType className="w-4 h-4" /> Word</button>
-        <button onClick={props.onTxt} className={outlineBtn}><FileText className="w-4 h-4" /> TXT</button>
+        <Button onClick={props.onPdf} loading={props.pdfBusy} icon={<FileDown className="h-4 w-4" />} className="px-2">
+          PDF
+        </Button>
+        <Button onClick={props.onWord} icon={<FileType className="h-4 w-4" />} className="px-2">
+          Word
+        </Button>
+        <Button onClick={props.onTxt} icon={<FileText className="h-4 w-4" />} className="px-2">
+          Text
+        </Button>
       </div>
       {props.canShare && (
-        <button onClick={props.onShare} className={`${outlineBtn} mt-2 w-full`}>
-          <Share2 className="w-4 h-4" /> Share
-        </button>
+        <Button onClick={props.onShare} icon={<Share2 className="h-4 w-4" />} className="mt-2 w-full">
+          Share
+        </Button>
       )}
     </>
   );

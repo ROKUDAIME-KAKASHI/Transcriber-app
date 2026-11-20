@@ -13,9 +13,14 @@ import {
 
 const AUTOSAVE_MS = 5000;
 
-/** Deepgram: reconnect attempts after an unexpected drop, and how much audio to hold meanwhile. */
-const MAX_RECONNECTS = 3;
-const MAX_QUEUED_SECONDS = 30;
+/**
+ * Deepgram: after an unexpected drop the recorder keeps reconnecting for as long as the meeting
+ * runs (a 10-hour meeting will see Wi-Fi blips; it must never end on its own), waiting longer
+ * between tries up to RECONNECT_MAX_DELAY_MS. Audio from the last MAX_QUEUED_SECONDS is held and
+ * sent once the connection is back.
+ */
+const RECONNECT_MAX_DELAY_MS = 30_000;
+const MAX_QUEUED_SECONDS = 60;
 /** Deepgram closes idle sockets after ~10 s without audio (e.g. while paused). */
 const KEEPALIVE_MS = 5000;
 /** A speaker's bubble is closed after this many characters even without a pause. */
@@ -164,6 +169,9 @@ export function useRecorder(opts: {
   /** Each start() gets a token; cancelling or a newer start makes the old one bail out. */
   const startTokenRef = useRef(0);
   const startingRef = useRef(false);
+  /** Parts the server has confirmed; autosave sends only the rest. */
+  const savedPartsRef = useRef(0);
+  const savingRef = useRef<Promise<boolean> | null>(null);
 
   // Deepgram (cloud)
   const socketRef = useRef<WebSocket | null>(null);
@@ -192,27 +200,53 @@ export function useRecorder(opts: {
   const save = useCallback(async (status?: "DONE", closing = false): Promise<boolean> => {
     const id = meetingIdRef.current;
     if (!id || (!dirtyRef.current && !status)) return true;
-    dirtyRef.current = false;
-    patch({ saveState: "saving" });
-    try {
-      const body = JSON.stringify({
-        transcript: partsRef.current,
-        durationSec: secondsRef.current,
-        ...(status ? { status } : {}),
-      });
-      const res = await fetch(`/api/meetings/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body,
-        keepalive: closing && body.length < 60_000,
-      });
-      if (!res.ok) throw new Error();
-      patch({ saveState: "saved" });
-      return true;
-    } catch {
+    // One save at a time: on a slow connection an older save finishing after a newer one used to
+    // overwrite fresh text. If one is in flight, wait for it (final/closing saves) or skip (autosave).
+    if (savingRef.current) {
+      if (!status && !closing) return false;
+      await savingRef.current.catch(() => {});
+    }
+    const run = (async (): Promise<boolean> => {
+      dirtyRef.current = false;
+      patch({ saveState: "saving" });
+      for (let attempt = 0; attempt < 2; attempt++) {
+        // Only what changed since the last confirmed save (the last phrase can still grow: resend it).
+        const parts = partsRef.current;
+        const from = Math.max(0, Math.min(savedPartsRef.current - 1, parts.length));
+        const body = JSON.stringify({
+          transcriptTail: { from, parts: parts.slice(from) },
+          durationSec: secondsRef.current,
+          ...(status ? { status } : {}),
+        });
+        try {
+          const res = await fetch(`/api/meetings/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body,
+            keepalive: closing && body.length < 60_000,
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 409 && typeof data.savedParts === "number") {
+            savedPartsRef.current = data.savedParts; // server has less than we thought: resend from there
+            continue;
+          }
+          if (!res.ok) throw new Error();
+          savedPartsRef.current = typeof data.savedParts === "number" ? data.savedParts : parts.length;
+          patch({ saveState: "saved" });
+          return true;
+        } catch {
+          break;
+        }
+      }
       dirtyRef.current = true; // retry on next tick
       patch({ saveState: "error" });
       return false;
+    })();
+    savingRef.current = run;
+    try {
+      return await run;
+    } finally {
+      if (savingRef.current === run) savingRef.current = null;
     }
   }, []);
 
@@ -457,10 +491,24 @@ export function useRecorder(opts: {
         if (Date.now() - openedAt > 30_000) reconnectsRef.current = 0;
         // Unexpected drop (network blip, Wi-Fi → mobile data): reconnect; audio queues meanwhile.
         const retry = async () => {
-          while (wantRecordingRef.current && reconnectsRef.current < MAX_RECONNECTS) {
+          while (wantRecordingRef.current) {
             reconnectsRef.current += 1;
-            patch({ statusMsg: `Connection lost — reconnecting (${reconnectsRef.current}/${MAX_RECONNECTS})…` });
-            await new Promise((r) => setTimeout(r, 1000 * reconnectsRef.current));
+            const delay = Math.min(RECONNECT_MAX_DELAY_MS, 1000 * 2 ** Math.min(reconnectsRef.current - 1, 5));
+            patch({
+              statusMsg: navigator.onLine
+                ? "Connection lost — reconnecting… Recording continues; the last minute of audio is kept."
+                : "No internet — waiting for it to come back. Recording continues.",
+            });
+            // Offline: wait for the network to return (or the backoff), whichever is first.
+            await new Promise<void>((r) => {
+              const t = setTimeout(done, delay);
+              function done() {
+                clearTimeout(t);
+                window.removeEventListener("online", done);
+                r();
+              }
+              window.addEventListener("online", done);
+            });
             if (!wantRecordingRef.current) return;
             try {
               await openSocket();
@@ -469,10 +517,6 @@ export function useRecorder(opts: {
             } catch {
               /* try again */
             }
-          }
-          if (wantRecordingRef.current) {
-            patch({ statusMsg: "Lost the connection to Deepgram. The transcript so far is saved." });
-            stopRef.current();
           }
         };
         retry();
@@ -711,6 +755,7 @@ export function useRecorder(opts: {
     };
     startingRef.current = true;
     partsRef.current = [];
+    savedPartsRef.current = 0;
     secondsRef.current = 0;
     startedAtRef.current = 0;
     pausedMsRef.current = 0;

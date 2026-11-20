@@ -1,50 +1,55 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/*
+ * Design tokens.
+ * - 90–95% neutral UI with one warm near-black ink. Colour comes from content (speakers, state),
+ *   not chrome. A single blue accent for the primary action, links, focus and selection.
+ * - Hairlines are ~12% ink. Panels are 1px hairline, no shadows. Nav is opaque.
+ * - Radius family "soft": 8 (small), 12 (controls), 20 (panels).
+ */
 :root {
-  --background: #f7f7f8;
-  --foreground: #16161a;
+  --background: #f6f6f4;
   --card: #ffffff;
-  --muted: #efeff2;
-  --muted-foreground: #63636e;
-  --border: #e4e4e9;
-  --accent: #4f46e5;
+  --muted: #efeeeb;
+  --border: #e3e1dc;
+  --foreground: #1c1b18;
+  --muted-foreground: #63605a;
+  --accent: #2356d1;
   --accent-foreground: #ffffff;
-  --danger: #dc2626;
-  --success: #059669;
+  --danger: #cf2f29;
+  --success: #17784a;
+  --warning: #9a5b00;
 
-  /* Chat-bubble colours per speaker */
-  --speaker-0: #4f46e5;
-  --speaker-1: #0d9488;
-  --speaker-2: #d97706;
-  --speaker-3: #db2777;
-  --speaker-4: #2563eb;
-  --speaker-5: #65a30d;
-
-  --shadow-card: 0 1px 2px rgb(16 16 24 / 0.04), 0 1px 3px rgb(16 16 24 / 0.06);
+  /* Speaker colours (content, not chrome). No violet. */
+  --speaker-0: #2356d1;
+  --speaker-1: #0e8073;
+  --speaker-2: #b25d06;
+  --speaker-3: #bf3769;
+  --speaker-4: #4d6a10;
+  --speaker-5: #8a5a2b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b0b0e;
-    --foreground: #f4f4f6;
-    --card: #16161b;
-    --muted: #222229;
-    --muted-foreground: #a1a1ad;
-    --border: #2a2a33;
-    --accent: #8b8cf8;
-    --accent-foreground: #0b0b0e;
-    --danger: #f87171;
-    --success: #34d399;
+    --background: #0f0f0e;
+    --card: #171716;
+    --muted: #21211f;
+    --border: #2d2c29;
+    --foreground: #ecebe7;
+    --muted-foreground: #a3a099;
+    --accent: #7398ff;
+    --accent-foreground: #0f0f0e;
+    --danger: #f2685e;
+    --success: #4fc98c;
+    --warning: #e6a23c;
 
-    --speaker-0: #8b8cf8;
-    --speaker-1: #2dd4bf;
-    --speaker-2: #fbbf24;
-    --speaker-3: #f472b6;
-    --speaker-4: #60a5fa;
-    --speaker-5: #a3e635;
-
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+    --speaker-0: #7398ff;
+    --speaker-1: #3cc4b2;
+    --speaker-2: #f0a54a;
+    --speaker-3: #f07aa3;
+    --speaker-4: #a8c95a;
+    --speaker-5: #d3a26e;
   }
 }
 
@@ -59,8 +64,16 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-danger: var(--danger);
   --color-success: var(--success);
+  --color-warning: var(--warning);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --shadow-card: var(--shadow-card);
+
+  /* Type scale: 13 meta/labels · 15 UI · 16 reading · 20/24/30 headings. Nothing smaller than 13. */
+  --text-meta: 0.8125rem;
+  --text-meta--line-height: 1.25rem;
+  --text-ui: 0.9375rem;
+  --text-ui--line-height: 1.375rem;
+
+  --radius-panel: 1.25rem;
 }
 
 html,
@@ -68,12 +81,17 @@ body {
   background: var(--background);
   color: var(--foreground);
   -webkit-tap-highlight-color: transparent;
+  font-feature-settings: "cv11", "ss01";
 }
 
 /* Visible keyboard focus everywhere, never on mouse/touch. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 /* Keep content clear of the iPhone home bar when installed. */
@@ -84,7 +102,7 @@ body {
 /* Native selects styled like the rest of the UI, with our own chevron. */
 .select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2363636e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2363605a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   padding-right: 2.25rem;
@@ -94,4 +112,14 @@ body {
 .scroll-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

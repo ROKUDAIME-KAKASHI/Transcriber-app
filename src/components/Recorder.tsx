@@ -1,42 +1,43 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Mic, Square, Pause, Play, MessagesSquare, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff,
-  Zap, Languages, Users, MonitorSpeaker,
+  Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
+  MonitorSpeaker, ShieldAlert, BatteryCharging, FileText,
 } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { formatDuration } from "@/lib/transcript";
 import { WHISPER_LANGUAGES } from "@/lib/speech/models";
 import type { RecordEngine } from "@/lib/speech/deepgram";
 import { TranscriptView } from "./TranscriptView";
+import { Badge, Button, FieldLabel, LiveDot, Notice, OptionList, Panel, PanelHeader, cx, selectCls } from "./ui";
 
 const MIC_KEY = "transcriber.micId";
 const ENGINE_KEY = "transcriber.engine";
 const LANG_KEY = "transcriber.language";
 
-const ENGINES: { value: RecordEngine; label: string; sub: string; icon: typeof Zap; hint: string }[] = [
+const ENGINES: { value: RecordEngine; title: string; description: string; aside: string; icon: React.ReactNode }[] = [
   {
     value: "moonshine",
-    label: "Fast",
-    sub: "English · on device · free",
-    icon: Zap,
-    hint: "Moonshine: quick and light (~63 MB, downloaded once). Best with clear, standard English. Your audio never leaves this device.",
+    title: "Fast",
+    description: "English only. Runs on this device; audio never leaves it.",
+    aside: "Free",
+    icon: <Zap className="h-4 w-4" />,
   },
   {
     value: "whisper",
-    label: "Accurate",
-    sub: "Hindi & accents · on device · free",
-    icon: Languages,
-    hint: "Whisper: better with Indian accents and understands Hindi. ~77 MB once, slower, and live text updates less often. Your audio never leaves this device.",
+    title: "Accurate",
+    description: "Indian accents and Hindi. On this device; slower live text.",
+    aside: "Free",
+    icon: <Languages className="h-4 w-4" />,
   },
   {
     value: "deepgram",
-    label: "Cloud",
-    sub: "Labels who is speaking · paid",
-    icon: Users,
-    hint: "Deepgram: live words and speaker labels, strong with Indian accents, Hindi and mixed speech. Needs internet; audio is sent to Deepgram and billed per minute.",
+    title: "Cloud",
+    description: "Labels each speaker. Needs internet; audio goes to Deepgram.",
+    aside: "Paid",
+    icon: <Users className="h-4 w-4" />,
   },
 ];
 
@@ -66,41 +67,31 @@ function useMicrophones() {
   return { mics, refresh };
 }
 
-function LevelMeter({ level, bars = 14 }: { level: number; bars?: number }) {
+function LevelMeter({ level, bars = 24 }: { level: number; bars?: number }) {
   const lit = Math.round(level * bars);
   return (
     <div
-      className="flex items-end gap-[3px] h-5"
+      className="flex h-6 items-center gap-[3px]"
       role="meter"
       aria-label="Microphone level"
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(level * 100)}
     >
-      {Array.from({ length: bars }, (_, i) => (
-        <span
-          key={i}
-          className={`w-1 rounded-full transition-colors ${i < lit ? (i >= bars - 2 ? "bg-danger" : "bg-accent") : "bg-border"}`}
-          style={{ height: `${25 + (i / (bars - 1)) * 75}%` }}
-        />
-      ))}
+      {Array.from({ length: bars }, (_, i) => {
+        // A gentle arch, so the meter reads as a waveform rather than a bar chart.
+        const shape = 0.35 + 0.65 * Math.sin((Math.PI * (i + 0.5)) / bars);
+        return (
+          <span
+            key={i}
+            className={cx("w-[3px] rounded-full transition-colors", i < lit ? (i >= bars - 3 ? "bg-danger" : "bg-foreground") : "bg-border")}
+            style={{ height: `${Math.round(shape * 100)}%` }}
+          />
+        );
+      })}
     </div>
   );
 }
-
-function RecDot({ paused }: { paused: boolean }) {
-  if (paused) return <Pause className="w-3.5 h-3.5 fill-current" />;
-  return (
-    <span className="relative flex h-2.5 w-2.5">
-      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-danger opacity-75" />
-      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-danger" />
-    </span>
-  );
-}
-
-const fieldLabel = "block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2";
-const selectCls =
-  "select w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-base sm:text-sm font-medium outline-none focus:border-accent disabled:opacity-60";
 
 export function Recorder() {
   const [captureSystemAudio, setCaptureSystemAudio] = useState(false);
@@ -142,181 +133,151 @@ export function Recorder() {
 
   const hasTranscript = rec.transcriptParts.length > 0;
   const hasLive = !!rec.interimText || !!rec.liveStatus;
-  const current = ENGINES.find((e) => e.value === engine) ?? ENGINES[0];
   const busy = rec.isRecording;
   const starting = rec.isStarting;
   /** Settings are locked while starting or recording. */
   const locked = busy || starting;
   /** Finished and fully saved: safe to open the meeting page. */
   const finished = !busy && !starting && !!rec.meetingId && hasTranscript && rec.saveState === "saved";
-  const words = rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0);
+  // Memoised: recounting thousands of phrases on every mic-level update made long meetings sluggish.
+  const words = useMemo(
+    () => rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0),
+    [rec.transcriptParts]
+  );
 
-  const saveBadge = rec.meetingId && (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      {rec.saveState === "saving" && <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>}
-      {rec.saveState === "saved" && <><Cloud className="w-3.5 h-3.5 text-success" /> Saved</>}
-      {rec.saveState === "error" && <><CloudOff className="w-3.5 h-3.5 text-danger" /> Offline — will retry</>}
+  const stateLabel = busy ? (rec.isPaused ? "Paused" : "Recording") : starting ? "Getting ready" : "Ready";
+
+  const saveStatus = rec.meetingId && (
+    <span className="inline-flex items-center gap-1.5">
+      {rec.saveState === "saving" && <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving</>}
+      {rec.saveState === "saved" && <><Cloud className="h-3.5 w-3.5 text-success" /> Saved</>}
+      {rec.saveState === "error" && <><CloudOff className="h-3.5 w-3.5 text-danger" /> Offline · will retry</>}
     </span>
   );
 
   return (
-    <div className="grid gap-5 lg:gap-8 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start">
-      {/* ---------- Controls ---------- */}
-      <section
-        className={`rounded-3xl border border-border bg-card shadow-card p-5 sm:p-6 lg:sticky lg:top-10 ${
-          busy ? "max-lg:hidden" : ""
-        }`}
-        aria-label="Recording controls"
-      >
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] lg:items-start lg:gap-8">
+      {/* ---------- Session controls ---------- */}
+      <Panel as="section" aria-label="Recording controls" className={cx("lg:sticky lg:top-10", busy && "max-lg:hidden")}>
         {finished && (
-          // Phones: the transcript and its button are below the fold after Stop, so offer it up here.
+          // Phones: the transcript is below the fold after Stop, so offer the meeting up here.
           <Link
             href={`/meetings/${rec.meetingId}`}
-            className="lg:hidden -mt-1 mb-5 flex items-center gap-3 rounded-2xl bg-success/10 px-4 py-3 text-sm"
+            className="flex items-center gap-3 border-b border-border px-5 py-3.5 text-ui hover:bg-muted/50 lg:hidden"
           >
-            <Cloud className="w-4.5 h-4.5 text-success shrink-0" />
+            <FileText className="h-4 w-4 shrink-0 text-success" />
             <span className="flex-1">
-              <span className="block font-semibold">Meeting saved</span>
-              <span className="block text-xs text-muted-foreground">Open it for minutes and export</span>
+              <span className="block font-medium">Meeting saved</span>
+              <span className="block text-meta text-muted-foreground">Open it for minutes and export</span>
             </span>
-            <ArrowRight className="w-4 h-4 shrink-0" />
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           </Link>
         )}
-        <div className="flex flex-col items-center text-center">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={busy ? rec.stop : starting ? undefined : () => rec.start("mic")}
-              disabled={starting || insecure}
-              className={`relative w-24 h-24 rounded-full grid place-items-center shadow-lg transition-transform active:scale-95 disabled:active:scale-100 ${
-                busy ? "bg-danger text-white" : "bg-accent text-accent-foreground"
-              } ${insecure ? "opacity-50" : ""}`}
-              aria-label={busy ? "Stop recording" : starting ? "Starting recording" : "Start recording"}
-            >
-              {!busy && <span className={`absolute inset-0 rounded-full ring-8 ring-accent/15 ${starting ? "animate-pulse" : ""}`} aria-hidden />}
-              {busy ? (
-                <Square className="w-8 h-8 fill-current" />
-              ) : starting ? (
-                <Loader2 className="w-10 h-10 animate-spin" />
-              ) : (
-                <Mic className="w-10 h-10" />
-              )}
-            </button>
-            {busy && (
-              // Pause sits beside Stop so a break doesn't end (and save) the meeting.
+
+        <div className="px-5 pb-5 pt-6 text-center">
+          <div className="flex items-center justify-center gap-2 text-meta font-medium text-muted-foreground">
+            {busy && <LiveDot paused={rec.isPaused} />}
+            {starting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {stateLabel}
+          </div>
+          <div
+            className={cx(
+              "mt-1 text-[2.5rem] font-semibold leading-tight tracking-tight tabular-nums",
+              busy || starting ? "text-foreground" : "text-muted-foreground/60"
+            )}
+          >
+            {formatDuration(rec.recordingSeconds)}
+          </div>
+          <p className="mx-auto mt-1 min-h-[1.25rem] max-w-[30ch] text-meta text-muted-foreground" aria-live="polite">
+            {rec.statusMsg === "Ready" ? "Choose an engine below, then start." : rec.statusMsg}
+          </p>
+
+          <div className="mt-3 flex h-6 justify-center">{busy && !rec.isPaused && <LevelMeter level={rec.micLevel} />}</div>
+
+          <div className="mt-4 flex items-center justify-center gap-4">
+            {busy ? (
+              <>
+                <button
+                  onClick={rec.isPaused ? rec.resume : rec.pause}
+                  className="grid h-14 w-14 place-items-center rounded-full border border-border bg-card hover:bg-muted active:scale-95"
+                  aria-label={rec.isPaused ? "Resume recording" : "Pause recording"}
+                >
+                  {rec.isPaused ? <Play className="h-5 w-5 fill-current" /> : <Pause className="h-5 w-5 fill-current" />}
+                </button>
+                <button
+                  onClick={rec.stop}
+                  className="grid h-[4.5rem] w-[4.5rem] place-items-center rounded-full bg-danger text-white hover:bg-danger/90 active:scale-95"
+                  aria-label="Stop recording"
+                >
+                  <Square className="h-6 w-6 fill-current" />
+                </button>
+              </>
+            ) : (
               <button
-                onClick={rec.isPaused ? rec.resume : rec.pause}
-                className="w-14 h-14 rounded-full grid place-items-center border border-border bg-muted active:scale-95"
-                aria-label={rec.isPaused ? "Resume recording" : "Pause recording"}
+                onClick={starting ? undefined : () => rec.start("mic")}
+                disabled={starting || insecure}
+                className={cx(
+                  "grid h-[4.5rem] w-[4.5rem] place-items-center rounded-full bg-danger text-white transition-transform",
+                  "hover:bg-danger/90 active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100",
+                  insecure && "opacity-40"
+                )}
+                aria-label={starting ? "Starting recording" : "Start recording"}
               >
-                {rec.isPaused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
+                {starting ? <Loader2 className="h-7 w-7 animate-spin" /> : <Mic className="h-7 w-7" />}
               </button>
             )}
           </div>
 
-          <div className="mt-4 min-h-[3.25rem]">
-            {busy ? (
-              <div
-                className={`flex items-center justify-center gap-2 text-2xl font-semibold tabular-nums ${
-                  rec.isPaused ? "text-muted-foreground" : "text-foreground"
-                }`}
-              >
-                <RecDot paused={rec.isPaused} />
-                {formatDuration(rec.recordingSeconds)}
-              </div>
-            ) : starting ? (
-              <div className="text-lg font-semibold">Getting ready…</div>
-            ) : (
-              <div className="text-lg font-semibold">Tap to record</div>
-            )}
-            <p className="text-sm text-muted-foreground mt-1" aria-live="polite">{rec.statusMsg}</p>
+          <div className="mt-3 flex min-h-11 items-center justify-center">
+            {starting ? (
+              <Button variant="ghost" onClick={rec.cancelStart}>Cancel</Button>
+            ) : !busy && !insecure ? (
+              <Button variant="ghost" icon={<PlayCircle className="h-4 w-4" />} onClick={() => rec.start("sample")}>
+                Try with sample audio
+              </Button>
+            ) : null}
           </div>
 
-          {busy && !rec.isPaused && (
-            <div className="mt-2 flex items-center gap-2 text-muted-foreground">
-              <Mic className="w-4 h-4" /> <LevelMeter level={rec.micLevel} />
+          {insecure && (
+            <div className="mt-2 text-left">
+              <Notice tone="danger" icon={<ShieldAlert className="h-4 w-4" />} title="Recording needs a secure https:// address">
+                This page was opened over plain http://, so the browser blocks the microphone. On a phone, open the
+                app&apos;s https link instead (see “Testing on a phone” in the README).
+              </Notice>
             </div>
           )}
-
-          {starting && (
-            <button
-              onClick={rec.cancelStart}
-              className="mt-2 min-h-11 inline-flex items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium hover:bg-muted"
-            >
-              Cancel
-            </button>
-          )}
-          {!busy && !starting && !insecure && (
-            <button
-              onClick={() => rec.start("sample")}
-              className="mt-1 min-h-11 inline-flex items-center gap-1.5 px-2 text-sm font-medium text-accent hover:underline"
-            >
-              <PlayCircle className="w-4 h-4" /> No mic? Try with sample audio
-            </button>
-          )}
-          {insecure && (
-            <div className="mt-4 w-full rounded-2xl border border-danger/40 bg-danger/10 px-4 py-3 text-left text-sm" role="alert">
-              <strong className="block">Recording needs a secure https:// address</strong>
-              <span className="text-muted-foreground">
-                This page was opened over plain http://, so the browser blocks the microphone. On a phone, open
-                the app&apos;s <strong className="text-foreground">https://</strong> link instead (see “Testing on a phone” in the README).
-              </span>
+          {busy && rec.noSound && (
+            <div className="mt-2 text-left">
+              <NoSoundNotice />
             </div>
           )}
         </div>
 
-        {busy && rec.noSound && <NoSoundWarning />}
-
-        <div className="mt-6 space-y-5">
-          <div role="radiogroup" aria-label="Speech engine">
-            <span className={fieldLabel}>Speech engine</span>
-            <div className="grid gap-2">
-              {ENGINES.map((e) => {
-                const on = engine === e.value;
-                return (
-                  <button
-                    key={e.value}
-                    role="radio"
-                    aria-checked={on}
-                    disabled={locked}
-                    onClick={() => {
-                      setEngine(e.value);
-                      remember(ENGINE_KEY, e.value);
-                    }}
-                    className={`flex items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors disabled:opacity-60 ${
-                      on ? "border-accent bg-accent/8" : "border-border hover:bg-muted"
-                    }`}
-                  >
-                    <span
-                      className={`w-9 h-9 shrink-0 rounded-xl grid place-items-center ${
-                        on ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      <e.icon className="w-4.5 h-4.5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold">{e.label}</span>
-                      <span className="block text-xs text-muted-foreground truncate">{e.sub}</span>
-                    </span>
-                    <span
-                      className={`w-4 h-4 shrink-0 rounded-full border-2 ${on ? "border-accent bg-accent shadow-[inset_0_0_0_2px_var(--card)]" : "border-border"}`}
-                      aria-hidden
-                    />
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{current.hint}</p>
+        <div className="space-y-5 border-t border-border px-5 py-5">
+          <div>
+            <FieldLabel>Speech engine</FieldLabel>
+            <OptionList
+              label="Speech engine"
+              value={engine}
+              disabled={locked}
+              onChange={(v) => {
+                setEngine(v);
+                remember(ENGINE_KEY, v);
+              }}
+              options={ENGINES}
+            />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
-            <label className="block">
-              <span className={fieldLabel}>Language</span>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
+            <div>
+              <FieldLabel htmlFor="rec-language">Language</FieldLabel>
               {engine === "moonshine" ? (
-                <select disabled className={selectCls} aria-label="Language">
+                <select id="rec-language" disabled className={selectCls}>
                   <option>English</option>
                 </select>
               ) : (
                 <select
+                  id="rec-language"
                   value={language}
                   onChange={(e) => {
                     setLanguage(e.target.value);
@@ -330,11 +291,11 @@ export function Recorder() {
                   ))}
                 </select>
               )}
-            </label>
-
-            <label className="block">
-              <span className={fieldLabel}>Microphone</span>
+            </div>
+            <div>
+              <FieldLabel htmlFor="rec-mic">Microphone</FieldLabel>
               <select
+                id="rec-mic"
                 value={mics.some((m) => m.deviceId === micId) ? micId : ""}
                 onChange={(e) => {
                   setMicId(e.target.value);
@@ -350,71 +311,61 @@ export function Recorder() {
                     <option key={m.deviceId} value={m.deviceId}>{m.label || `Microphone ${i + 1}`}</option>
                   ))}
               </select>
-            </label>
+            </div>
           </div>
 
           {canCaptureSystem && (
-            <label className="flex items-start gap-3 rounded-2xl border border-border px-3.5 py-3 cursor-pointer hover:bg-muted has-[:disabled]:opacity-60">
-              <MonitorSpeaker className="w-4.5 h-4.5 mt-0.5 text-muted-foreground shrink-0" />
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border px-3.5 py-3 hover:bg-muted/60 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+              <MonitorSpeaker className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="flex-1">
-                <span className="block text-sm font-semibold">Also capture tab audio</span>
-                <span className="block text-xs text-muted-foreground">For Zoom, Meet or Teams in this browser</span>
+                <span className="block text-ui font-medium">Also capture tab audio</span>
+                <span className="block text-meta text-muted-foreground">For Zoom, Meet or Teams in this browser</span>
               </span>
               <input
                 type="checkbox"
                 checked={captureSystemAudio}
                 onChange={(e) => setCaptureSystemAudio(e.target.checked)}
                 disabled={locked}
-                className="mt-1 w-4 h-4 accent-[var(--accent)]"
+                className="mt-1 h-4 w-4 accent-[var(--accent)]"
               />
             </label>
           )}
 
-          {(saveBadge || busy) && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-              {saveBadge}
-              {busy && <span className="text-xs text-muted-foreground">Keep this screen open while recording.</span>}
-            </div>
-          )}
+          <p className="flex items-start gap-2 text-meta text-muted-foreground">
+            <BatteryCharging className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            Long meetings record for as long as you need. Keep this screen on, and plug in the charger.
+          </p>
         </div>
-      </section>
+      </Panel>
 
       {/* ---------- Transcript ---------- */}
-      <section
-        className="rounded-3xl border border-border bg-card shadow-card flex flex-col lg:h-[calc(100dvh-5rem)] lg:sticky lg:top-10"
-        aria-label="Live transcript"
-      >
-        <header className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-border">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <h1 className="font-semibold">Live transcript</h1>
-            {busy && !rec.isPaused && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-danger/10 text-danger px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider">
-                <RecDot paused={false} /> Live
-              </span>
-            )}
-            {busy && rec.isPaused && (
-              <span className="rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider">
-                Paused
-              </span>
-            )}
-          </div>
-          {hasTranscript && <span className="text-xs text-muted-foreground tabular-nums shrink-0">{words} words</span>}
-        </header>
+      <Panel as="section" aria-label="Live transcript" className="flex flex-col lg:sticky lg:top-10 lg:h-[calc(100dvh-5rem)]">
+        <PanelHeader
+          title="Transcript"
+          meta={
+            <span className="inline-flex items-center gap-3">
+              {hasTranscript && <span>{words.toLocaleString("en-IN")} words</span>}
+              {saveStatus}
+            </span>
+          }
+        >
+          {busy && !rec.isPaused && <Badge tone="live"><LiveDot /> Live</Badge>}
+          {busy && rec.isPaused && <Badge>Paused</Badge>}
+        </PanelHeader>
 
-        <div className="flex-1 lg:overflow-y-auto scroll-thin px-4 sm:px-6 py-5 min-h-[45dvh]">
+        <div className="scroll-thin min-h-[45dvh] flex-1 px-4 py-5 sm:px-6 lg:overflow-y-auto">
           {busy && rec.noSound && (
-            <div className="lg:hidden mb-4">
-              <NoSoundWarning />
+            <div className="mb-4 lg:hidden">
+              <NoSoundNotice />
             </div>
           )}
           {!hasTranscript && !hasLive ? (
-            <div className="h-full min-h-[40dvh] flex flex-col items-center justify-center text-center gap-3 text-muted-foreground">
-              <span className="w-14 h-14 rounded-2xl bg-muted grid place-items-center">
-                <MessagesSquare className="w-7 h-7" />
-              </span>
-              <p className="font-medium text-foreground">{busy ? "Listening…" : "Nothing recorded yet"}</p>
-              <p className="text-sm max-w-xs">
-                The conversation appears here as a live chat while you record. Everything is saved to your account as you go.
+            <div className="flex h-full min-h-[40dvh] flex-col items-center justify-center gap-2 text-center">
+              <p className="text-ui font-medium">{busy ? "Listening…" : "No transcript yet"}</p>
+              <p className="max-w-[36ch] text-meta text-muted-foreground">
+                {busy
+                  ? "Words appear here as people speak."
+                  : "Start recording and the conversation appears here, saved to your account as you go."}
               </p>
             </div>
           ) : (
@@ -423,6 +374,7 @@ export function Recorder() {
               interimText={rec.interimText}
               liveStatus={rec.liveStatus}
               backlog={rec.backlog}
+              window="tail"
             />
           )}
           {/* scroll margin keeps the newest line clear of the phone controls when auto-scrolling */}
@@ -430,43 +382,43 @@ export function Recorder() {
         </div>
 
         {finished && (
-          <div className="p-4 sm:px-6 border-t border-border">
+          <div className="border-t border-border p-4 sm:px-6">
             <Link
               href={`/meetings/${rec.meetingId}`}
-              className="flex items-center justify-center gap-2 w-full rounded-2xl bg-accent text-accent-foreground py-3 font-semibold hover:opacity-95"
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-ui font-medium text-accent-foreground hover:bg-accent/90"
             >
-              Open meeting — minutes & export <ArrowRight className="w-4 h-4" />
+              Open meeting for minutes and export <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         )}
-      </section>
+      </Panel>
 
-      {/* ---------- Phone recording dock (above the tab bar) ---------- */}
-      {busy && <div className="lg:hidden h-16" aria-hidden />}
+      {/* ---------- Phone recording bar (above the tab bar) ---------- */}
+      {busy && <div className="h-16 lg:hidden" aria-hidden />}
       {busy && (
-        <div className="lg:hidden pointer-events-none fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 px-3 pb-2">
-          <div className="pointer-events-auto mx-auto max-w-md rounded-3xl border border-border bg-card/95 backdrop-blur-md shadow-xl px-4 py-3 flex items-center gap-3">
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] z-30 px-3 pb-2 lg:hidden">
+          <div className="pointer-events-auto mx-auto flex max-w-md items-center gap-3 rounded-panel border border-border bg-card px-4 py-3">
             <div className="min-w-0 flex-1">
-              <div className={`flex items-center gap-2 text-lg font-semibold tabular-nums ${rec.isPaused ? "text-muted-foreground" : ""}`}>
-                <RecDot paused={rec.isPaused} />
+              <div className={cx("flex items-center gap-2 text-lg font-semibold tabular-nums", rec.isPaused && "text-muted-foreground")}>
+                <LiveDot paused={rec.isPaused} />
                 {formatDuration(rec.recordingSeconds)}
-                {!rec.isPaused && <span className="ml-1"><LevelMeter level={rec.micLevel} bars={8} /></span>}
+                {!rec.isPaused && <span className="ml-1"><LevelMeter level={rec.micLevel} bars={10} /></span>}
               </div>
-              <p className="text-xs text-muted-foreground line-clamp-2">{rec.statusMsg}</p>
+              <p className="line-clamp-2 text-meta text-muted-foreground">{rec.statusMsg}</p>
             </div>
             <button
               onClick={rec.isPaused ? rec.resume : rec.pause}
-              className="w-12 h-12 shrink-0 rounded-full grid place-items-center border border-border bg-muted active:scale-95"
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-border bg-card active:scale-95"
               aria-label={rec.isPaused ? "Resume recording" : "Pause recording"}
             >
-              {rec.isPaused ? <Play className="w-5 h-5 fill-current" /> : <Pause className="w-5 h-5 fill-current" />}
+              {rec.isPaused ? <Play className="h-5 w-5 fill-current" /> : <Pause className="h-5 w-5 fill-current" />}
             </button>
             <button
               onClick={rec.stop}
-              className="w-12 h-12 shrink-0 rounded-full grid place-items-center bg-danger text-white shadow-md active:scale-95"
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-danger text-white active:scale-95"
               aria-label="Stop recording"
             >
-              <Square className="w-5 h-5 fill-current" />
+              <Square className="h-5 w-5 fill-current" />
             </button>
           </div>
         </div>
@@ -475,14 +427,11 @@ export function Recorder() {
   );
 }
 
-function NoSoundWarning() {
+function NoSoundNotice() {
   return (
-    <div className="mt-4 rounded-2xl border border-danger/40 bg-danger/10 px-3.5 py-3 text-sm text-left flex gap-2.5" role="alert">
-      <MicOff className="w-4 h-4 text-danger shrink-0 mt-0.5" />
-      <span>
-        <strong>No sound from the microphone.</strong> Stop, pick another microphone, and try again. On Windows also
-        check Settings → System → Sound → Input, and that the mic isn&apos;t muted.
-      </span>
-    </div>
+    <Notice tone="danger" icon={<MicOff className="h-4 w-4" />} title="No sound from the microphone">
+      If the phone took over the mic (a call or another app), close it and tap Resume. Otherwise stop, pick another
+      microphone and try again. On Windows, check Settings → System → Sound → Input.
+    </Notice>
   );
 }

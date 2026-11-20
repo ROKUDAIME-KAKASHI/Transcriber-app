@@ -1,117 +1,131 @@
+"use client";
+
+import { memo, useMemo, useState } from "react";
 import { formatDuration, type TranscriptPart } from "@/lib/transcript";
 
 /**
- * Transcript as a chat: one bubble per phrase.
- * With several speakers (cloud recordings, which label who is talking), even-numbered speakers
- * sit on the left and odd ones on the right, each with its own colour. With a single speaker
- * all bubbles sit on the left without names.
+ * The transcript as a readable document: paragraphs with a time (and, for multi-speaker
+ * recordings, the speaker) in a left column.
+ *
+ * Long meetings: a 10-hour meeting has thousands of phrases. Rendering all of them on every
+ * live update froze phones after a few hours, so only a window is drawn (`window`: the latest
+ * paragraphs while recording, the first ones on a saved meeting) with a button for the rest.
+ * The component is memoised so mic-level updates (~12/s) don't re-render it.
  */
 const SPEAKER_COLORS = 6;
-/** A time divider is shown before the first phrase, then at most once per this many seconds. */
-const TIME_MARK_EVERY_S = 60;
+/** A paragraph closes after this long or this much text, even if the same person keeps talking. */
+const PARAGRAPH_MAX_SECONDS = 60;
+const PARAGRAPH_MAX_CHARS = 700;
 
-function speakerVars(speaker: number): React.CSSProperties {
-  const c = `var(--speaker-${speaker % SPEAKER_COLORS})`;
-  return {
-    "--bubble-color": c,
-    backgroundColor: `color-mix(in srgb, ${c} 13%, var(--card))`,
-  } as React.CSSProperties;
+type Paragraph = { speaker: number; t?: number; text: string };
+
+function toParagraphs(parts: TranscriptPart[]): Paragraph[] {
+  const out: Paragraph[] = [];
+  for (const p of parts) {
+    const last = out[out.length - 1];
+    const sameSpeaker = last && last.speaker === p.speaker;
+    const tooLong =
+      !last ||
+      last.text.length > PARAGRAPH_MAX_CHARS ||
+      (typeof last.t === "number" && typeof p.t === "number" && p.t - last.t > PARAGRAPH_MAX_SECONDS);
+    if (sameSpeaker && !tooLong) last.text = `${last.text} ${p.text}`;
+    else out.push({ speaker: p.speaker, t: p.t, text: p.text });
+  }
+  return out;
 }
+
+const speakerColor = (s: number) => `var(--speaker-${s % SPEAKER_COLORS})`;
 
 function TypingDots() {
   return (
     <span className="inline-flex items-center gap-1 align-middle" aria-hidden>
       {[0, 150, 300].map((d) => (
-        <span
-          key={d}
-          className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce"
-          style={{ animationDelay: `${d}ms` }}
-        />
+        <span key={d} className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-pulse" style={{ animationDelay: `${d}ms` }} />
       ))}
     </span>
   );
 }
 
-export function TranscriptView({
+function TranscriptViewImpl({
   parts,
   interimText,
   liveStatus,
   backlog = 0,
+  window: windowMode = "head",
+  pageSize = 200,
 }: {
   parts: TranscriptPart[];
   interimText?: string;
   liveStatus?: "listening" | "transcribing" | null;
   backlog?: number;
+  /** "tail": newest paragraphs (live recording). "head": from the start (reading a saved meeting). */
+  window?: "head" | "tail";
+  pageSize?: number;
 }) {
-  const multiSpeaker = new Set(parts.map((p) => p.speaker)).size > 1;
+  const paragraphs = useMemo(() => toParagraphs(parts), [parts]);
+  const multiSpeaker = useMemo(() => new Set(parts.map((p) => p.speaker)).size > 1, [parts]);
+  const [shown, setShown] = useState(pageSize);
+  const hidden = Math.max(0, paragraphs.length - shown);
+  const visible = windowMode === "tail" ? paragraphs.slice(hidden) : paragraphs.slice(0, shown);
   const showLive = !!interimText || !!liveStatus;
-
-  // Indexes of phrases that get a time divider above them.
-  const timeMarks = new Set<number>();
-  let lastMark = -Infinity;
-  parts.forEach((p, i) => {
-    if (typeof p.t === "number" && p.t - lastMark >= TIME_MARK_EVERY_S) {
-      timeMarks.add(i);
-      lastMark = p.t;
-    }
-  });
+  const more = (
+    <button
+      type="button"
+      onClick={() => setShown((n) => n + pageSize * 2)}
+      className="mx-auto my-2 block min-h-10 rounded-lg px-4 text-meta font-medium text-accent hover:bg-accent/10"
+    >
+      Show {Math.min(hidden, pageSize * 2).toLocaleString("en-IN")} {windowMode === "tail" ? "earlier" : "more"} paragraphs
+      {hidden > pageSize * 2 ? ` of ${hidden.toLocaleString("en-IN")}` : ""}
+    </button>
+  );
 
   return (
-    <div className="flex flex-col gap-1.5" role="log" aria-live="polite">
-      {parts.map((part, i) => {
-        const right = multiSpeaker && part.speaker % 2 === 1;
-        const firstOfRun = i === 0 || parts[i - 1].speaker !== part.speaker;
-        return (
-          <div key={i} className={`flex flex-col ${right ? "items-end" : "items-start"} ${firstOfRun && i > 0 ? "mt-2" : ""}`}>
-            {timeMarks.has(i) && (
-              <div className="self-stretch flex items-center gap-2 my-1.5 text-[11px] font-medium text-muted-foreground tabular-nums">
-                <span className="h-px flex-1 bg-border" />
-                {formatDuration(Math.floor(part.t ?? 0))}
-                <span className="h-px flex-1 bg-border" />
-              </div>
-            )}
-            {multiSpeaker && firstOfRun && (
-              <span
-                className="text-[11px] font-bold uppercase tracking-wider mb-0.5 px-1"
-                style={{ color: `var(--speaker-${part.speaker % SPEAKER_COLORS})` }}
-              >
-                Speaker {part.speaker + 1}
+    <div role="log" aria-live="polite" aria-relevant="additions">
+      {windowMode === "tail" && hidden > 0 && more}
+      <div className="space-y-5">
+        {visible.map((p, i) => {
+          const prev = i > 0 ? visible[i - 1] : windowMode === "tail" && hidden > 0 ? paragraphs[hidden - 1] : undefined;
+          const showSpeaker = multiSpeaker && (!prev || prev.speaker !== p.speaker);
+          return (
+            <div key={i} className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[4rem_minmax(0,1fr)] sm:gap-x-4">
+              <span className="pt-[3px] text-meta tabular-nums text-muted-foreground">
+                {typeof p.t === "number" ? formatDuration(Math.floor(p.t)) : ""}
               </span>
-            )}
-            <div
-              className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-[15px] sm:text-base leading-relaxed ${
-                right ? "rounded-br-md" : "rounded-bl-md"
-              }`}
-              style={speakerVars(part.speaker)}
-              title={typeof part.t === "number" ? formatDuration(Math.floor(part.t)) : undefined}
-            >
-              {part.text}
+              <div className="min-w-0">
+                {showSpeaker && (
+                  <span className="mb-1 flex items-center gap-2 text-meta font-semibold" style={{ color: speakerColor(p.speaker) }}>
+                    <span className="h-2 w-2 rounded-full" style={{ background: speakerColor(p.speaker) }} aria-hidden />
+                    Speaker {p.speaker + 1}
+                  </span>
+                )}
+                <p className="max-w-[68ch] text-base leading-7 text-foreground">{p.text}</p>
+              </div>
+            </div>
+          );
+        })}
+
+        {showLive && (
+          <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[4rem_minmax(0,1fr)] sm:gap-x-4">
+            <span className="pt-[3px] text-meta text-muted-foreground">Now</span>
+            <div className="min-w-0">
+              <p className="max-w-[68ch] text-base leading-7 text-muted-foreground" aria-label={interimText ? "Live transcription" : "Listening"}>
+                {interimText ? (
+                  <>
+                    {interimText.replace(/\s*…$/, "")}{" "}
+                    <span className="inline-block h-4 w-0.5 translate-y-0.5 animate-pulse bg-accent" aria-hidden />
+                  </>
+                ) : (
+                  <TypingDots />
+                )}
+              </p>
+              {backlog > 1 && <p className="mt-1 text-meta text-muted-foreground">Catching up · {backlog} phrases waiting</p>}
             </div>
           </div>
-        );
-      })}
-
-      {showLive && (
-        <div className={`flex flex-col items-start ${parts.length ? "mt-1" : ""}`}>
-          <div
-            className="max-w-[85%] rounded-2xl rounded-bl-md px-3.5 py-2 text-[15px] sm:text-base leading-relaxed bg-muted text-foreground/60 italic"
-            aria-label={interimText ? "Live transcription" : liveStatus === "listening" ? "Listening" : "Transcribing"}
-          >
-            {interimText ? (
-              <>
-                {interimText.replace(/\s*…$/, "")} <TypingDots />
-              </>
-            ) : (
-              <TypingDots />
-            )}
-          </div>
-          {backlog > 1 && (
-            <span className="text-[11px] text-muted-foreground mt-1 px-1">
-              Catching up · {backlog} phrases waiting
-            </span>
-          )}
-        </div>
-      )}
+        )}
+      </div>
+      {windowMode === "head" && hidden > 0 && <div className="mt-6">{more}</div>}
     </div>
   );
 }
+
+export const TranscriptView = memo(TranscriptViewImpl);
