@@ -14,7 +14,8 @@ export async function isRecordingActive(): Promise<boolean> {
       // from beyond parts.size copies zero parts, so this is cheap
       return (await MeetingRecorder.getState({ from: 1_000_000_000 })).active;
     } catch {
-      return false;
+      // Unknown state: assume recording so back minimizes instead of exiting.
+      return true;
     }
   }
   return false;

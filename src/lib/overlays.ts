@@ -10,7 +10,9 @@ export function pushOverlay(close: () => void): () => void {
 }
 
 export function closeTopOverlay(): boolean {
-  const close = overlays.pop();
+  // Peek, don't pop: the overlay unregisters itself (via the pushOverlay
+  // cleanup) once it actually closes, so it can't be left open but unregistered.
+  const close = overlays[overlays.length - 1];
   if (!close) return false;
   close();
   return true;
