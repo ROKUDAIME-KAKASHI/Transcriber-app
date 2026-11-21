@@ -152,6 +152,15 @@ async function updateRow(
   }
 }
 
+/** Heartbeat from the recorder: marks the row as live without touching sync flags. */
+export async function touchRecording(userId: string, id: string): Promise<void> {
+  try {
+    await getLocalDb(userId).meetings.update(id, { lastWriteAt: Date.now() });
+  } catch {
+    /* best effort */
+  }
+}
+
 export function setTitle(userId: string, id: string, rawTitle: string): Promise<boolean> {
   const title = rawTitle.trim().slice(0, 200); // the server accepts 1-200 chars
   if (!title) return Promise.resolve(false);
@@ -379,7 +388,7 @@ export async function recoverOrphans(
       for (const r of rows) {
         if (r.origin !== "local" || r.deleted === 1) continue;
         if (!(Date.parse(r.createdAt) < createdBefore) || isActive(r.id)) continue;
-        if (r.lastWriteAt && Date.now() - r.lastWriteAt < 30_000) continue;
+        if (r.lastWriteAt && Date.now() - r.lastWriteAt < 120_000) continue;
         const dirty = { ...r.dirty, finish: true, tail: true };
         await db.meetings.put({
           ...r,

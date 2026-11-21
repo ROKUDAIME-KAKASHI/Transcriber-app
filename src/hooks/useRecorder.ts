@@ -6,7 +6,7 @@ import { loadSpeechModel, transcribePartial, transcribeSegment } from "@/lib/spe
 import type { ModelName } from "@/lib/speech/models";
 import { VoiceChunker } from "@/lib/speech/voiceChunker";
 import { cleanPhrase } from "@/lib/speech/cleanText";
-import { createLocal, getMeta, purge, putParts } from "@/lib/local/repo";
+import { createLocal, getMeta, purge, putParts, touchRecording } from "@/lib/local/repo";
 import { newMeetingId } from "@/lib/local/ids";
 import { flush, markRecording, poke, type FlushResult } from "@/lib/local/sync";
 import { useLocalUser } from "@/components/SyncProvider";
@@ -991,7 +991,13 @@ export function useRecorder(opts: {
       startedAtRef.current = Date.now();
       lastFrameAtRef.current = performance.now();
       timerRef.current = setInterval(tick, 500);
-      autosaveRef.current = setInterval(() => save(), AUTOSAVE_MS);
+      autosaveRef.current = setInterval(() => {
+        void save();
+        // Heartbeat so another tab's orphan recovery can tell a quiet meeting from an abandoned one.
+        const uid = localUserRef.current.userId;
+        const rid = meetingIdRef.current;
+        if (localModeRef.current && uid && rid) void touchRecording(uid, rid);
+      }, AUTOSAVE_MS);
       patch({ isStarting: false });
     } catch (e) {
       // Cancelled (or superseded) while starting: cancelStart already cleaned up and set the message.
