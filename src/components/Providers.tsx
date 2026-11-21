@@ -1,27 +1,26 @@
 "use client";
 
 import { useEffect } from "react";
-import { SessionProvider } from "next-auth/react";
+import { AuthProvider } from "./AuthProvider";
 import { SyncProvider } from "./SyncProvider";
 import { NavTracker } from "./NavTracker";
 import { NativeBackHandler } from "./NativeBackHandler";
+import { ServiceWorkerManager } from "./ServiceWorkerManager";
 import { cleanupOldExports } from "@/lib/native";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void cleanupOldExports();
-    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
-    }
   }, []);
 
   return (
-    <SessionProvider>
+    <AuthProvider>
       <SyncProvider>
         <NavTracker />
         <NativeBackHandler />
+        <ServiceWorkerManager />
         {children}
       </SyncProvider>
-    </SessionProvider>
+    </AuthProvider>
   );
 }
