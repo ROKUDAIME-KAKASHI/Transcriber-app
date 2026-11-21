@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Markdown from "react-markdown";
@@ -14,8 +14,11 @@ import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/
 import { navBack } from "@/lib/navStack";
 import { buildExport } from "@/lib/export";
 import {
-  ExportError, copyTextSync, nativeFileShareMissing, nativePdfMissing, preloadExport, shareOrSave, shareText,
+  ExportError, copyText, copyTextSync, nativeFileShareMissing, nativePdfMissing, preloadExport, shareOrSave, shareText,
+  webCanShareFiles,
 } from "@/lib/export/deliver";
+import { isNative } from "@/lib/native";
+import { ShareMenu } from "./ShareMenu";
 import type { ExportKind, ExportMeeting } from "@/lib/export/types";
 import { TranscriptView } from "./TranscriptView";
 import { Badge, Button, FieldLabel, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
@@ -51,6 +54,8 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const [exportBusy, setExportBusy] = useState<ExportKind | "share" | null>(null);
   const [exportNote, setExportNote] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const preloaded = useRef(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareBtnRef = useRef<HTMLButtonElement>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
 
   const rawText = transcriptToText(meeting.transcript);
@@ -265,16 +270,51 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
     }
   };
 
-  const share = async () => {
+  const fileKind: ExportKind = isNative() ? (nativePdfMissing() ? "docx" : "pdf") : "docx";
+
+  const runShare = async (target: "document" | "transcript") => {
     setExportNote(null);
+    const text = target === "document" ? doc ?? "" : rawText;
+    if (nativeFileShareMissing()) {
+      copyTextSync(text);
+      setExportNote({ tone: "error", text: "Update the app to share files. The text is copied to your clipboard instead." });
+      return;
+    }
     setExportBusy("share");
     try {
-      await shareText(currentText, title);
+      if (!isNative() && !webCanShareFiles() && typeof navigator.share === "function") {
+        await shareText(text, title);
+      } else {
+        await shareOrSave(await buildExport({ kind: fileKind, target, meeting: exportMeeting }), title);
+      }
     } catch (e) {
       console.error("Share failed:", e);
-      setExportNote({ tone: "error", text: "Couldn't open the share sheet. Try Copy text instead." });
+      const code = e instanceof ExportError ? e.code : undefined;
+      let msg = "Couldn't open the share sheet. Try Copy text instead.";
+      if (code === "BUILD_FAILED") {
+        msg = fileKind === "pdf" ? "Couldn't make the PDF. Try Word or Text instead." : "Couldn't make the Word file. Try PDF or Text instead.";
+      }
+      setExportNote({ tone: "error", text: msg });
     } finally {
       setExportBusy(null);
+    }
+  };
+
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+  }, []);
+
+  const runCopy = async () => {
+    setExportNote(null);
+    try {
+      await copyText(currentText);
+      setExportNote({ tone: "success", text: "Copied to clipboard" });
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setExportNote(null), 2500);
+    } catch (e) {
+      console.error("Copy failed:", e);
+      setExportNote({ tone: "error", text: "Couldn't copy. Select the text and copy it by hand." });
     }
   };
 
@@ -299,7 +339,27 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
         name={currentName}
         busy={exportBusy}
         disabled={nothingToExport}
-        onShare={share}
+        onShare={() => {
+          preloadExport();
+          setShareOpen((o) => !o);
+        }}
+        shareRef={shareBtnRef}
+        shareOpen={shareOpen}
+        menu={
+          <ShareMenu
+            open={shareOpen}
+            onClose={() => setShareOpen(false)}
+            anchorRef={shareBtnRef}
+            docLabel={doc ? (docTemplate === "Report" ? "report" : "minutes") : null}
+            fileDescription={fileKind === "pdf" ? "PDF file" : "Word file"}
+            hasTranscript={hasTranscript}
+            copyDescription={showingDoc ? `Copies the ${docName.toLowerCase()}` : "Copies the transcript"}
+            canCopy={currentText.trim().length > 0}
+            onShareDocument={() => runShare("document")}
+            onShareTranscript={() => runShare("transcript")}
+            onCopy={runCopy}
+          />
+        }
         onTxt={() => runExport("txt")}
         onWord={() => runExport("docx")}
         onPdf={() => runExport("pdf")}
@@ -502,6 +562,9 @@ function ExportButtons(props: {
   busy: ExportKind | "share" | null;
   disabled: boolean;
   onShare: () => void;
+  shareRef: RefObject<HTMLButtonElement | null>;
+  shareOpen: boolean;
+  menu: ReactNode;
   onTxt: () => void;
   onWord: () => void;
   onPdf: () => void;
@@ -525,9 +588,21 @@ function ExportButtons(props: {
           Text
         </Button>
       </div>
-      <Button onClick={props.onShare} loading={props.busy === "share"} disabled={off("share")} icon={<Share2 className="h-4 w-4" />} className="mt-2 w-full">
-        {props.busy === "share" ? "Preparing…" : "Share meeting"}
-      </Button>
+      <div className="relative mt-2">
+        <Button
+          ref={props.shareRef}
+          onClick={props.onShare}
+          loading={props.busy === "share"}
+          disabled={off("share")}
+          aria-haspopup="menu"
+          aria-expanded={props.shareOpen}
+          icon={<Share2 className="h-4 w-4" />}
+          className="w-full"
+        >
+          {props.busy === "share" ? "Preparing…" : "Share meeting"}
+        </Button>
+        {props.menu}
+      </div>
     </>
   );
 }

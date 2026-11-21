@@ -4,7 +4,7 @@
  * Small design-system primitives, so every screen uses the same buttons, panels, labels and
  * controls. Tokens live in globals.css.
  */
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { Loader2 } from "lucide-react";
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -16,6 +16,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: "md" | "lg";
   loading?: boolean;
   icon?: ReactNode;
+  ref?: Ref<HTMLButtonElement>;
 };
 
 export function Button({ variant = "secondary", size = "md", loading, icon, className, children, disabled, ...rest }: ButtonProps) {
@@ -24,7 +25,7 @@ export function Button({ variant = "secondary", size = "md", loading, icon, clas
       {...rest}
       disabled={disabled || loading}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-xl font-medium whitespace-nowrap transition-colors",
+        "inline-flex items-center justify-center gap-2 rounded-xl font-semibold whitespace-nowrap transition-colors",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         size === "lg" ? "min-h-12 px-5 text-ui" : "min-h-11 lg:min-h-10 px-4 text-ui",
         variant === "primary" && "bg-accent text-accent-foreground hover:bg-accent/90",
