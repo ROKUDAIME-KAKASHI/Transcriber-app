@@ -41,6 +41,8 @@ const failListeners = new Set<(e: Error) => void>();
 const cacheWaiters = new Map<ModelName, ((cached: boolean) => void)[]>();
 const prefetches = new Map<number, { resolve: () => void; reject: (e: Error) => void; onProgress: (pct: number) => void }>();
 let nextRequestId = 1;
+/** True while a model load (worker "load") is in flight; the worker must not be terminated then. */
+let loadingModel = false;
 
 function readStored(key: string): string | null {
   try {
@@ -110,6 +112,7 @@ function getWorker(): Worker {
     worker = null;
     ready = null;
     readyFor = "";
+    loadingModel = false;
   };
   worker.onerror = (e) => {
     e.preventDefault();
@@ -135,6 +138,7 @@ export function loadSpeechModel(
   if (ready && readyFor === key) return ready;
   const w = getWorker();
   readyFor = key;
+  loadingModel = true;
   ready = new Promise((resolve, reject) => {
     const onFail = (err: Error) => {
       failListeners.delete(onFail);
@@ -157,6 +161,10 @@ export function loadSpeechModel(
     w.addEventListener("message", onMsg);
     w.postMessage({ type: "load", model: preferredModel(engine), language, slowRtf: opts.slowRtf, localOnly: getConnectivity() === "offline" });
   });
+  const settled = () => {
+    loadingModel = false;
+  };
+  ready.then(settled, settled);
   return ready;
 }
 
@@ -181,9 +189,9 @@ export function transcribePartial(audio: Float32Array): Promise<string | null> {
   return send(audio, "partial");
 }
 
-/** True while the worker is in use for a recording (a recording is running or phrases are queued). */
+/** True while the worker is in use: a recording is running, phrases are queued, or a model is loading. */
 export function isWorkerBusy(): boolean {
-  return pending.size > 0 || isWebRecordingNow();
+  return pending.size > 0 || loadingModel || isWebRecordingNow();
 }
 
 /** Asks the worker whether a model is fully in Cache Storage. Never throws; false on any problem. */
