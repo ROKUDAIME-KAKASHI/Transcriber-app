@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { signOut } from "next-auth/react";
+import { useAuth } from "./AuthProvider";
+import { ConnectivityPill } from "./ConnectivityPill";
+import { useConnectivity } from "@/lib/connectivity";
 import { markSignedOut } from "@/components/SyncProvider";
 import { Mic, LayoutList, LogOut, AudioLines } from "lucide-react";
 import { cx } from "./ui";
@@ -12,7 +15,8 @@ const NAV = [
   { href: "/meetings", label: "Meetings", icon: LayoutList },
 ];
 
-const isActive = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+const isActive = (pathname: string, href: string) =>
+  href === "/" ? pathname === "/" : href === "/meetings" ? pathname.startsWith("/meetings") || pathname === "/meeting" : pathname.startsWith(href);
 
 function Logo() {
   return (
@@ -36,8 +40,15 @@ function Logo() {
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { data } = useSession();
-  const email = data?.user?.email ?? "";
+  const { user, cachedUser } = useAuth();
+  const offline = useConnectivity() === "offline";
+  const email = user?.email ?? cachedUser?.email ?? "";
+  const doSignOut = () => {
+    if (offline) return;
+    markSignedOut();
+    void signOut({ callbackUrl: "/login" });
+  };
+  const signOutTitle = offline ? "Sign out needs internet" : "Sign out";
 
   return (
     <div className="min-h-dvh">
@@ -45,6 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-border bg-card px-3 py-4 lg:flex">
         <div className="px-2.5 py-1">
           <Logo />
+          <ConnectivityPill className="mt-1" />
         </div>
         <nav className="mt-6 flex flex-col gap-0.5" aria-label="Main">
           {NAV.map(({ href, label, icon: Icon }) => {
@@ -74,13 +86,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {email}
             </span>
             <button
-              onClick={() => {
-                markSignedOut();
-                void signOut({ callbackUrl: "/login" });
-              }}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={doSignOut}
+              aria-disabled={offline}
+              className={cx("grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground", offline && "opacity-50")}
               aria-label="Sign out"
-              title="Sign out"
+              title={signOutTitle}
             >
               <LogOut className="h-4 w-4" />
             </button>
@@ -92,17 +102,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-20 border-b border-border bg-card pt-[var(--safe-area-inset-top,env(safe-area-inset-top))] lg:hidden">
         <div className="flex h-14 items-center justify-between gap-4 px-4">
           <Logo />
+          <div className="ml-auto flex items-center gap-1">
+          <ConnectivityPill />
           <button
-            onClick={() => {
-                markSignedOut();
-                void signOut({ callbackUrl: "/login" });
-              }}
-            className="-mr-2 grid h-11 w-11 place-items-center rounded-lg text-muted-foreground hover:text-foreground"
+            onClick={doSignOut}
+              aria-disabled={offline}
+            className={cx("-mr-2 grid h-11 w-11 place-items-center rounded-lg text-muted-foreground hover:text-foreground", offline && "opacity-50")}
             aria-label="Sign out"
-            title={email ? `Sign out (${email})` : "Sign out"}
+            title={offline ? signOutTitle : email ? `Sign out (${email})` : "Sign out"}
           >
             <LogOut className="h-5 w-5" />
           </button>
+          </div>
         </div>
       </header>
 
