@@ -51,11 +51,11 @@ Plans:
   2. When internet returns, those meetings show up on the server (e.g. from a laptop browser) on their own, with full text and no duplicate rows
   3. Killing the app mid-sync or sending a sync twice never truncates or duplicates the transcript; AI minutes created on the server are not overwritten by the device
   4. Existing online recording (Deepgram and on-device) keeps autosaving exactly as before, with no regression
-**Plans:** 1/5 plans executed
+**Plans:** 2/5 plans executed
 
 Plans:
 - [x] 02-01-PLAN.md — Server contract, additive: schema fields + prisma generate, explicit selects with P2022 fallback, idempotent client-id POST, title LWW/speakerNames PATCH, speakers relabel, ?since list, /api/health (wave 1)
-- [ ] 02-02-PLAN.md — Device store: Dexie per-user DB (meetings + sibling transcripts table), repo, pure syncCore with node:test tests, connectivity probe (wave 1)
+- [x] 02-02-PLAN.md — Device store: Dexie per-user DB (meetings + sibling transcripts table), repo, pure syncCore with node:test tests, connectivity probe (wave 1)
 - [ ] 02-03-PLAN.md — Sync engine (Web Locks, triggers, create/tail/meta/finish/delete push, serverTime pull, flush) + SyncProvider with orphan recovery (wave 2)
 - [ ] 02-04-PLAN.md — Recorder integration: local-first useRecorder with legacy fallback, native mirror, save badge (wave 3)
 - [ ] 02-05-PLAN.md — UI integration: merged meetings list with sync badges, device fallback meeting page, local-first rename/delete, flush before AI minutes (wave 3)
@@ -109,7 +109,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Export, Share & Navigation | 4/4 | Complete   | 2026-11-21 |
-| 2. Local-First Meetings & Sync | 1/5 | In Progress|  |
+| 2. Local-First Meetings & Sync | 2/5 | In Progress|  |
 | 3. Offline App Shell & Gating | 0/TBD | Not started | - |
 | 4. On-Device Speaker Separation | 0/TBD | Not started | - |
 | 5. Aurora Ink Redesign & Release | 0/TBD | Not started | - |
