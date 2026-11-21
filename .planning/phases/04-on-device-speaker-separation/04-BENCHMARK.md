@@ -46,4 +46,13 @@ Assumed 3-5x slower than the laptop on a mid-range phone in a single-threaded We
 
 ## Production clustering (diarize.ts)
 
-(Filled in by Task 2 of plan 04-01.)
+`node scripts/diarize-bench.mjs --app [--degraded]` scores the production code on the same real embeddings (shuffled orders, mean ARI / speakers found, true 6):
+
+| Audio | Crop | assignOnline (theta 0.45) | refine (AHC 0.70, no live hint) |
+|-------|------|---------------------------|----------------------------------|
+| clean | 6 s | 1.00 / 6.0 | 0.97 / 5.0 |
+| clean | 3 s | 1.00 / 6.0 | 0.97 / 5.0 |
+| degraded | 6 s | 0.99 / 5.8 | 0.97 / 5.0 |
+| degraded | 3 s | 0.97 / 5.3 | 0.97 / 5.0 |
+
+Matches the reference implementation. At 0.70 refine merges the two most similar voices of the six LibriSpeech speakers (5 found, ARI 0.97); 0.60 finds all 6 on this data. Online assignment is the better splitter here, refine mainly smooths live mistakes; tune `AHC_THRESHOLD` (0.6-0.7) from the phone UAT recording. Unit tests: 3,000 vectors refine in about 250 ms.
