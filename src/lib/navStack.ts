@@ -30,7 +30,7 @@ export function previousPath(): string | null {
 }
 
 export function parentOf(pathname: string): string {
-  return pathname.startsWith("/meetings/") ? "/meetings" : "/";
+  return pathname === "/meeting" || pathname.startsWith("/meetings/") ? "/meetings" : "/";
 }
 
 export function navBack(router: { back(): void; push(href: string): void }, parent: string): void {
