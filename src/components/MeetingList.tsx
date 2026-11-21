@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useLiveQuery } from "dexie-react-hooks";
+import { listMeetings, listPending } from "@/lib/local/repo";
+import { useLocalUser } from "./SyncProvider";
 import { Search, Smartphone, Monitor, ChevronRight, Mic } from "lucide-react";
 import { formatDuration } from "@/lib/transcript";
 import { Badge, LiveDot, cx, inputCls } from "./ui";
@@ -15,6 +18,7 @@ export interface MeetingRow {
   deviceName: string | null;
   template: string | null;
   createdAt: string;
+  sync?: "pending" | "error" | null;
 }
 
 function dayLabel(d: Date): string {
@@ -39,7 +43,65 @@ function StatusBadge({ m }: { m: MeetingRow }) {
   return null; // plain transcript: no badge, so the ones that matter stand out
 }
 
-export function MeetingList({ meetings }: { meetings: MeetingRow[] }) {
+function SyncBadge({ m }: { m: MeetingRow }) {
+  if (m.sync === "pending") return <Badge tone="neutral">Not synced yet</Badge>;
+  if (m.sync === "error") return <Badge tone="live">Couldn't sync</Badge>;
+  return null;
+}
+
+export function MeetingList({ meetings: serverMeetings }: { meetings: MeetingRow[] }) {
+  const { userId } = useLocalUser();
+  const local = useLiveQuery(
+    async () =>
+      userId
+        ? {
+            rows: await listMeetings(userId),
+            tombstones: (await listPending(userId)).filter((m) => m.deleted === 1).map((m) => m.id),
+          }
+        : null,
+    [userId],
+    null,
+  );
+
+  // Server props are the base so SSR and the first client render match; device state layers on top.
+  const merged = useMemo<MeetingRow[]>(() => {
+    if (!local) return serverMeetings;
+    const dead = new Set(local.tombstones);
+    const byId = new Map(local.rows.map((r) => [r.id, r]));
+    const syncOf = (l: { syncError: string | null }) => (l.syncError ? "error" : "pending") as "error" | "pending";
+    const out: MeetingRow[] = [];
+    const seen = new Set<string>();
+    for (const s of serverMeetings) {
+      if (dead.has(s.id)) continue;
+      seen.add(s.id);
+      const l = byId.get(s.id);
+      if (l && l.pending === 1) {
+        out.push({
+          ...s,
+          title: l.dirty.meta ? l.title : s.title,
+          status: l.dirty.tail || l.dirty.finish ? l.status : s.status,
+          durationSec: l.dirty.tail || l.dirty.finish ? l.durationSec : s.durationSec,
+          sync: syncOf(l),
+        });
+      } else out.push(s);
+    }
+    for (const l of local.rows) {
+      if (seen.has(l.id) || dead.has(l.id) || l.pending !== 1) continue;
+      out.push({
+        id: l.id,
+        title: l.title,
+        status: l.status,
+        language: l.language,
+        durationSec: l.durationSec,
+        deviceName: l.deviceName,
+        template: l.template,
+        createdAt: l.createdAt,
+        sync: syncOf(l),
+      });
+    }
+    return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  }, [serverMeetings, local]);
+
   const [query, setQuery] = useState("");
   // Day headings and times depend on the viewer's timezone, so they only appear after mount.
   const [mounted, setMounted] = useState(false);
@@ -47,7 +109,7 @@ export function MeetingList({ meetings }: { meetings: MeetingRow[] }) {
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const shown = q ? meetings.filter((m) => m.title.toLowerCase().includes(q)) : meetings;
+    const shown = q ? merged.filter((m) => m.title.toLowerCase().includes(q)) : merged;
     if (!mounted) return [{ label: "", items: shown }];
     const out: { label: string; items: MeetingRow[] }[] = [];
     for (const m of shown) {
@@ -57,9 +119,9 @@ export function MeetingList({ meetings }: { meetings: MeetingRow[] }) {
       else out.push({ label, items: [m] });
     }
     return out;
-  }, [meetings, query, mounted]);
+  }, [merged, query, mounted]);
 
-  if (meetings.length === 0) {
+  if (merged.length === 0) {
     return (
       <div className="rounded-panel border border-dashed border-border bg-card px-6 py-14 text-center">
         <p className="text-ui font-semibold">No meetings yet</p>
@@ -130,7 +192,10 @@ export function MeetingList({ meetings }: { meetings: MeetingRow[] }) {
                         </span>
                       </span>
                       <span className="sm:justify-self-start">
-                        <StatusBadge m={m} />
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <StatusBadge m={m} />
+                          <SyncBadge m={m} />
+                        </span>
                       </span>
                       <span className="hidden text-right text-meta tabular-nums text-muted-foreground sm:block">
                         {formatDuration(m.durationSec)}
