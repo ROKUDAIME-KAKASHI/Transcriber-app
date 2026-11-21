@@ -28,6 +28,8 @@ export interface LocalMeeting {
   pending: 0 | 1;
   deleted: 0 | 1;
   syncError: string | null;
+  /** Epoch ms of the last local transcript write; lets other tabs skip live recordings. */
+  lastWriteAt?: number;
 }
 
 export interface LocalTranscript {

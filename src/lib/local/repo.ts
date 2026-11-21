@@ -56,6 +56,7 @@ export async function createLocal(userId: string, m: NewLocalMeeting): Promise<b
         pending: computePending(dirty, 0),
         deleted: 0,
         syncError: null,
+        lastWriteAt: Date.now(),
       });
       await db.transcripts.put({ id: m.id, parts: [] });
     });
@@ -85,6 +86,7 @@ export async function putParts(
         durationSec,
         hasTranscript: true,
         dirty,
+        lastWriteAt: Date.now(),
       };
       if (status === "DONE") {
         next.status = "DONE";
@@ -361,6 +363,7 @@ export async function recoverOrphans(
       for (const r of rows) {
         if (r.origin !== "local" || r.deleted === 1) continue;
         if (!(Date.parse(r.createdAt) < createdBefore) || isActive(r.id)) continue;
+        if (r.lastWriteAt && Date.now() - r.lastWriteAt < 30_000) continue;
         const dirty = { ...r.dirty, finish: true, tail: true };
         await db.meetings.put({
           ...r,
