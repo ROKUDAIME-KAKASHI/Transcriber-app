@@ -52,7 +52,7 @@ function SyncBadge({ m }: { m: MeetingRow }) {
 }
 
 export function MeetingList() {
-  const { userId } = useLocalUser();
+  const { userId, available } = useLocalUser();
   const local = useLiveQuery(
     async () =>
       userId
@@ -126,7 +126,23 @@ export function MeetingList() {
     </div>
   );
 
-  if (local === undefined) {
+  // No local DB (blocked storage / private mode): say so instead of a misleading empty list.
+  if (mounted && !available) {
+    return (
+      <>
+        {header}
+        <div role="status" className="rounded-panel border border-dashed border-border bg-card px-6 py-14 text-center">
+          <p className="text-ui font-semibold">This browser can't store meetings offline</p>
+          <p className="mx-auto mt-1 max-w-[44ch] text-meta text-muted-foreground">
+            Local storage is blocked here (private mode?). Open Transcriber in a normal window to see and sync your meetings.
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  // Until the signed-in user id is known the list is loading, not empty.
+  if (local === undefined || !userId) {
     return (
       <>
         {header}
