@@ -1,7 +1,8 @@
 import { Prisma } from "@prisma/client";
 
-/** Client-generated meeting ids (existing cuids match too). */
-export const MEETING_ID_RE = /^[a-z0-9_-]{16,40}$/;
+import { MEETING_ID_RE } from "./meetingId";
+
+export { MEETING_ID_RE };
 
 export const MEETING_FULL_SELECT_LEGACY = {
   id: true, title: true, status: true, language: true, transcript: true, durationSec: true,
