@@ -283,7 +283,9 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
     setExportBusy("share");
     try {
       if (!isNative() && !webCanShareFiles() && typeof navigator.share === "function") {
-        await shareText(text, title);
+        if ((await shareText(text, title)) === "copied") {
+          setExportNote({ tone: "success", text: "Copied to clipboard" });
+        }
       } else {
         await shareOrSave(await buildExport({ kind: fileKind, target, meeting: exportMeeting }), title);
       }

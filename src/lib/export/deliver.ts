@@ -45,7 +45,8 @@ function toBase64(blob: Blob): Promise<string> {
 function isCancel(e: unknown): boolean {
   if (e instanceof DOMException && e.name === "AbortError") return true;
   const x = e as { message?: string; code?: string } | null;
-  return !!x && (x.code === "CANCELLED" || /cancel/i.test(String(x.message ?? "")));
+  // Exact known cancel signals only; a loose /cancel/ match hides real failures.
+  return !!x && (x.code === "CANCELLED" || x.message === "Share canceled" || x.message === "Share cancelled");
 }
 
 function downloadBlob(blob: Blob, name: string) {
@@ -197,5 +198,5 @@ export async function shareText(text: string, title: string): Promise<DeliverRes
     throw new ExportError("SHARE_FAILED", String((e as Error)?.message ?? e));
   }
   await copyText(text);
-  return "ok";
+  return "copied";
 }

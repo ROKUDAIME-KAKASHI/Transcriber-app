@@ -11,5 +11,5 @@ export interface ExportMeeting {
   document: string | null;
   docName: "Minutes" | "Report";
 }
-export type DeliverResult = "ok" | "cancelled" | "printed";
+export type DeliverResult = "ok" | "cancelled" | "printed" | "copied";
 export type ExportErrorCode = "PLUGIN_MISSING" | "PDF_PLUGIN_MISSING" | "BUILD_FAILED" | "SHARE_FAILED" | "COPY_FAILED";
