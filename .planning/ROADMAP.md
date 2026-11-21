@@ -14,7 +14,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Export, Share & Navigation** - TXT/DOCX/PDF exports and native share work in the APK and on the web, nav fixed, all new native plugins in one APK
  (completed 2026-11-21)
-- [x] **Phase 2: Local-First Meetings & Sync** - Meetings live on the device (Dexie) and sync to the server reliably with client IDs and idempotent upserts (completed 2026-11-21)
+- [x] **Phase 2: Local-First Meetings & Sync** - Meetings live on the device (Dexie) and sync to the server reliably with client IDs and idempotent upserts
+ (completed 2026-11-21)
 - [ ] **Phase 3: Offline App Shell & Gating** - The app opens, stays signed in and records on-device with no internet; online-only features are clearly gated
 - [ ] **Phase 4: On-Device Speaker Separation** - Moonshine/Whisper transcripts say who said what, renamable, used by AI minutes
 - [ ] **Phase 5: Aurora Ink Redesign & Release** - Alive, modern, simple UI with motion; signed APK built and verified on the Xiaomi phone
@@ -71,7 +72,17 @@ Plans:
   3. An "Offline" indicator appears when the server is really unreachable (including on Wi-Fi with no internet) and disappears when it is reachable again
   4. Offline, Deepgram Cloud recording and AI minutes generation show as disabled with a one-line reason, and they turn on automatically when back online
   5. After a new deploy, the app keeps working (no broken chunks, cross-origin isolation kept) and never reloads in the middle of a recording
-**Plans**: TBD
+**Plans:** 8 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Hand-written service worker pipeline: pure routing/manifest + tests, SW template generated in `next build` via compiler.runAfterProductionCompile, check-build script (wave 1)
+- [ ] 03-02-PLAN.md — Pure cores + stores: connectivity store/useConnectivity, feature gate + effective engine, auth decision table, auth store (wave 1)
+- [ ] 03-03-PLAN.md — SW client: registration, recording-safe update flow, chunk-error recovery, Update notice, APK errorPath copy (wave 1)
+- [ ] 03-04-PLAN.md — Static shells in (app) route group, MeetingLoader (/meeting?id=), Dexie-based Meetings list, /offline page, nav parent (wave 2)
+- [ ] 03-06-PLAN.md — Model readiness from Cache Storage, worker cache-status/prefetch, offline-safe load, Download for offline control (wave 2)
+- [ ] 03-05-PLAN.md — AuthProvider/AuthGate on own session probe, SyncProvider/AppShell off useSession, Offline pill + explainer, offline-aware /login, SW manager mounted (wave 3)
+- [ ] 03-07-PLAN.md — Gating UI: Cloud engine + AI minutes disabled with reason, effective on-device engine offline, honest screen-on copy, download control + Start gate in Recorder (wave 3)
+- [ ] 03-08-PLAN.md — Wiring verification: typecheck/tests/build/check-build, local offline smoke on port 3001, HUMAN-UAT device checklist (wave 4)
 **UI hint**: yes
 
 ### Phase 4: On-Device Speaker Separation
@@ -110,7 +121,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 |-------|----------------|--------|-----------|
 | 1. Export, Share & Navigation | 4/4 | Complete   | 2026-11-21 |
 | 2. Local-First Meetings & Sync | 5/5 | Complete   | 2026-11-21 |
-| 3. Offline App Shell & Gating | 0/TBD | Not started | - |
+| 3. Offline App Shell & Gating | 0/8 | Planned | - |
 | 4. On-Device Speaker Separation | 0/TBD | Not started | - |
 | 5. Aurora Ink Redesign & Release | 0/TBD | Not started | - |
 
