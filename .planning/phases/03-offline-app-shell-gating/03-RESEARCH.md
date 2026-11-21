@@ -492,7 +492,7 @@ Clear `sw.reloading` on the next successful load (after 10 s) so it cannot block
 | A8 | Real q8 model sizes (HF tree API) are 67 / 32 / 82 MB incl. tokenizers; UI-SPEC's "about 90 MB" should read about 100 MB | Pattern 8 | Copy/size mismatch; cosmetic |
 | A9 | Hydrating the `/meeting` shell at a different URL works (verified in source for `canonicalUrl`; not run in a browser) | Pattern 3 | Avoided by the 302 design |
 
-## Open Questions
+## Open Questions (RESOLVED: Q1 ORT lazy tier chosen; Q2 deferred to HUMAN-UAT item 1; Q3 handled in plan 01; Q4 UI detail)
 
 1. **ORT precache tier (D-03).** Literal precache costs 14.3 MB on every first install, including cloud-only APK users, and duplicates the copy transformers.js already makes in `transformers-cache`. Recommendation: lazy tier (above). Needs a yes/no from the user; planner should implement the lazy tier unless told otherwise.
 2. **Vercel pickup of the generated `public/sw.js`** (A1) can only be verified on a deploy; ask the user to check `https://<app>/sw.js` after the next deploy, or add `vercel.json` as belt and braces.
