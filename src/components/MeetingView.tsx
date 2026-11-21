@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { TEMPLATES, formatDuration, transcriptToText, type TranscriptPart } from "@/lib/transcript";
 import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/aiModels";
+import { navBack } from "@/lib/navStack";
 import { TranscriptView } from "./TranscriptView";
 import { Badge, Button, FieldLabel, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
 
@@ -338,7 +339,16 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
     <div>
       {/* ---------- Header ---------- */}
       <header className="mb-6 sm:mb-8">
-        <Link href="/meetings" className="inline-flex min-h-10 items-center gap-1.5 text-meta font-medium text-muted-foreground hover:text-foreground">
+        <Link
+          href="/meetings"
+          aria-label="Back to meetings"
+          className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-meta font-semibold text-muted-foreground hover:text-foreground"
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            navBack(router, "/meetings");
+          }}
+        >
           <ArrowLeft className="h-4 w-4" /> Meetings
         </Link>
         <div className="mt-1">

@@ -15,7 +15,11 @@ const isActive = (pathname: string, href: string) => (href === "/" ? pathname ==
 
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2.5 text-ui font-semibold tracking-tight">
+    <Link
+      href="/"
+      title="Go to Record"
+      className="-mx-2 inline-flex min-h-11 items-center gap-2.5 rounded-lg px-2 text-ui font-semibold tracking-tight"
+    >
       <span className="grid h-7 w-7 place-items-center rounded-lg bg-foreground text-background">
         <AudioLines className="h-4 w-4" />
       </span>
