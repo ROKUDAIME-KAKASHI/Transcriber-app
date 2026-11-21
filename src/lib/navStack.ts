@@ -4,9 +4,20 @@ const stack: string[] = [];
 
 export const ROOT_ROUTES = ["/", "/meetings", "/login"] as const;
 
+// Direction comes from popstate (history back/forward), not path inference, so
+// a forward push A -> B -> A is not mistaken for "back".
+let popped = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", () => {
+    popped = true;
+  });
+}
+
 export function recordPath(p: string): void {
+  const viaPop = popped;
+  popped = false;
   if (stack[stack.length - 1] === p) return;
-  if (stack.length >= 2 && stack[stack.length - 2] === p) {
+  if (viaPop && stack.length >= 2 && stack[stack.length - 2] === p) {
     stack.pop();
     return;
   }
