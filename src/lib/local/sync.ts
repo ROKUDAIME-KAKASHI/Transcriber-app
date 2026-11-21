@@ -162,12 +162,12 @@ async function syncMeeting(uid: string, m: LocalMeeting): Promise<Step> {
     }
   }
 
-  // RecordingService owns native rows (D-18): no tail / finish from JS.
-  if (m.origin === "native") return "next";
+  // RecordingService owns native rows (D-18): no tail / finish from JS, but meta/speakers still sync.
+  const native = m.origin === "native";
 
   let cur = (await repo.getMeta(uid, id)) ?? m;
 
-  if (cur.dirty.tail) {
+  if (!native && cur.dirty.tail) {
     const data = await repo.getParts(uid, id);
     if (!data) return "next";
     const readRev = data.localRev;
@@ -235,7 +235,7 @@ async function syncMeeting(uid: string, m: LocalMeeting): Promise<Step> {
     }
   }
 
-  if (cur.dirty.finish) {
+  if (!native && cur.dirty.finish) {
     const latest = (await repo.getMeta(uid, id)) ?? cur;
     if (!latest.dirty.tail) {
       const r = await req("PATCH", url, { status: "DONE", durationSec: latest.durationSec });
