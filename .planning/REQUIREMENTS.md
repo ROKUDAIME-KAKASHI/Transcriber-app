@@ -21,7 +21,7 @@
 
 ### Offline
 
-- [ ] **OFF-01**: After one online visit, the app (Android and website) opens with no internet: Record, Meetings list and meeting pages all render
+- [x] **OFF-01**: After one online visit, the app (Android and website) opens with no internet: Record, Meetings list and meeting pages all render
 - [ ] **OFF-02**: User can record with the on-device models (Moonshine / Whisper) with no internet; the chosen models can be downloaded ahead for offline use, with clear "ready offline" status
 - [x] **OFF-03**: Meetings recorded or edited offline are stored on the device and sync to the server automatically when internet returns, without duplicates or lost text
 - [ ] **OFF-04**: Offline state is visible (an "Offline" indicator), based on real reachability, not just navigator.onLine
@@ -84,7 +84,7 @@
 | NAV-01 | Phase 1 | Complete |
 | NAV-02 | Phase 1 | Complete |
 | NAV-03 | Phase 1 | Complete |
-| OFF-01 | Phase 3 | Pending |
+| OFF-01 | Phase 3 | Complete |
 | OFF-02 | Phase 3 | Pending |
 | OFF-03 | Phase 2 | Complete |
 | OFF-04 | Phase 3 | Pending |

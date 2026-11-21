@@ -72,10 +72,10 @@ Plans:
   3. An "Offline" indicator appears when the server is really unreachable (including on Wi-Fi with no internet) and disappears when it is reachable again
   4. Offline, Deepgram Cloud recording and AI minutes generation show as disabled with a one-line reason, and they turn on automatically when back online
   5. After a new deploy, the app keeps working (no broken chunks, cross-origin isolation kept) and never reloads in the middle of a recording
-**Plans:** 8 plans
+**Plans:** 1/8 plans executed
 
 Plans:
-- [ ] 03-01-PLAN.md — Hand-written service worker pipeline: pure routing/manifest + tests, SW template generated in `next build` via compiler.runAfterProductionCompile, check-build script (wave 1)
+- [x] 03-01-PLAN.md — Hand-written service worker pipeline: pure routing/manifest + tests, SW template generated in `next build` via compiler.runAfterProductionCompile, check-build script (wave 1)
 - [ ] 03-02-PLAN.md — Pure cores + stores: connectivity store/useConnectivity, feature gate + effective engine, auth decision table, auth store (wave 1)
 - [ ] 03-03-PLAN.md — SW client: registration, recording-safe update flow, chunk-error recovery, Update notice, APK errorPath copy (wave 1)
 - [ ] 03-04-PLAN.md — Static shells in (app) route group, MeetingLoader (/meeting?id=), Dexie-based Meetings list, /offline page, nav parent (wave 2)
@@ -121,7 +121,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 |-------|----------------|--------|-----------|
 | 1. Export, Share & Navigation | 4/4 | Complete   | 2026-11-21 |
 | 2. Local-First Meetings & Sync | 5/5 | Complete   | 2026-11-21 |
-| 3. Offline App Shell & Gating | 0/8 | Planned | - |
+| 3. Offline App Shell & Gating | 1/8 | In Progress|  |
 | 4. On-Device Speaker Separation | 0/TBD | Not started | - |
 | 5. Aurora Ink Redesign & Release | 0/TBD | Not started | - |
 
