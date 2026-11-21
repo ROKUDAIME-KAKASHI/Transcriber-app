@@ -137,3 +137,27 @@ export function planMissing(local: LocalMeeting): "keep" | "remove" | "recreate"
   if (local.pending === 1) return "recreate";
   return "remove";
 }
+
+export const MAX_SPEAKER_PARTS = 60_000;
+
+export type SpeakersRequest =
+  | { path: "speakers"; body: { parts: { index: number; speaker: number }[]; speakerNames: Record<string, string> } }
+  | { path: "meeting"; body: { speakerNames: Record<string, string> } };
+
+/** Decides names-only PATCH /api/meetings/:id vs parts overrides via /speakers (trap 3). */
+export function speakersRequest(a: {
+  relabelPending: boolean;
+  native: boolean;
+  speakerNames: Record<string, string> | null;
+  parts: { speaker: number }[] | null;
+}): SpeakersRequest {
+  const speakerNames = a.speakerNames ?? {};
+  if (!a.relabelPending || a.native || !a.parts) return { path: "meeting", body: { speakerNames } };
+  return {
+    path: "speakers",
+    body: {
+      parts: a.parts.slice(0, MAX_SPEAKER_PARTS).map((p, index) => ({ index, speaker: p.speaker })),
+      speakerNames,
+    },
+  };
+}

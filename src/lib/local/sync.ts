@@ -2,7 +2,7 @@ import { getApp, hasPlugin } from "@/lib/native";
 import { isReachable, markUnreachable, onConnectivityHint } from "@/lib/connectivity";
 import { parseTranscript } from "@/lib/transcript";
 import * as repo from "./repo";
-import { MAX_BATCH_PARTS, backoffDelay, classifyResponse, nextTailBatch, type ResponseClass } from "./syncCore";
+import { MAX_BATCH_PARTS, backoffDelay, classifyResponse, nextTailBatch, speakersRequest, type ResponseClass } from "./syncCore";
 import type { LocalMeeting } from "./types";
 
 // Singleton sync engine. Touches IndexedDB only through repo (D-01).
@@ -229,13 +229,16 @@ async function syncMeeting(uid: string, m: LocalMeeting): Promise<Step> {
   }
 
   if (cur.dirty.speakers) {
-    const r = await req("PATCH", url, { speakerNames: cur.speakerNames ?? {} });
+    const parts = cur.relabelPending === 1 && !native ? ((await repo.getParts(uid, id))?.parts ?? null) : null;
+    const q = speakersRequest({ relabelPending: cur.relabelPending === 1, native, speakerNames: cur.speakerNames, parts });
+    const r = await req("PATCH", q.path === "speakers" ? `${url}/speakers` : url, q.body);
     const cls = classifyResponse(r.status);
+    const clearRelabel = q.path === "speakers" || (native && cur.relabelPending === 1);
     if (cls === "ok") {
       okReset();
-      await repo.applySyncResult(uid, id, { clear: ["speakers"] });
+      await repo.applySyncResult(uid, id, { clear: ["speakers"], clearRelabel });
     } else if (cls === "bad-request") {
-      await repo.applySyncResult(uid, id, { clear: ["speakers"], syncError: "rejected" });
+      await repo.applySyncResult(uid, id, { clear: ["speakers"], clearRelabel, syncError: "rejected" });
     } else {
       return fail(uid, id, cls, r);
     }

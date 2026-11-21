@@ -9,6 +9,7 @@ import {
   shouldClearTail,
   mergePulledMeeting,
   planMissing,
+  speakersRequest,
 } from "../src/lib/local/syncCore.ts";
 
 const P = (text: string, i = 0) => ({ speaker: 0, text, t: i });
@@ -178,5 +179,35 @@ describe("planMissing", () => {
     assert.equal(planMissing(local({ dirty: { ...emptyDirty(), create: true }, pending: 1 })), "keep");
     assert.equal(planMissing(local({ dirty: { ...emptyDirty(), tail: true }, pending: 1 })), "recreate");
     assert.equal(planMissing(local()), "remove");
+  });
+});
+
+describe("speakersRequest", () => {
+  const parts = [{ speaker: 0 }, { speaker: 1 }];
+  test("relabel pending sends parts to /speakers", () => {
+    assert.deepEqual(speakersRequest({ relabelPending: true, native: false, speakerNames: { "1": "Priya" }, parts }), {
+      path: "speakers",
+      body: { parts: [{ index: 0, speaker: 0 }, { index: 1, speaker: 1 }], speakerNames: { "1": "Priya" } },
+    });
+  });
+  test("native falls back to names-only", () => {
+    assert.deepEqual(speakersRequest({ relabelPending: true, native: true, speakerNames: { "1": "A" }, parts }), {
+      path: "meeting",
+      body: { speakerNames: { "1": "A" } },
+    });
+  });
+  test("null parts falls back to names-only", () => {
+    assert.equal(speakersRequest({ relabelPending: true, native: false, speakerNames: null, parts: null }).path, "meeting");
+  });
+  test("no relabel is names-only with {} default", () => {
+    assert.deepEqual(speakersRequest({ relabelPending: false, native: false, speakerNames: null, parts }), {
+      path: "meeting",
+      body: { speakerNames: {} },
+    });
+  });
+  test("caps parts at 60,000", () => {
+    const big = Array.from({ length: 60_005 }, () => ({ speaker: 0 }));
+    const q = speakersRequest({ relabelPending: true, native: false, speakerNames: null, parts: big });
+    assert.equal(q.path === "speakers" && q.body.parts.length, 60_000);
   });
 });
