@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { SessionProvider } from "next-auth/react";
+import { SyncProvider } from "./SyncProvider";
 import { NavTracker } from "./NavTracker";
 import { NativeBackHandler } from "./NativeBackHandler";
 import { cleanupOldExports } from "@/lib/native";
@@ -16,9 +17,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <SessionProvider>
-      <NavTracker />
-      <NativeBackHandler />
-      {children}
+      <SyncProvider>
+        <NavTracker />
+        <NativeBackHandler />
+        {children}
+      </SyncProvider>
     </SessionProvider>
   );
 }
