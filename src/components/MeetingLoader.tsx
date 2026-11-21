@@ -24,6 +24,7 @@ interface Final {
   document: string | null;
   createdAt: string;
   updatedAt?: string;
+  speakerNames?: Record<string, string> | null;
   transcript: TranscriptPart[];
 }
 
@@ -119,6 +120,7 @@ export function MeetingLoader({ initialId }: { initialId?: string }) {
             document: meeting.document,
             createdAt: meeting.createdAt,
             updatedAt: meeting.updatedAt,
+            speakerNames: meeting.speakerNames && typeof meeting.speakerNames === "object" && !Array.isArray(meeting.speakerNames) ? meeting.speakerNames : null,
             transcript,
           },
         });
@@ -169,6 +171,7 @@ export function MeetingLoader({ initialId }: { initialId?: string }) {
           template: m.template,
           document: m.document,
           createdAt: m.createdAt,
+          speakerNames: m.speakerNames ?? null,
           transcript: data.parts,
         }}
       />

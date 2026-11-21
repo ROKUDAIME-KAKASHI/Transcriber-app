@@ -18,7 +18,7 @@ import {
   webCanShareFiles,
 } from "@/lib/export/deliver";
 import { isNative } from "@/lib/native";
-import { cacheServerMeeting, setServerDocument, setTitle as setLocalTitle, tombstone } from "@/lib/local/repo";
+import { cacheServerMeeting, setServerDocument, setSpeakerNames, setTitle as setLocalTitle, tombstone } from "@/lib/local/repo";
 import { flush, poke } from "@/lib/local/sync";
 import { useLocalUser } from "./SyncProvider";
 import { ShareMenu } from "./ShareMenu";
@@ -38,6 +38,7 @@ export interface MeetingData {
   document: string | null;
   createdAt: string;
   updatedAt?: string;
+  speakerNames?: Record<string, string> | null;
   transcript: TranscriptPart[];
 }
 
@@ -64,7 +65,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const shareBtnRef = useRef<HTMLButtonElement>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
 
-  const rawText = transcriptToText(meeting.transcript);
+  const [names, setNames] = useState<Record<string, string> | null>(meeting.speakerNames ?? null);
+  const rawText = transcriptToText(meeting.transcript, { names });
   const speakers = new Set(meeting.transcript.map((p) => p.speaker)).size;
   const words = meeting.transcript.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0);
 
@@ -93,6 +95,29 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     void cacheServerMeeting(userId, { ...meeting, updatedAt: meeting.updatedAt ?? meeting.createdAt });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, userId, meeting.id]);
+
+  const renameSpeaker = async (n: number, raw: string): Promise<boolean> => {
+    const next: Record<string, string> = { ...(names ?? {}) };
+    const name = raw.trim().slice(0, 40);
+    if (name) next[String(n)] = name;
+    else delete next[String(n)];
+    try {
+      if (userId && (await setSpeakerNames(userId, meeting.id, next))) {
+        poke(meeting.id);
+      } else {
+        const res = await fetch(`/api/meetings/${meeting.id}/speakers`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ speakerNames: next }),
+        });
+        if (!res.ok) return false;
+      }
+    } catch {
+      return false;
+    }
+    setNames(next);
+    return true;
+  };
 
   const saveTitle = async () => {
     setEditingTitle(false);
@@ -268,7 +293,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const currentText = showingDoc ? doc! : rawText;
   const currentName = showingDoc ? docName : "Transcript";
 
-  const exportMeeting: ExportMeeting = { title, transcript: meeting.transcript, document: doc, docName };
+  const exportMeeting: ExportMeeting = { title, transcript: meeting.transcript, document: doc, docName, speakerNames: names };
   const nothingToExport = !doc && meeting.transcript.length === 0;
 
   const warmExport = () => {
@@ -534,7 +559,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
                   <Markdown remarkPlugins={[remarkGfm]}>{doc!}</Markdown>
                 </article>
               ) : hasTranscript ? (
-                <TranscriptView parts={meeting.transcript} window="head" />
+                <TranscriptView parts={meeting.transcript} window="head" speakerNames={names} onRenameSpeaker={renameSpeaker} renameHint />
               ) : (
                 <p className="text-ui text-muted-foreground">No transcript was captured.</p>
               )}
