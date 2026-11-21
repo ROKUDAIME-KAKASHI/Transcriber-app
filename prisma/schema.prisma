@@ -32,7 +32,13 @@ model Meeting {
   template    String?
   /// AI-generated Markdown document
   document    String?  @db.Text
-  createdAt   DateTime @default(now())
+  /// Speaker number (as string) -> display name, e.g. { "0": "Asha" }
+  speakerNames Json?
+  /// "deepgram" | "moonshine" | "whisper"
+  engine      String?
+  /// Last-writer-wins clock for the title
+  titleUpdatedAt DateTime?
+  createdAt  DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([userId, createdAt])

@@ -163,7 +163,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   let meeting;
   try {
-    meeting = await prisma.meeting.findFirst({ where: { id, userId } });
+    meeting = await prisma.meeting.findFirst({
+      where: { id, userId },
+      select: { title: true, durationSec: true, transcript: true },
+    });
   } catch (err) {
     console.error("Process lookup error:", err);
     return Response.json({ error: "The database is waking up. Try again in a few seconds." }, { status: 503 });
