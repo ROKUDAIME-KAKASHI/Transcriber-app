@@ -28,6 +28,8 @@ const initial: RecorderState = {
   isPaused: false,
   statusMsg: "Ready",
   saveState: "idle",
+  speakerNames: null,
+  speakerStatus: null,
 };
 
 /**

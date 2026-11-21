@@ -2,11 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { detectDeviceName, type TranscriptPart } from "@/lib/transcript";
-import { loadSpeechModel, transcribePartial, transcribeSegment } from "@/lib/speech/client";
+import {
+  drainEmbeddings, loadSpeakerModel, loadSpeechModel, onEmbedding, pendingEmbeds, transcribeFinal, transcribePartial,
+  type EmbeddingEvent,
+} from "@/lib/speech/client";
+import {
+  assignOnline, compactLabels, createOnline, mapToLive, refine, remapNames,
+  type OnlineState, type SpeakerStatus,
+} from "@/lib/speech/diarize";
 import type { ModelName } from "@/lib/speech/models";
 import { VoiceChunker } from "@/lib/speech/voiceChunker";
 import { cleanPhrase } from "@/lib/speech/cleanText";
-import { createLocal, getMeta, purge, putParts, touchRecording } from "@/lib/local/repo";
+import { createLocal, getMeta, purge, putEmbeddings, putParts, setRelabel, setSpeakerNames, touchRecording } from "@/lib/local/repo";
 import { newMeetingId } from "@/lib/local/ids";
 import { flush, markRecording, poke, type FlushResult } from "@/lib/local/sync";
 import { useLocalUser } from "@/components/SyncProvider";
@@ -63,6 +70,10 @@ export interface RecorderState {
   saveState: "idle" | "saving" | "saved" | "local" | "error";
   /** Why a "local" save has not reached the server yet. */
   syncNote?: string | null;
+  /** Names given to speakers (index as string -> name), live during on-device recording. */
+  speakerNames: Record<string, string> | null;
+  /** On-device speaker identification activity, for the transcript hint. */
+  speakerStatus: SpeakerStatus;
 }
 
 /**
@@ -135,6 +146,8 @@ export function useRecorder(opts: {
     statusMsg: "Ready",
     saveState: "idle",
     syncNote: null,
+    speakerNames: null,
+    speakerStatus: null,
   });
 
   const { userId, available } = useLocalUser();
@@ -206,6 +219,24 @@ export function useRecorder(opts: {
   /** The last bubble can still grow (same speaker, no pause since). */
   const openBubbleRef = useRef(false);
   const stopRef = useRef<() => Promise<void>>(async () => {});
+
+  // On-device speaker separation (additive; every use is wrapped so failures stay silent)
+  const diarizeOnRef = useRef(false);
+  const onlineRef = useRef<OnlineState | null>(null);
+  const jobToPartRef = useRef<Map<number, number>>(new Map());
+  const earlyVecRef = useRef<Map<number, EmbeddingEvent>>(new Map());
+  const vectorsRef = useRef<Map<number, Float32Array>>(new Map());
+  /** Part indexes whose embedding was requested and has not resolved yet. */
+  const awaitingPartsRef = useRef<Set<number>>(new Set());
+  /** Job ids that requested an embedding and have no resolution yet. */
+  const awaitingJobsRef = useRef<Set<number>>(new Set());
+  const embedBufferRef = useRef<{ part: number; vec: Float32Array; dur: number }[]>([]);
+  const phraseSecRef = useRef<Map<number, number>>(new Map());
+  const lastSkipAtRef = useRef(0);
+  const unsubEmbedRef = useRef<(() => void) | null>(null);
+  const speakerNamesRef = useRef<Record<string, string> | null>(null);
+  const relabelNamesRef = useRef<Record<string, string> | null>(null);
+  const relabelDoneRef = useRef(false);
 
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
 
@@ -306,10 +337,195 @@ export function useRecorder(opts: {
   /** Adds a finished phrase to the transcript, as its own chat bubble. */
   const appendFinal = (text: string, whisper: boolean, startSec: number) => {
     const clean = cleanPhrase(text, { whisper });
-    if (!clean) return;
-    partsRef.current = [...partsRef.current, { speaker: 0, text: clean, t: Math.round(startSec * 10) / 10 }];
+    if (!clean) return -1;
+    const prev = partsRef.current[partsRef.current.length - 1];
+    const speaker = diarizeOnRef.current && prev ? prev.speaker : 0;
+    partsRef.current = [...partsRef.current, { speaker, text: clean, t: Math.round(startSec * 10) / 10 }];
     dirtyRef.current = true;
     patch({ transcriptParts: partsRef.current, interimText: "" });
+    return partsRef.current.length - 1;
+  };
+
+  // ---- On-device speaker separation ------------------------------------------
+  const updateSpeakerStatus = () => {
+    try {
+      if (!diarizeOnRef.current) return;
+      const next: SpeakerStatus =
+        lastSkipAtRef.current > 0 && Date.now() - lastSkipAtRef.current < 15_000
+          ? "catching-up"
+          : pendingEmbeds() > 0
+            ? "identifying"
+            : null;
+      setState((s) => (s.speakerStatus === "refining" || s.speakerStatus === next ? s : { ...s, speakerStatus: next }));
+    } catch {
+      /* silent */
+    }
+  };
+
+  const applyVector = (idx: number, vec: Float32Array) => {
+    const online = onlineRef.current;
+    if (!online) return;
+    const k = assignOnline(online, vec);
+    vectorsRef.current.set(idx, vec);
+    const parts = partsRef.current;
+    if (!parts[idx]) return;
+    let next: TranscriptPart[] | null = null;
+    if (parts[idx].speaker !== k) {
+      next = parts.slice();
+      next[idx] = { ...parts[idx], speaker: k };
+    }
+    // Phrases with no vector of their own (short/skipped) follow the speaker of the one before them.
+    for (let j = idx + 1; j < parts.length; j++) {
+      if (vectorsRef.current.has(j) || awaitingPartsRef.current.has(j)) break;
+      if (parts[j].speaker !== k) {
+        next ??= parts.slice();
+        next[j] = { ...parts[j], speaker: k };
+      }
+    }
+    if (next) {
+      partsRef.current = next;
+      dirtyRef.current = true;
+      patch({ transcriptParts: next });
+    }
+  };
+
+  const handleEmbedding = (e: EmbeddingEvent) => {
+    try {
+      if (!diarizeOnRef.current || !onlineRef.current) return;
+      if (e.skipped === "backlog" || e.skipped === "slow" || e.skipped === "queue") lastSkipAtRef.current = Date.now();
+      const idx = jobToPartRef.current.get(e.id);
+      if (idx === undefined) {
+        if (awaitingJobsRef.current.has(e.id)) earlyVecRef.current.set(e.id, e); // part index not known yet
+        return;
+      }
+      awaitingPartsRef.current.delete(idx);
+      awaitingJobsRef.current.delete(e.id);
+      if (e.vector) {
+        applyVector(idx, e.vector);
+        embedBufferRef.current.push({ part: idx, vec: e.vector, dur: phraseSecRef.current.get(e.id) ?? 0 });
+        if (embedBufferRef.current.length >= 10) flushEmbedBuffer();
+      }
+      phraseSecRef.current.delete(e.id);
+      updateSpeakerStatus();
+    } catch {
+      /* silent: transcription carries on */
+    }
+  };
+
+  const mapJob = (id: number, idx: number) => {
+    try {
+      const early = earlyVecRef.current.get(id);
+      earlyVecRef.current.delete(id);
+      if (idx < 0) {
+        awaitingJobsRef.current.delete(id);
+        phraseSecRef.current.delete(id);
+        return;
+      }
+      jobToPartRef.current.set(id, idx);
+      if (awaitingJobsRef.current.has(id)) awaitingPartsRef.current.add(idx);
+      if (early) handleEmbedding(early);
+    } catch {
+      /* silent */
+    }
+  };
+
+  const flushEmbedBuffer = () => {
+    const uid = localUserRef.current.userId;
+    const id = meetingIdRef.current;
+    if (!localModeRef.current || !uid || !id || embedBufferRef.current.length === 0) return;
+    const rows = embedBufferRef.current;
+    embedBufferRef.current = [];
+    const restore = () => { embedBufferRef.current = [...rows, ...embedBufferRef.current]; };
+    putEmbeddings(uid, id, rows).then((ok) => { if (!ok) restore(); }).catch(restore);
+  };
+
+  const resetDiarization = () => {
+    try { unsubEmbedRef.current?.(); } catch { /* silent */ }
+    unsubEmbedRef.current = null;
+    diarizeOnRef.current = false;
+    onlineRef.current = null;
+    jobToPartRef.current.clear();
+    earlyVecRef.current.clear();
+    vectorsRef.current.clear();
+    awaitingPartsRef.current.clear();
+    awaitingJobsRef.current.clear();
+    embedBufferRef.current = [];
+    phraseSecRef.current.clear();
+    lastSkipAtRef.current = 0;
+    speakerNamesRef.current = null;
+    relabelNamesRef.current = null;
+    relabelDoneRef.current = false;
+  };
+
+  /** Stop-time: drain queued embeddings, re-cluster everything, keep names on the same people. */
+  const refineSpeakers = async () => {
+    if (!diarizeOnRef.current) return;
+    try {
+      patch({ speakerStatus: "refining" });
+      await drainEmbeddings(10_000);
+      try { unsubEmbedRef.current?.(); } catch { /* silent */ }
+      unsubEmbedRef.current = null;
+      for (const [jobId, ev] of [...earlyVecRef.current]) {
+        if (jobToPartRef.current.has(jobId)) handleEmbedding(ev);
+      }
+      if (vectorsRef.current.size >= 1) {
+        await new Promise((r) => setTimeout(r, 0)); // let "refining" paint
+        const parts = partsRef.current;
+        const live = parts.map((p) => p.speaker);
+        const vectors = parts.map((_, i) => vectorsRef.current.get(i) ?? null);
+        const final = compactLabels(mapToLive(refine(vectors, { live }), live));
+        const names = remapNames(speakerNamesRef.current, live, final);
+        if (final.some((l, i) => l !== live[i])) {
+          partsRef.current = parts.map((p, i) => (p.speaker === final[i] ? p : { ...p, speaker: final[i] }));
+          dirtyRef.current = true;
+          patch({ transcriptParts: partsRef.current });
+        }
+        const hadNames = !!speakerNamesRef.current && Object.keys(speakerNamesRef.current).length > 0;
+        const hasNames = Object.keys(names).length > 0;
+        const uid = localUserRef.current.userId;
+        const id = meetingIdRef.current;
+        if (localModeRef.current && uid && id) {
+          flushEmbedBuffer();
+          await setRelabel(uid, id, hasNames ? names : hadNames ? {} : null);
+        }
+        speakerNamesRef.current = hasNames ? names : hadNames ? {} : null;
+        relabelNamesRef.current = hasNames ? names : null;
+        relabelDoneRef.current = true;
+        patch({ speakerNames: speakerNamesRef.current });
+      }
+    } catch (err) {
+      console.warn("Speaker refinement skipped:", err);
+    } finally {
+      patch({ speakerStatus: null });
+    }
+  };
+
+  /** Rename a speaker during (or right after) recording. */
+  const renameSpeaker = async (n: number, raw: string): Promise<boolean> => {
+    const name = raw.trim().slice(0, 40);
+    const next = { ...(speakerNamesRef.current ?? {}) };
+    if (name) next[String(n)] = name;
+    else delete next[String(n)];
+    speakerNamesRef.current = next;
+    patch({ speakerNames: next });
+    const id = meetingIdRef.current;
+    if (!id) return true;
+    try {
+      const uid = localUserRef.current.userId;
+      if (localModeRef.current && uid) {
+        const ok = await setSpeakerNames(uid, id, next);
+        poke(id);
+        return ok;
+      }
+      const res = await fetch(`/api/meetings/${id}/speakers`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speakerNames: next }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   };
 
   // ---- Screen wake lock (phones kill the mic when the screen sleeps) -----
@@ -343,6 +559,7 @@ export function useRecorder(opts: {
       // On slow phones phrases can queue up; the UI says so instead of looking frozen.
       backlog: waiting,
     });
+    updateSpeakerStatus();
   };
 
   /** Level meter + "is the mic actually delivering sound?" check. */
@@ -414,10 +631,19 @@ export function useRecorder(opts: {
       },
       onSegment: (audio, phraseId, startSec) => {
         lastEmittedPhraseRef.current = phraseId;
-        const job = transcribeSegment(audio)
+        // Read the length before the call: the buffer is transferred to the worker.
+        const wantEmbed = diarizeOnRef.current && audio.length >= 16000;
+        const phraseSec = audio.length / 16000;
+        const { id: jobId, text: textP } = transcribeFinal(audio, { embed: wantEmbed });
+        if (wantEmbed) {
+          phraseSecRef.current.set(jobId, phraseSec);
+          awaitingJobsRef.current.add(jobId);
+        }
+        const job = textP
           .then((text) => {
             failedPhrasesRef.current = 0;
-            appendFinal(text, opts.engine === "whisper", startSec); // one chat bubble per phrase
+            const idx = appendFinal(text, opts.engine === "whisper", startSec); // one chat bubble per phrase
+            if (diarizeOnRef.current) mapJob(jobId, idx);
           })
           .catch((err) => {
             console.error("On-device transcription error:", err);
@@ -430,6 +656,11 @@ export function useRecorder(opts: {
             }
           })
           .finally(() => {
+            // A failed transcription never maps: forget its pending embedding.
+            if (diarizeOnRef.current && !jobToPartRef.current.has(jobId)) {
+              awaitingJobsRef.current.delete(jobId);
+              earlyVecRef.current.delete(jobId);
+            }
             // The live preview for this phrase stays visible until its final text replaces it.
             previewsRef.current.delete(phraseId);
             pendingSegmentsRef.current.delete(job);
@@ -735,6 +966,7 @@ export function useRecorder(opts: {
     // Wait for the device to finish transcribing the last phrases.
     if (pendingSegmentsRef.current.size) patch({ statusMsg: "Finishing transcription…" });
     await Promise.all([...pendingSegmentsRef.current]);
+    await refineSpeakers(); // no-op unless on-device diarization ran; never throws
     // Autosave has stopped by now, so retry the final save a few times (phones drop requests).
     if (localModeRef.current) {
       // Device write first, then the engine uploads (flush retries for up to 15 s).
@@ -757,6 +989,21 @@ export function useRecorder(opts: {
     for (let attempt = 0; attempt < 4 && !saved; attempt++) {
       if (attempt) await new Promise((r) => setTimeout(r, 2000 * attempt));
       saved = await save("DONE");
+    }
+    if (saved && relabelDoneRef.current) {
+      // Server-direct recording: push the refined labels (best effort; vectors never leave the device).
+      const id = meetingIdRef.current;
+      const names = relabelNamesRef.current;
+      if (id) {
+        void fetch(`/api/meetings/${id}/speakers`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            parts: partsRef.current.map((p, i) => ({ index: i, speaker: p.speaker })).slice(0, 60000),
+            ...(names && Object.keys(names).length ? { speakerNames: names } : {}),
+          }),
+        }).catch(() => {});
+      }
     }
     patch({
       statusMsg: saved
@@ -811,7 +1058,8 @@ export function useRecorder(opts: {
     socketRef.current = null;
     cleanupMedia();
     discardEmptyLocal();
-    patch({ isStarting: false, isRecording: false, statusMsg: "Cancelled." });
+    resetDiarization();
+    patch({ isStarting: false, isRecording: false, statusMsg: "Cancelled.", speakerStatus: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -853,8 +1101,10 @@ export function useRecorder(opts: {
     speakingRef.current = false;
     pendingSegmentsRef.current.clear();
     failedPhrasesRef.current = 0;
+    resetDiarization();
     lastFrameAtRef.current = performance.now();
     patch({
+      speakerNames: null, speakerStatus: null,
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
       recordingSeconds: 0, isPaused: false, isStarting: true, isRecording: false,
       statusMsg: useSample ? "Loading sample audio…" : "Requesting microphone…", saveState: "idle", meetingId: null,
@@ -945,6 +1195,16 @@ export function useRecorder(opts: {
         });
         previewIntervalRef.current = previewIntervalFor(model);
         check();
+        // Speaker identification is optional and never awaited: a missing model must not delay start.
+        try {
+          onlineRef.current = createOnline();
+          unsubEmbedRef.current = onEmbedding(handleEmbedding);
+          void loadSpeakerModel()
+            .then((ok) => { if (startTokenRef.current === token) diarizeOnRef.current = ok; })
+            .catch(() => {});
+        } catch {
+          /* silent */
+        }
       }
 
       patch({ statusMsg: "Creating meeting…" });
@@ -993,6 +1253,7 @@ export function useRecorder(opts: {
       timerRef.current = setInterval(tick, 500);
       autosaveRef.current = setInterval(() => {
         void save();
+        flushEmbedBuffer();
         // Heartbeat so another tab's orphan recovery can tell a quiet meeting from an abandoned one.
         const uid = localUserRef.current.userId;
         const rid = meetingIdRef.current;
@@ -1039,5 +1300,5 @@ export function useRecorder(opts: {
     };
   }, [cancelStart]);
 
-  return { ...state, start, stop, pause, resume, cancelStart };
+  return { ...state, start, stop, pause, resume, cancelStart, renameSpeaker };
 }
