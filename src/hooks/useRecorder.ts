@@ -6,6 +6,11 @@ import { loadSpeechModel, transcribePartial, transcribeSegment } from "@/lib/spe
 import type { ModelName } from "@/lib/speech/models";
 import { VoiceChunker } from "@/lib/speech/voiceChunker";
 import { cleanPhrase } from "@/lib/speech/cleanText";
+import { createLocal, getMeta, purge, putParts } from "@/lib/local/repo";
+import { newMeetingId } from "@/lib/local/ids";
+import { flush, markRecording, poke, type FlushResult } from "@/lib/local/sync";
+import { useLocalUser } from "@/components/SyncProvider";
+import { useMeetingSync } from "@/hooks/useSync";
 import {
   DEEPGRAM_SAMPLE_RATE, deepgramUrl, fetchDeepgramToken, floatToPcm16, speakerRuns,
   type DeepgramMessage, type RecordEngine,
@@ -54,7 +59,10 @@ export interface RecorderState {
   /** Recording is on hold (mic open, nothing transcribed, clock stopped). */
   isPaused: boolean;
   statusMsg: string;
-  saveState: "idle" | "saving" | "saved" | "error";
+  /** "saved" = synced to the server, "local" = safe on this device, upload pending. */
+  saveState: "idle" | "saving" | "saved" | "local" | "error";
+  /** Why a "local" save has not reached the server yet. */
+  syncNote?: string | null;
 }
 
 /**
@@ -126,7 +134,18 @@ export function useRecorder(opts: {
     isPaused: false,
     statusMsg: "Ready",
     saveState: "idle",
+    syncNote: null,
   });
+
+  const { userId, available } = useLocalUser();
+  const localUserRef = useRef<{ userId: string | null; available: boolean }>({ userId, available });
+  localUserRef.current = { userId, available };
+  /** This recording lives in the device store first; the sync engine is the only server writer. */
+  const localModeRef = useRef(false);
+  const [localMode, setLocalMode] = useState(false);
+  const serverRowRef = useRef(false);
+  const flushResultRef = useRef<FlushResult | null>(null);
+  const startIdRef = useRef<string | null>(null);
 
   // Mutable refs for things callbacks need without re-rendering.
   const partsRef = useRef<TranscriptPart[]>([]);
@@ -197,16 +216,8 @@ export function useRecorder(opts: {
    * normal saves — once a meeting passed ~64 KB of text every save failed ("Offline — will retry"
    * forever) and the transcript never reached the server.
    */
-  const save = useCallback(async (status?: "DONE", closing = false): Promise<boolean> => {
-    const id = meetingIdRef.current;
-    if (!id || (!dirtyRef.current && !status)) return true;
-    // One save at a time: on a slow connection an older save finishing after a newer one used to
-    // overwrite fresh text. If one is in flight, wait for it (final/closing saves) or skip (autosave).
-    if (savingRef.current) {
-      if (!status && !closing) return false;
-      await savingRef.current.catch(() => {});
-    }
-    const run = (async (): Promise<boolean> => {
+  const saveToServer = async (id: string, status?: "DONE", closing = false): Promise<boolean> => {
+    {
       dirtyRef.current = false;
       patch({ saveState: "saving" });
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -241,14 +252,70 @@ export function useRecorder(opts: {
       dirtyRef.current = true; // retry on next tick
       patch({ saveState: "error" });
       return false;
-    })();
+    }
+  };
+
+  /** Page is closing: one last best-effort tail PATCH that outlives the page (only if the server row exists). */
+  const sendKeepaliveTail = (id: string) => {
+    if (!serverRowRef.current) return;
+    const parts = partsRef.current;
+    const from = Math.max(0, Math.min(savedPartsRef.current - 1, parts.length));
+    const body = JSON.stringify({ transcriptTail: { from, parts: parts.slice(from) }, durationSec: secondsRef.current });
+    if (body.length >= 60_000) return;
+    fetch(`/api/meetings/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  };
+
+  /** Device-first save: write to IndexedDB, then let the sync engine upload. Falls back to the server path if the write fails. */
+  const saveLocal = async (id: string, status?: "DONE", closing = false): Promise<boolean> => {
+    const uid = localUserRef.current.userId;
+    dirtyRef.current = false;
+    const ok = uid ? await putParts(uid, id, partsRef.current, secondsRef.current, status) : false;
+    if (!uid || !ok) return saveToServer(id, status, closing);
+    if (closing) sendKeepaliveTail(id);
+    if (status === "DONE") flushResultRef.current = await flush(id, { timeoutMs: 15000 });
+    else poke(id);
+    const meta = await getMeta(uid, id);
+    if (meta) {
+      savedPartsRef.current = meta.savedParts;
+      serverRowRef.current = !meta.dirty.create;
+    }
+    return true;
+  };
+
+  const save = useCallback(async (status?: "DONE", closing = false): Promise<boolean> => {
+    const id = meetingIdRef.current;
+    if (!id || (!dirtyRef.current && !status)) return true;
+    // One save at a time: on a slow connection an older save finishing after a newer one used to
+    // overwrite fresh text. If one is in flight, wait for it (final/closing saves) or skip (autosave).
+    if (savingRef.current) {
+      if (!status && !closing) return false;
+      await savingRef.current.catch(() => {});
+    }
+    const run = localModeRef.current ? saveLocal(id, status, closing) : saveToServer(id, status, closing);
     savingRef.current = run;
     try {
       return await run;
     } finally {
       if (savingRef.current === run) savingRef.current = null;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // In local mode the badge follows the meeting's sync state instead of each request.
+  const meetingSync = useMeetingSync(localMode ? state.meetingId : null);
+  useEffect(() => {
+    if (!localMode) return;
+    if (meetingSync === "synced") patch({ saveState: "saved", syncNote: null });
+    else if (meetingSync === "saving") patch({ saveState: "saving", syncNote: null });
+    else if (meetingSync === "waiting") patch({ saveState: "local", syncNote: "Waiting for internet" });
+    else if (meetingSync === "needs-auth") patch({ saveState: "local", syncNote: "Sign in to sync" });
+    else if (meetingSync === "conflict") patch({ saveState: "local", syncNote: "Couldn't sync" });
+  }, [meetingSync, localMode]);
 
   /** Adds a finished phrase to the transcript, as its own chat bubble. */
   const appendFinal = (text: string, whisper: boolean, startSec: number) => {
@@ -683,6 +750,23 @@ export function useRecorder(opts: {
     if (pendingSegmentsRef.current.size) patch({ statusMsg: "Finishing transcription…" });
     await Promise.all([...pendingSegmentsRef.current]);
     // Autosave has stopped by now, so retry the final save a few times (phones drop requests).
+    if (localModeRef.current) {
+      // Device write first, then the engine uploads (flush retries for up to 15 s).
+      flushResultRef.current = null;
+      await save("DONE");
+      const id = meetingIdRef.current;
+      if (id) markRecording(id, false);
+      const r = flushResultRef.current as FlushResult | null;
+      if (r === "synced") {
+        patch({ statusMsg: "Saved to your account.", saveState: "saved", syncNote: null });
+      } else if (r === "needs-auth") {
+        patch({ statusMsg: "Saved on this device. Sign in again to upload it.", saveState: "local", syncNote: "Sign in to sync" });
+      } else {
+        patch({ statusMsg: "Saved on this device. It will upload when you're online.", saveState: "local", syncNote: "Waiting for internet" });
+      }
+      patch({ interimText: "", liveStatus: null, backlog: 0 });
+      return;
+    }
     let saved = false;
     for (let attempt = 0; attempt < 4 && !saved; attempt++) {
       if (attempt) await new Promise((r) => setTimeout(r, 2000 * attempt));
@@ -719,6 +803,19 @@ export function useRecorder(opts: {
     audio.play().catch((err) => console.error("Sample playback failed:", err));
   };
 
+  /** A start that fails or is cancelled leaves no empty meeting on the device. */
+  const discardEmptyLocal = () => {
+    const id = startIdRef.current;
+    if (!id) return;
+    markRecording(id, false);
+    const uid = localUserRef.current.userId;
+    if (uid && partsRef.current.length === 0) {
+      purge(uid, id).catch(() => {});
+      if (meetingIdRef.current === id) meetingIdRef.current = null;
+    }
+    startIdRef.current = null;
+  };
+
   /** Cancels a start that's still in progress (mic prompt, model download, connecting). */
   const cancelStart = useCallback(() => {
     startTokenRef.current += 1;
@@ -727,6 +824,7 @@ export function useRecorder(opts: {
     socketRef.current?.close();
     socketRef.current = null;
     cleanupMedia();
+    discardEmptyLocal();
     patch({ isStarting: false, isRecording: false, statusMsg: "Cancelled." });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -761,6 +859,11 @@ export function useRecorder(opts: {
     pausedMsRef.current = 0;
     pausedAtRef.current = null;
     dirtyRef.current = false;
+    localModeRef.current = false;
+    serverRowRef.current = false;
+    flushResultRef.current = null;
+    startIdRef.current = null;
+    setLocalMode(false);
     speakingRef.current = false;
     pendingSegmentsRef.current.clear();
     failedPhrasesRef.current = 0;
@@ -769,6 +872,7 @@ export function useRecorder(opts: {
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
       recordingSeconds: 0, isPaused: false, isStarting: true, isRecording: false,
       statusMsg: useSample ? "Loading sample audio…" : "Requesting microphone…", saveState: "idle", meetingId: null,
+      syncNote: null,
     });
 
     // The audio context is created before any await so it counts as part of the tap
@@ -781,6 +885,23 @@ export function useRecorder(opts: {
     ctx.onstatechange = () => {
       if (ctx.state !== "running" && ctx.state !== "closed" && wantRecordingRef.current) ctx.resume().catch(() => {});
     };
+
+    // Device-first: the meeting id and the local row are made now (before the first await, so the
+    // iOS tap ordering is kept); the server row is created later by the sync engine.
+    const newId = newMeetingId();
+    startIdRef.current = newId;
+    const meetingLanguage = opts.engine === "moonshine" ? "en" : opts.language;
+    // Titled with the device's local time (the server may run in UTC, which gave 6:58 am for 12:28 pm).
+    const meetingTitle = `${useSample ? "Sample recording" : "Meeting"} – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
+    const lu = localUserRef.current;
+    let localCreated: Promise<boolean> | null = null;
+    if (lu.userId && lu.available) {
+      localCreated = createLocal(lu.userId, {
+        id: newId, title: meetingTitle, language: meetingLanguage, engine: opts.engine,
+        deviceName: detectDeviceName(), origin: "local",
+      });
+      markRecording(newId, true);
+    }
 
     try {
       let mic: MediaStream;
@@ -841,27 +962,38 @@ export function useRecorder(opts: {
       }
 
       patch({ statusMsg: "Creating meeting…" });
-      const res = await fetch("/api/meetings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          language,
-          deviceName: detectDeviceName(),
-          // Titled with the device's local time (the server may run in UTC, which gave 6:58 am for 12:28 pm).
-          title: `${useSample ? "Sample recording" : "Meeting"} – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.meeting) {
-        throw new Error(
-          res.status === 401
-            ? "You've been signed out. Sign in again."
-            : data.error || `Could not create the meeting (error ${res.status}).`
-        );
-      }
+      const useLocal = localCreated ? await localCreated : false;
       check();
-      meetingIdRef.current = data.meeting.id;
-      patch({ meetingId: data.meeting.id, statusMsg: "Starting…" });
+      localModeRef.current = useLocal;
+      if (useLocal) {
+        meetingIdRef.current = newId;
+        setLocalMode(true);
+        patch({ meetingId: newId, saveState: "local", syncNote: null, statusMsg: "Starting…" });
+        poke(newId); // the engine does the idempotent server POST whenever it can
+      } else {
+        const res = await fetch("/api/meetings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: newId,
+            language,
+            engine: opts.engine,
+            deviceName: detectDeviceName(),
+            title: meetingTitle,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.meeting) {
+          throw new Error(
+            res.status === 401
+              ? "You've been signed out. Sign in again."
+              : data.error || `Could not create the meeting (error ${res.status}).`
+          );
+        }
+        check();
+        meetingIdRef.current = data.meeting.id;
+        patch({ meetingId: data.meeting.id, statusMsg: "Starting…" });
+      }
 
       wantRecordingRef.current = true;
       await acquireWakeLock();
@@ -882,6 +1014,7 @@ export function useRecorder(opts: {
       socketRef.current?.close();
       socketRef.current = null;
       cleanupMedia();
+      discardEmptyLocal();
       const err = e as { name?: string; message?: string };
       const msg =
         err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
