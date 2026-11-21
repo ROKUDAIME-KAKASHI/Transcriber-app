@@ -255,28 +255,14 @@ export function useRecorder(opts: {
     }
   };
 
-  /** Page is closing: one last best-effort tail PATCH that outlives the page (only if the server row exists). */
-  const sendKeepaliveTail = (id: string) => {
-    if (!serverRowRef.current) return;
-    const parts = partsRef.current;
-    const from = Math.max(0, Math.min(savedPartsRef.current - 1, parts.length));
-    const body = JSON.stringify({ transcriptTail: { from, parts: parts.slice(from) }, durationSec: secondsRef.current });
-    if (body.length >= 60_000) return;
-    fetch(`/api/meetings/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body,
-      keepalive: true,
-    }).catch(() => {});
-  };
-
   /** Device-first save: write to IndexedDB, then let the sync engine upload. Falls back to the server path if the write fails. */
   const saveLocal = async (id: string, status?: "DONE", closing = false): Promise<boolean> => {
     const uid = localUserRef.current.userId;
     dirtyRef.current = false;
     const ok = uid ? await putParts(uid, id, partsRef.current, secondsRef.current, status) : false;
     if (!uid || !ok) return saveToServer(id, status, closing);
-    if (closing) sendKeepaliveTail(id);
+    // No keepalive tail PATCH here: the data is in IndexedDB and the engine uploads it (a stale
+    // fire-and-forget PATCH could truncate the server transcript).
     if (status === "DONE") flushResultRef.current = await flush(id, { timeoutMs: 15000 });
     else poke(id);
     const meta = await getMeta(uid, id);
