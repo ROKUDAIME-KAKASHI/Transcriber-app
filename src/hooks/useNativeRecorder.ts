@@ -46,6 +46,7 @@ export function useNativeRecorder(opts: { language: string }) {
   const localUserRef = useRef({ userId, available });
   localUserRef.current = { userId, available };
   const lastMirrorRef = useRef(0);
+  const mirroredFinalRef = useRef<string | null>(null); // meeting id whose final state is mirrored
 
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
 
@@ -71,8 +72,9 @@ export function useNativeRecorder(opts: { language: string }) {
     finishingRef.current = n.finishing;
     // Mirror the service's transcript into the device store (read-only copy: the service is the server writer).
     const lu = localUserRef.current;
-    if (lu.userId && lu.available && n.meetingId && (n.finished || Date.now() - lastMirrorRef.current > MIRROR_MS)) {
+    if (lu.userId && lu.available && n.meetingId && (n.finished ? mirroredFinalRef.current !== n.meetingId : Date.now() - lastMirrorRef.current > MIRROR_MS)) {
       lastMirrorRef.current = Date.now();
+      if (n.finished) mirroredFinalRef.current = n.meetingId;
       const uid = lu.userId;
       const mid = n.meetingId;
       const status = n.finished ? "DONE" : "RECORDING";
@@ -179,6 +181,7 @@ export function useNativeRecorder(opts: { language: string }) {
         await applySyncResult(uid, data.meeting.id, { clear: ["create"] });
       }
       lastMirrorRef.current = 0;
+      mirroredFinalRef.current = null;
       patch({ meetingId: data.meeting.id, statusMsg: "Starting the microphone…" });
       await MeetingRecorder.start({ meetingId: data.meeting.id, language: opts.language, baseUrl: window.location.origin });
       // The poll flips isStarting off once the service reports it's running.
