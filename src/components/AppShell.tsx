@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { markSignedOut } from "@/components/SyncProvider";
 import { Mic, LayoutList, LogOut, AudioLines } from "lucide-react";
 import { cx } from "./ui";
 
@@ -73,7 +74,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {email}
             </span>
             <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
+              onClick={() => {
+                markSignedOut();
+                void signOut({ callbackUrl: "/login" });
+              }}
               className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label="Sign out"
               title="Sign out"
@@ -89,7 +93,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex h-14 items-center justify-between gap-4 px-4">
           <Logo />
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() => {
+                markSignedOut();
+                void signOut({ callbackUrl: "/login" });
+              }}
             className="-mr-2 grid h-11 w-11 place-items-center rounded-lg text-muted-foreground hover:text-foreground"
             aria-label="Sign out"
             title={email ? `Sign out (${email})` : "Sign out"}

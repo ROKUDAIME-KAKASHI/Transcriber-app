@@ -13,6 +13,23 @@ interface LocalUser {
 const Ctx = createContext<LocalUser>({ userId: null, available: false });
 const LAST_USER_KEY = "transcriber.lastUserId";
 
+/**
+ * Call right before an explicit sign-out: forget the last user and stop the engine so nothing syncs
+ * as the wrong user. The per-user IndexedDB is kept (unsynced data must survive sign-out, D-08).
+ */
+export function markSignedOut(): void {
+  try {
+    localStorage.removeItem(LAST_USER_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    stopSync();
+  } catch {
+    /* ignore */
+  }
+}
+
 export function useLocalUser(): LocalUser {
   return useContext(Ctx);
 }
