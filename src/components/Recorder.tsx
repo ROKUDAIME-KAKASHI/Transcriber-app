@@ -496,6 +496,10 @@ export function Recorder() {
               interimText={rec.interimText}
               liveStatus={rec.liveStatus}
               backlog={rec.backlog}
+              speakerNames={rec.speakerNames}
+              speakerStatus={rec.speakerStatus}
+              onRenameSpeaker={"renameSpeaker" in rec ? rec.renameSpeaker : undefined}
+              renameHint={false}
               window="tail"
             />
           )}
