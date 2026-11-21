@@ -31,7 +31,8 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
       await new Promise<void>((res) => window.addEventListener("load", () => res(), { once: true }));
     }
     return await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
-  } catch {
+  } catch (err) {
+    console.warn("Service worker registration failed; offline support is unavailable.", err);
     return null;
   }
 }
@@ -56,15 +57,10 @@ let controllerListenerAdded = false;
 export function applyUpdate(reg: ServiceWorkerRegistration): void {
   if (!reg.waiting) return;
   try {
-    if (sessionStorage.getItem(RELOAD_GUARD)) return;
+    // Timestamp guard: a reload destroys any timer, so compare ages instead of clearing the key.
+    const prev = Number(sessionStorage.getItem(RELOAD_GUARD) || 0);
+    if (prev && Date.now() - prev < 10_000) return;
     sessionStorage.setItem(RELOAD_GUARD, String(Date.now()));
-    setTimeout(() => {
-      try {
-        sessionStorage.removeItem(RELOAD_GUARD);
-      } catch {
-        /* ignore */
-      }
-    }, 10_000);
   } catch {
     /* ignore */
   }
