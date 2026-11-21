@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useAuth } from "./AuthProvider";
 import { ConnectivityPill } from "./ConnectivityPill";
@@ -40,13 +40,21 @@ function Logo() {
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, cachedUser } = useAuth();
   const offline = useConnectivity() === "offline";
   const email = user?.email ?? cachedUser?.email ?? "";
   const doSignOut = () => {
     if (offline) return;
-    markSignedOut();
-    void signOut({ callbackUrl: "/login" });
+    // Forget the user only after the server confirmed the sign-out; a failed request keeps sync running.
+    void signOut({ redirect: false })
+      .then(() => {
+        markSignedOut();
+        router.replace("/login");
+      })
+      .catch(() => {
+        /* sign-out failed (flaky network): stay signed in with sync untouched */
+      });
   };
   const signOutTitle = offline ? "Sign out needs internet" : "Sign out";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "./AuthProvider";
+import { LAST_EMAIL_KEY, LAST_USER_KEY, useAuth } from "./AuthProvider";
 import { setAuthStatus } from "@/lib/authStore";
 import { localAvailable, recoverOrphans, requestPersist } from "@/lib/local/repo";
 import { PAGE_LOADED_AT, getSyncSnapshot, isRecordingId, poke, resumeAuth, startSync, stopSync, subscribeSync } from "@/lib/local/sync";
@@ -12,8 +12,6 @@ interface LocalUser {
 }
 
 const Ctx = createContext<LocalUser>({ userId: null, available: false });
-const LAST_USER_KEY = "transcriber.lastUserId";
-const LAST_EMAIL_KEY = "transcriber.lastUserEmail";
 
 /**
  * Call right before an explicit sign-out: forget the last user and stop the engine so nothing syncs
