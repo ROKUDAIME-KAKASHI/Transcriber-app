@@ -480,16 +480,16 @@ Test cases: 3 speakers alternating -> online finds 3; one speaker -> 1 label (no
 | A4 | The worker can hold one extra ORT session (~7 MB weights plus activations) without memory trouble on 3-4 GB phones | Pattern 1 | OOM worker restart; mitigated by `worker.onerror` path already in client.ts |
 | A5 | IndexedDB stores `Float32Array` via structured clone efficiently | Pattern 6 | Standard web platform behaviour; low risk |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Exact embed cost on the Xiaomi phone**
    - What we know: laptop WASM 1 thread = 120 ms per audio second.
    - Unclear: phone factor, thermal effect over an hour.
-   - Recommendation: log `embedMs` and `cropSec` in the worker's `embedding` message; add a dev-visible readout (console or `?debug`) for the UAT.
+   - RESOLVED (plans 04-01, 04-02): log `embedMs` and `cropSec` in the worker's `embedding` message; add a dev-visible readout (console or `?debug`) for the UAT.
 2. **Where to run refine (worker vs main thread)**
-   - Recommendation: worker message `refine { vectors, live }` (worker idle after stop, pure function import). Main thread is acceptable if the two-stage bound keeps k <= 300.
+   - RESOLVED (plans 04-01, 04-07, main thread, k<=300): worker message `refine { vectors, live }` (worker idle after stop, pure function import). Main thread is acceptable if the two-stage bound keeps k <= 300.
 3. **Stop latency budget**
-   - Draining embeds plus refine adds up to ~10 s on slow phones before the "Saved" state. Recommendation: cap the drain, show "Refining speakers" (UI-SPEC), and never delay the DONE save more than the cap; if the cap is hit, refine with what is there.
+   - RESOLVED (plan 04-07): Draining embeds plus refine adds up to ~10 s on slow phones before the "Saved" state. Recommendation: cap the drain, show "Refining speakers" (UI-SPEC), and never delay the DONE save more than the cap; if the cap is hit, refine with what is there.
 
 ## Environment Availability
 
