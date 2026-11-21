@@ -7,6 +7,10 @@ export function setWebRecording(v: boolean): void {
   webRecording = v;
 }
 
+export function isWebRecordingNow(): boolean {
+  return webRecording;
+}
+
 export async function isRecordingActive(): Promise<boolean> {
   if (webRecording) return true;
   if (hasPlugin("MeetingRecorder")) {

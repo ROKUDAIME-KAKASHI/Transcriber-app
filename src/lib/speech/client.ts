@@ -5,6 +5,8 @@
  * so the model only loads once (and is cached by the browser after the first download).
  */
 import { MODELS, type Engine, type ModelName } from "./models";
+import { getConnectivity } from "@/lib/connectivity";
+import { isWebRecordingNow } from "@/lib/recordingFlag";
 
 type WorkerOut =
   | { type: "progress"; progress: number }
@@ -12,7 +14,10 @@ type WorkerOut =
   | { type: "result"; id: number; text: string; rtf: number }
   | { type: "skipped"; id: number }
   | { type: "model"; model: ModelName }
-  | { type: "error"; id?: number; message: string };
+  | { type: "cache-status"; model: ModelName; cached: boolean }
+  | { type: "prefetch-progress"; requestId: number; progress: number }
+  | { type: "prefetched"; requestId: number; model: ModelName }
+  | { type: "error"; id?: number; requestId?: number; message: string };
 
 /**
  * Remembers when a device turned out too slow for an engine's bigger model. Stored as
@@ -32,6 +37,10 @@ let progressListener: ((pct: number) => void) | null = null;
 let modelListener: ((m: ModelName) => void) | null = null;
 /** Rejecters for a model load in progress, called if the worker dies. */
 const failListeners = new Set<(e: Error) => void>();
+/** Offline-readiness plumbing: kept apart from the load/transcribe listeners above. */
+const cacheWaiters = new Map<ModelName, ((cached: boolean) => void)[]>();
+const prefetches = new Map<number, { resolve: () => void; reject: (e: Error) => void; onProgress: (pct: number) => void }>();
+let nextRequestId = 1;
 
 function readStored(key: string): string | null {
   try {
@@ -64,7 +73,17 @@ function getWorker(): Worker {
   worker.onmessage = (e: MessageEvent<WorkerOut>) => {
     const msg = e.data;
     if (msg.type === "progress") progressListener?.(msg.progress);
-    else if (msg.type === "model") {
+    else if (msg.type === "cache-status") {
+      cacheWaiters.get(msg.model)?.forEach((f) => f(msg.cached));
+      cacheWaiters.delete(msg.model);
+    } else if (msg.type === "prefetch-progress") prefetches.get(msg.requestId)?.onProgress(msg.progress);
+    else if (msg.type === "prefetched") {
+      prefetches.get(msg.requestId)?.resolve();
+      prefetches.delete(msg.requestId);
+    } else if (msg.type === "error" && msg.requestId !== undefined) {
+      prefetches.get(msg.requestId)?.reject(new Error(msg.message));
+      prefetches.delete(msg.requestId);
+    } else if (msg.type === "model") {
       // The device was too slow for the bigger model: remember, so next time it starts on the lighter one.
       try { localStorage.setItem(downgradeKey(MODELS[msg.model].family), `${msg.model}@${Date.now()}`); } catch { /* ignore */ }
       modelListener?.(msg.model);
@@ -83,6 +102,10 @@ function getWorker(): Worker {
     failListeners.forEach((f) => f(err));
     for (const p of pending.values()) p.reject(err);
     pending.clear();
+    for (const p of prefetches.values()) p.reject(err);
+    prefetches.clear();
+    cacheWaiters.forEach((l) => l.forEach((f) => f(false)));
+    cacheWaiters.clear();
     worker?.terminate();
     worker = null;
     ready = null;
@@ -132,7 +155,7 @@ export function loadSpeechModel(
       }
     };
     w.addEventListener("message", onMsg);
-    w.postMessage({ type: "load", model: preferredModel(engine), language, slowRtf: opts.slowRtf });
+    w.postMessage({ type: "load", model: preferredModel(engine), language, slowRtf: opts.slowRtf, localOnly: getConnectivity() === "offline" });
   });
   return ready;
 }
@@ -156,4 +179,47 @@ export async function transcribeSegment(audio: Float32Array): Promise<string> {
  */
 export function transcribePartial(audio: Float32Array): Promise<string | null> {
   return send(audio, "partial");
+}
+
+/** True while the worker is in use for a recording (a recording is running or phrases are queued). */
+export function isWorkerBusy(): boolean {
+  return pending.size > 0 || isWebRecordingNow();
+}
+
+/** Asks the worker whether a model is fully in Cache Storage. Never throws; false on any problem. */
+export function cacheStatus(model: ModelName): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const list = cacheWaiters.get(model) ?? [];
+      list.push(resolve);
+      cacheWaiters.set(model, list);
+      getWorker().postMessage({ type: "cache-status", model });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+/** Downloads a model into Cache Storage without loading it. Refuses while a recording uses the worker. */
+export function prefetchModel(model: ModelName, onProgress: (pct: number) => void): Promise<void> {
+  if (isWorkerBusy()) return Promise.reject(new Error("The speech engine is busy. Try again after the recording."));
+  const requestId = nextRequestId++;
+  return new Promise((resolve, reject) => {
+    prefetches.set(requestId, { resolve, reject, onProgress });
+    getWorker().postMessage({ type: "prefetch", model, requestId });
+  });
+}
+
+/** Stops a download by ending the worker (pipeline() has no abort). Saved files stay saved. */
+export function cancelPrefetch(): void {
+  if (isWorkerBusy() || !worker) return;
+  const err = new Error("Download cancelled");
+  for (const p of prefetches.values()) p.reject(err);
+  prefetches.clear();
+  cacheWaiters.forEach((l) => l.forEach((f) => f(false)));
+  cacheWaiters.clear();
+  worker.terminate();
+  worker = null;
+  ready = null;
+  readyFor = "";
 }

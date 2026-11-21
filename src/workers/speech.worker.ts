@@ -10,6 +10,8 @@
  *
  * Messages in:
  *   { type: "load", model: ModelName, language?: string, slowRtf?: number }
+ *   { type: "cache-status", model } -> { type: "cache-status", model, cached }
+ *   { type: "prefetch", model, requestId } -> prefetch-progress / prefetched / error (with requestId)
  *   { type: "transcribe", id, audio, kind: "final" | "partial" }   audio = 16 kHz mono Float32Array
  * Messages out:
  *   { type: "progress", progress }            first-time download, 0–100
@@ -24,7 +26,7 @@
  * waiting, and only the newest one is kept — so a slow phone shows fewer previews but never falls
  * behind on the real transcript.
  */
-import { env, pipeline, type ProgressInfo } from "@huggingface/transformers";
+import { env, pipeline, ModelRegistry, type ProgressInfo } from "@huggingface/transformers";
 import { hasLoop } from "../lib/speech/cleanText";
 import { MODELS, type ModelName } from "../lib/speech/models";
 
@@ -50,7 +52,9 @@ type Transcriber = ((audio: Float32Array, options?: GenerateOptions) => Promise<
 
 type Job = { id: number; audio: Float32Array; kind: "final" | "partial" };
 type InMessage =
-  | { type: "load"; model: ModelName; language?: string; slowRtf?: number }
+  | { type: "load"; model: ModelName; language?: string; slowRtf?: number; localOnly?: boolean }
+  | { type: "cache-status"; model: ModelName }
+  | { type: "prefetch"; model: ModelName; requestId: number }
   | ({ type: "transcribe" } & Job);
 
 // ---- Runtime setup -----------------------------------------------------------
@@ -86,13 +90,15 @@ async function warmUp(t: Transcriber) {
   await t(new Float32Array(SAMPLE_RATE), { max_new_tokens: 2 });
 }
 
-function loadModel(name: ModelName, reportProgress: boolean): Promise<Transcriber> {
+function loadModel(name: ModelName, reportProgress: boolean, localOnly = false): Promise<Transcriber> {
   const existing = loaded.get(name);
   if (existing) return existing;
   let lastPct = -1;
   const p = pipeline("automatic-speech-recognition", MODELS[name].repo, {
     device: "wasm",
     dtype: "q8",
+    // Offline: never touch the network. A cached model loads; an uncached one fails fast.
+    ...(localOnly ? { local_files_only: true } : {}),
     progress_callback: (info: ProgressInfo) => {
       if (!reportProgress || info.status !== "progress_total") return;
       const pct = Math.round(info.progress);
@@ -213,9 +219,39 @@ self.onmessage = (event: MessageEvent<InMessage>) => {
     rtfSamples = [];
     phrasesSinceLoad = 0;
     unloadOthers([active]);
-    loadModel(active, true)
+    loadModel(active, true, !!msg.localOnly)
       .then(() => self.postMessage({ type: "ready", model: active, threads: onnx.wasm?.numThreads ?? 1 }))
       .catch((err) => self.postMessage({ type: "error", message: String(err?.message ?? err) }));
+    return;
+  }
+
+  if (msg.type === "cache-status") {
+    ModelRegistry.is_pipeline_cached_files("automatic-speech-recognition", MODELS[msg.model].repo, { device: "wasm", dtype: "q8" })
+      .then((r) => self.postMessage({ type: "cache-status", model: msg.model, cached: !!r.allCached }))
+      .catch(() => self.postMessage({ type: "cache-status", model: msg.model, cached: false }));
+    return;
+  }
+
+  if (msg.type === "prefetch") {
+    // Download only: same options as loadModel, but the model is not kept resident.
+    const { requestId, model } = msg;
+    let lastPct = -1;
+    pipeline("automatic-speech-recognition", MODELS[model].repo, {
+      device: "wasm",
+      dtype: "q8",
+      progress_callback: (info: ProgressInfo) => {
+        if (info.status !== "progress_total") return;
+        const pct = Math.round(info.progress);
+        if (pct === lastPct) return;
+        lastPct = pct;
+        self.postMessage({ type: "prefetch-progress", requestId, progress: pct });
+      },
+    })
+      .then(async (t) => {
+        await (t as unknown as Transcriber).dispose?.();
+        self.postMessage({ type: "prefetched", requestId, model });
+      })
+      .catch((err) => self.postMessage({ type: "error", requestId, message: String(err?.message ?? err) }));
     return;
   }
 
