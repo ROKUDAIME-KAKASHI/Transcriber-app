@@ -260,18 +260,23 @@ async function pull(uid: string): Promise<Step> {
   const data = r.data;
   if (!data || !Array.isArray(data.meetings) || !Array.isArray(data.ids)) return "next";
   const refetch = await repo.applyPull(uid, data.meetings, data.ids);
+  // Only advance lastPullAt when every refetch finished, so unfinished ones are returned again next pull.
+  let complete = refetch.length <= 5;
   for (const id of refetch.slice(0, 5)) {
     const fr = await req("GET", `/api/meetings/${encodeURIComponent(id)}`);
-    if (classifyResponse(fr.status) === "ok" && fr.data?.meeting) {
+    const fcls = classifyResponse(fr.status);
+    if (fcls === "ok" && fr.data?.meeting) {
       const mt = fr.data.meeting;
       await repo.cacheServerMeeting(uid, { ...mt, transcript: parseTranscript(mt.transcript) });
-    } else if (classifyResponse(fr.status) === "auth") {
+    } else if (fcls === "auth") {
       return fail(uid, id, "auth", fr);
+    } else if (fcls !== "not-found") {
+      complete = false;
     }
   }
   const serverMs = Date.parse(data.serverTime);
   if (!Number.isNaN(serverMs)) {
-    await repo.kvSet(uid, "lastPullAt", new Date(serverMs - 5000).toISOString());
+    if (complete) await repo.kvSet(uid, "lastPullAt", new Date(serverMs - 5000).toISOString());
     lastPullMs = Date.now();
   }
   return "next";
