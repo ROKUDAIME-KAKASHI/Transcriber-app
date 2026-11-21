@@ -4,6 +4,7 @@ import { summaryModel } from "@/lib/ai";
 import { DEFAULT_SUMMARY_MODEL } from "@/lib/aiModels";
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
+import { withLegacyFallback } from "@/lib/meetingSelect";
 import { parseTranscript, transcriptToText } from "@/lib/transcript";
 
 // Long meetings take several AI calls. 300 s is the most every Vercel plan allows; if the platform cuts
@@ -18,9 +19,9 @@ export const maxDuration = 300;
 const FULL_TRANSCRIPT_MAX_WORDS = 3500;
 
 const CONTEXT = `You are an expert executive assistant writing up a meeting.
-You will be given a raw meeting transcript from a speech recogniser: one phrase per line, each starting with a [mm:ss] or [hh:mm:ss] time into the meeting (older recordings may lack times). Cloud recordings label who is talking as "Speaker N:"; on-device recordings have no labels.
+You will be given a raw meeting transcript from a speech recogniser: one phrase per line, each starting with a [mm:ss] or [hh:mm:ss] time into the meeting (older recordings may lack times). When several people speak, each line starts with the speaker's label ("Speaker N:" or a name the user gave). Labels come from automatic speaker separation (on the device or in the cloud) and can occasionally mix two people up.
 - The recogniser makes mistakes. Fix misheard words only when the right word is clear from context; never invent content.
-- With "Speaker N:" labels, attribute statements, decisions and action items to that speaker. Use a real name instead only when the transcript makes it clear who Speaker N is (e.g. they introduce themselves or are addressed by name). Speaker separation is automatic and can occasionally mix two people up.
+- With labels ("Speaker N:" or a name), attribute statements, decisions and action items to that speaker. Use a given name exactly as written; for "Speaker N" use a real name instead only when the transcript makes it clear who they are (e.g. they introduce themselves or are addressed by name). Speaker separation is automatic and can occasionally mix two people up.
 - Without labels, the speakers are not separated: do not invent names or attribute statements to people unless the transcript makes it clear (e.g. someone is addressed by name, or says "I'll do it").
 - Parts may be in Hindi (Devanagari) or mixed Hindi-English. Write the document in English; quote Hindi only where the exact wording matters.
 - Where useful, cite when something was said with its time in brackets, e.g. (12:40), so readers can find it in the transcript.
@@ -163,9 +164,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   let meeting;
   try {
-    meeting = await prisma.meeting.findFirst({
-      where: { id, userId },
-      select: { title: true, durationSec: true, transcript: true },
+    meeting = await withLegacyFallback(async (legacy) => {
+      const where = { id, userId };
+      if (legacy) {
+        const m = await prisma.meeting.findFirst({ where, select: { title: true, durationSec: true, transcript: true } });
+        return m && { ...m, speakerNames: null as unknown };
+      }
+      return prisma.meeting.findFirst({
+        where,
+        select: { title: true, durationSec: true, transcript: true, speakerNames: true },
+      });
     });
   } catch (err) {
     console.error("Process lookup error:", err);
@@ -174,8 +182,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!meeting) return Response.json({ error: "Meeting not found" }, { status: 404 });
 
   const parts = parseTranscript(meeting.transcript);
-  // [mm:ss] text per line; "Speaker N:" only when the meeting has several speakers (cloud recordings).
-  const raw = transcriptToText(parts);
+  const sn = meeting.speakerNames;
+  const names: Record<string, string> | null =
+    sn && typeof sn === "object" && !Array.isArray(sn) && Object.values(sn).every((v) => typeof v === "string")
+      ? (sn as Record<string, string>)
+      : null;
+  // Decided once for the whole meeting so every chunk of a long meeting is labelled alike.
+  const multiSpeaker = new Set(parts.map((p) => p.speaker)).size > 1;
+  // [mm:ss] text per line; "Name:" / "Speaker N:" labels when the meeting has several speakers.
+  const raw = transcriptToText(parts, { names, multiSpeaker });
   const words = parts.reduce((n, p) => n + p.text.split(/\s+/).length, 0);
   const includeFullTranscript = words <= FULL_TRANSCRIPT_MAX_WORDS;
   if (!raw.trim()) return Response.json({ error: "This meeting has no transcript yet." }, { status: 400 });
@@ -186,7 +201,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (words > LONG_MEETING_WORDS) {
       // Step 1: detailed notes per part (in order), a couple at a time.
       const chunks = splitIntoChunks(parts);
-      const multiSpeaker = new Set(parts.map((p) => p.speaker)).size > 1;
       const notes = await mapLimit(chunks, CHUNK_CONCURRENCY, async (chunk, i) => {
         const r = await generateText({
           model: summaryModel(model),
@@ -194,7 +208,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           maxRetries: 2,
           abortSignal: AbortSignal.timeout(180_000),
           system: NOTES_PROMPT,
-          prompt: `Part ${i + 1} of ${chunks.length}${multiSpeaker ? " (speaker labels are consistent across parts)" : ""}:\n\n${transcriptToText(chunk)}`,
+          prompt: `Part ${i + 1} of ${chunks.length}${multiSpeaker ? " (speaker labels are consistent across parts)" : ""}:\n\n${transcriptToText(chunk, { names, multiSpeaker })}`,
         });
         return `## Part ${i + 1} of ${chunks.length}\n\n${r.text.trim()}`;
       });
