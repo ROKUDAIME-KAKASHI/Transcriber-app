@@ -49,9 +49,9 @@ New components:
 | 3xl | 64px | Not used |
 
 Exceptions:
-- Speaker chip is a tap target: visible chip `h-7` (28px); hit area is `min-h-11` (44px) via `-my-2 py-2` on the button wrapper so the transcript grid's row rhythm (`space-y-5`) does not change. Sheet buttons (`Save`, `Cancel`) and the name input are `min-h-11`.
+- Speaker chip is a tap target: visible chip `h-7` (28px); hit area is `min-h-11` (44px) via `-my-2 py-2` on the button wrapper so the transcript grid's row rhythm (`space-y-5`) does not change. Sheet buttons (`Save name`, `Discard changes`) and the name input are `min-h-11`.
 - Phone sheet is `fixed inset-x-0 bottom-0` with `pb-[calc(1rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]` so it clears the gesture bar and sits above the bottom tab bar (z above tab bar: `z-40`). It never changes the page height.
-- Dots in the chip and status line are 8px (`h-2 w-2`) and 6px (`h-1.5 w-1.5`, existing `TypingDots`), decorative, as already in the codebase.
+- Dots in the chip and status line are 8px (`h-2 w-2`) (the existing `TypingDots` component is reused unchanged), decorative, as already in the codebase.
 
 ---
 
@@ -67,7 +67,7 @@ Existing tokens only (`text-meta` 13/20, `text-ui` 15/22, `text-base` 16/28 for 
 | Heading (sheet title `Rename speaker`) | 15px (`text-ui`) | 600 | 22px (1.47) |
 | Display | not used in this phase | - | - |
 
-Exactly two weights: 400 and 600 (the existing chip uses `font-semibold`; the "Show more" link's `font-medium` is untouched legacy). Nothing under 13px.
+New elements use exactly two weights, 400 and 600 (the existing chip uses `font-semibold`; the "Show more" link's `font-medium` is untouched legacy). Nothing under 13px.
 
 ---
 
@@ -84,7 +84,7 @@ Exactly two weights: 400 and 600 (the existing chip uses `font-semibold`; the "S
 | Destructive | `--danger` #cf2f29 / #f2685e | Rename validation error line only. Nothing in this phase is destructive. |
 
 Accent reserved for:
-1. `Save` button in the rename sheet (`Button variant="primary"`, the single primary in the sheet).
+1. `Save name` button in the rename sheet (`Button variant="primary"`, the single primary in the sheet).
 2. Keyboard focus ring (global `:focus-visible`) including on the chip and the name input.
 3. Existing items unchanged (live caret in the transcript, "Show more paragraphs" link, Start CTA).
 
@@ -113,13 +113,13 @@ Rules:
   - Title row: `Rename speaker` (`text-ui font-semibold`) with the current speaker dot (8px, speaker color) before it.
   - Field: `FieldLabel` `Name` + text input (`inputCls`, `min-h-11`, `maxLength=40`, `autoComplete="off"`, `autoCapitalize="words"`, `enterKeyHint="done"`), prefilled with the current custom name or empty with placeholder `Speaker {n+1}`. Autofocus on open (lg+ only; on phones focus the input but do not force the keyboard if the sheet opened by long scroll; simple rule: focus on open for both, the sheet repositions above the keyboard via `visualViewport` bottom padding).
   - Helper (`text-meta text-muted-foreground`): `Applies to the transcript, exports and minutes.`
-  - Buttons row (`flex justify-end gap-2`): `Cancel` (`variant="ghost"`, `min-h-11`) and `Save` (`variant="primary"`, `min-h-11`).
+  - Buttons row (`flex justify-end gap-2`): `Discard changes` (`variant="ghost"`, `min-h-11`) and `Save name` (`variant="primary"`, `min-h-11`).
 - Behaviour:
-  - `Save` (or Enter) trims the name; an empty or whitespace-only value clears the custom name (reverts to `Speaker N`) and still closes. A name equal to another speaker's name is allowed (no error).
+  - `Save name` (or Enter) trims the name; an empty or whitespace-only value clears the custom name (reverts to `Speaker N`) and still closes. A name equal to another speaker's name is allowed (no error).
   - Saving writes `speakerNames["{n}"]` in Dexie, marks `meta`/`speakers` dirty, and closes. The chip, every other chip for that speaker, TXT/Word/PDF exports and the minutes transcript text pick up the name immediately (D-10). No toast; the chip updating is the confirmation.
   - If the name exceeds 40 characters the input blocks further typing; no error copy is needed. If the save fails (Dexie write error): inline `<p className="text-meta text-danger" role="alert">Couldn't save the name. Try again.</p>` above the buttons and the sheet stays open.
   - Offline is irrelevant: writes are local and sync later. The sheet has no gating and no `Needs internet` reason.
-- Close paths: `Cancel`, scrim tap (phones), outside tap (lg+), `Escape`, Android back, swipe-down is out of scope. Register with `pushOverlay(close)` on open and call the returned cleanup on close (also on unmount) so the Android back key (via `closeTopOverlay`) closes the sheet before navigating. Closing without saving discards edits. Focus returns to the chip that opened it.
+- Close paths: `Discard changes`, scrim tap (phones), outside tap (lg+), `Escape`, Android back, swipe-down is out of scope. Register with `pushOverlay(close)` on open and call the returned cleanup on close (also on unmount) so the Android back key (via `closeTopOverlay`) closes the sheet before navigating. Closing without saving discards edits. Focus returns to the chip that opened it.
 - Motion: sheet enters with a 150ms `opacity` + `translate-y-2` to 0 (`transition`), exits instantly; popover fades 150ms. Reduced motion disables both via the global rule.
 
 ### 3. Discoverability hint (one-time)
@@ -163,13 +163,13 @@ A single non-interactive line, never a banner, never blocking:
 
 | Element | Copy |
 |---------|------|
-| Primary CTA (this phase) | `Save` (rename sheet); the page's accent CTAs stay Start recording / Create minutes |
+| Primary CTA (this phase) | `Save name` (rename sheet); the page's accent CTAs stay Start recording / Create minutes |
 | Speaker chip default label | `Speaker 1`, `Speaker 2`, ... (1-based; storage is 0-based) |
 | Chip accessible name | `Rename {current label}` |
 | Rename sheet title | `Rename speaker` |
 | Rename field label / placeholder | `Name` / `Speaker {n}` |
 | Rename helper | `Applies to the transcript, exports and minutes.` |
-| Rename buttons | `Save`, `Cancel` |
+| Rename buttons | `Save name`, `Discard changes` |
 | Discoverability hint | `Tap a speaker's name to rename it.` |
 | Live status | `Identifying speakers` |
 | Skipped status | `Catching up on transcription first, speakers will follow` |
@@ -219,6 +219,6 @@ Copy rules: sentence case, no exclamation marks, no technical terms in UI (no "e
 
 ## Notes for planner/executor
 
-- Visual anchor: the transcript text is the anchor; chips and status lines stay subordinate. In the rename sheet the `Save` button is the primary anchor.
+- Visual anchor: the transcript text is the anchor; chips and status lines stay subordinate. In the rename sheet the `Save name` button is the primary anchor.
 - Defaults chosen without user input (recommended): theta and thresholds are not a UI concern; hint persistence key, 40-char limit, 300ms refine delay and 1s hold on the status line are tunable constants.
 - `speakerLabel` must be the only place producing `Speaker N` strings (TranscriptView currently hard-codes it at line 98).
