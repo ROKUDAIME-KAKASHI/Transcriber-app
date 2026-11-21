@@ -7,8 +7,8 @@
 
 ### Export & Share
 
-- [ ] **SHARE-01**: User can export a meeting's transcript as TXT inside the Android app and on the website (file actually saves/opens)
-- [ ] **SHARE-02**: User can export minutes/transcript as a real Word (.docx) file inside the Android app and on the website
+- [x] **SHARE-01**: User can export a meeting's transcript as TXT inside the Android app and on the website (file actually saves/opens)
+- [x] **SHARE-02**: User can export minutes/transcript as a real Word (.docx) file inside the Android app and on the website
 - [x] **SHARE-03**: User can export minutes/transcript as PDF inside the Android app and on the website, including long meetings and Hindi (Devanagari) text, without the "Couldn't make the PDF" error
 - [x] **SHARE-04**: User can tap "Share" on a meeting and get the native share sheet (WhatsApp, Drive, Telegram, Messages, Gmail, copy…) with the minutes or transcript as a file or text — in the Android app (Capacitor Share) and on web/iOS browsers (Web Share API), with a download fallback
 - [x] **SHARE-05**: Web code keeps working on older installed APKs that lack the new native plugins (feature detection + fallback)
@@ -76,8 +76,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SHARE-01 | Phase 1 | Pending |
-| SHARE-02 | Phase 1 | Pending |
+| SHARE-01 | Phase 1 | Complete |
+| SHARE-02 | Phase 1 | Complete |
 | SHARE-03 | Phase 1 | Complete |
 | SHARE-04 | Phase 1 | Complete |
 | SHARE-05 | Phase 1 | Complete |
