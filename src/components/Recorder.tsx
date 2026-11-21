@@ -14,6 +14,9 @@ import { formatDuration } from "@/lib/transcript";
 import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
 import { WHISPER_LANGUAGES } from "@/lib/speech/models";
 import type { RecordEngine } from "@/lib/speech/deepgram";
+import { useConnectivity } from "@/lib/connectivity";
+import { startGate } from "@/lib/speech/readiness";
+import { OfflineModelControl, useOfflineReadiness, type OfflineReadiness } from "./OfflineModelControl";
 import { TranscriptView } from "./TranscriptView";
 import { Badge, Button, FieldLabel, LiveDot, GateReason, Notice, OptionList, Panel, PanelHeader, cx, selectCls } from "./ui";
 
@@ -123,10 +126,20 @@ export function Recorder() {
     locked: false,
     deepgramEnabled: deepgramGate.enabled,
   }) as RecordEngine;
+  const conn = useConnectivity();
+  const [modelStatus, setModelStatus] = useState<Record<string, OfflineReadiness>>({});
   const frozenEngine = useRef<RecordEngine>(computedEngine);
   if (!sessionLocked) frozenEngine.current = computedEngine;
   const effective: RecordEngine = sessionLocked ? frozenEngine.current : computedEngine;
   const overridden = effective !== engine;
+  const onDevice = effective === "moonshine" || effective === "whisper" ? effective : null;
+  const moonReady = useOfflineReadiness("moonshine").readiness?.status === "ready";
+  const whisperReady = useOfflineReadiness("whisper").readiness?.status === "ready";
+  const ready: Record<string, boolean> = { moonshine: moonReady, whisper: whisperReady };
+  const cur = onDevice ? modelStatus[onDevice] : undefined;
+  const gateStart = onDevice
+    ? startGate({ preferredCached: cur?.preferredCached ?? false, ortCached: cur?.ortCached ?? false, conn })
+    : { allowed: true as boolean, reason: undefined as string | undefined };
   const webRec = useRecorder({ captureSystemAudio, deviceId: micId, engine: effective, language });
   const nativeRec = useNativeRecorder({ language });
   // Android app: cloud mode records in a native service that keeps going with the screen off.
@@ -263,12 +276,14 @@ export function Recorder() {
               </>
             ) : (
               <button
-                onClick={starting ? undefined : () => rec.start("mic")}
-                disabled={starting || blocked}
+                onClick={starting || !gateStart.allowed ? undefined : () => rec.start("mic")}
+                disabled={starting || blocked || !gateStart.allowed}
+                aria-disabled={starting || blocked || !gateStart.allowed}
+                aria-describedby={!gateStart.allowed ? "start-gate-reason" : undefined}
                 className={cx(
                   "grid h-[4.5rem] w-[4.5rem] place-items-center rounded-full bg-danger text-white transition-transform",
                   "hover:bg-danger/90 active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100",
-                  blocked && "opacity-40"
+                  (blocked || !gateStart.allowed) && "opacity-40"
                 )}
                 aria-label={starting ? "Starting recording" : "Start recording"}
               >
@@ -287,6 +302,7 @@ export function Recorder() {
             ) : null}
           </div>
 
+          {!busy && !starting && <GateReason id="start-gate-reason" reason={gateStart.reason} />}
           {blocked && (
             <div className="mt-2 text-left">
               <Notice tone="danger" icon={<ShieldAlert className="h-4 w-4" />} title="Recording needs a secure https:// address">
@@ -320,9 +336,27 @@ export function Recorder() {
               options={(inApp ? ENGINES.map((e) => ({ ...e, description: APP_ENGINE_NOTES[e.value] })) : ENGINES).map((e) =>
                 e.value === "deepgram" && !deepgramGate.enabled
                   ? { ...e, disabled: true, description: deepgramGate.reason }
-                  : e
+                  : ready[e.value]
+                    ? { ...e, description: <>{e.description} <span className="text-success">Ready offline</span></> }
+                    : e
               )}
             />
+            {onDevice && (
+              <div className="mt-3">
+                <OfflineModelControl
+                  engine={onDevice}
+                  disabled={locked}
+                  onStatusChange={(r) =>
+                    setModelStatus((m) => {
+                      const o = m[onDevice];
+                      return o && o.status === r.status && o.preferredCached === r.preferredCached && o.ortCached === r.ortCached
+                        ? m
+                        : { ...m, [onDevice]: r };
+                    })
+                  }
+                />
+              </div>
+            )}
             {overridden && !locked && (
               <div className="mt-3">
                 <Notice icon={<WifiOff className="h-4 w-4" />}>
