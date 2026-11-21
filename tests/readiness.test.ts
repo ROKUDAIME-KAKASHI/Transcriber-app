@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chainFor, totalSizeMb, labelSize, statusFrom, startGate } from "../src/lib/speech/readiness.ts";
+import { chainFor, totalSizeMb, needsSpeakerDownload, labelSize, statusFrom, startGate } from "../src/lib/speech/readiness.ts";
 
 test("chainFor moonshine-base includes tiny fallback", () => {
   assert.deepEqual(chainFor("moonshine", "moonshine-base"), ["moonshine-base", "moonshine-tiny"]);
@@ -12,9 +12,19 @@ test("chainFor whisper", () => {
   assert.deepEqual(chainFor("whisper", "whisper-base"), ["whisper-base"]);
 });
 test("labels are honest", () => {
-  assert.equal(labelSize(totalSizeMb(["moonshine-base", "moonshine-tiny"])), "about 100 MB");
-  assert.equal(labelSize(totalSizeMb(["whisper-base"])), "about 85 MB");
-  assert.equal(labelSize(totalSizeMb(["moonshine-tiny"])), "about 35 MB");
+  assert.equal(labelSize(totalSizeMb(["moonshine-base", "moonshine-tiny"])), "about 110 MB");
+  assert.equal(labelSize(totalSizeMb(["whisper-base"])), "about 90 MB");
+  assert.equal(labelSize(totalSizeMb(["moonshine-tiny"])), "about 40 MB");
+});
+test("totalSizeMb can exclude the speaker model", () => {
+  assert.equal(totalSizeMb(["moonshine-base", "moonshine-tiny"], { speaker: false }), 99);
+});
+test("needsSpeakerDownload only when ASR ready and speaker model missing", () => {
+  assert.equal(needsSpeakerDownload({ status: "ready", speakerCached: false }), true);
+  assert.equal(needsSpeakerDownload({ status: "ready", speakerCached: true }), false);
+  for (const status of ["none", "partial", "downloading", "error"] as const) {
+    assert.equal(needsSpeakerDownload({ status, speakerCached: false }), false);
+  }
 });
 test("statusFrom ready needs all models and ORT", () => {
   assert.equal(statusFrom({ chainCached: [true, true], ortCached: true }), "ready");

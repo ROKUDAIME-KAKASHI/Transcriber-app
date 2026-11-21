@@ -3,7 +3,7 @@
  * covered by node tests (so imports are relative with .ts extensions and nothing touches the DOM);
  * the runtime wrappers below load the client lazily and are only called in the browser.
  */
-import { MODELS, type Engine, type ModelName } from "./models.ts";
+import { MODELS, SPEAKER_MODEL, type Engine, type ModelName } from "./models.ts";
 
 export type ReadinessStatus = "none" | "partial" | "ready" | "downloading" | "error";
 export type Conn = "online" | "offline" | "unknown";
@@ -20,8 +20,15 @@ export function chainFor(engine: Engine, preferred: ModelName): ModelName[] {
   return out;
 }
 
-export function totalSizeMb(chain: ModelName[]): number {
-  return chain.reduce((sum, m) => sum + MODELS[m].downloadMb, 0);
+/** Download size of a chain; includes the ~7 MB speaker model unless `opts.speaker === false`. */
+export function totalSizeMb(chain: ModelName[], opts: { speaker?: boolean } = {}): number {
+  const asr = chain.reduce((sum, m) => sum + MODELS[m].downloadMb, 0);
+  return opts.speaker === false ? asr : asr + SPEAKER_MODEL.downloadMb;
+}
+
+/** ASR is ready but the speaker model is not saved: offer a speaker-only download (never blocks recording). */
+export function needsSpeakerDownload(a: { status: ReadinessStatus; speakerCached: boolean }): boolean {
+  return a.status === "ready" && !a.speakerCached;
 }
 
 /** "about 100 MB": rounded up to the next 5 MB so the label never understates the download. */
@@ -62,14 +69,15 @@ export async function ortCached(): Promise<boolean> {
   }
 }
 
-export type EngineReadiness = { status: ReadinessStatus; chain: ModelName[]; chainCached: boolean[]; ortCached: boolean };
+export type EngineReadiness = { status: ReadinessStatus; chain: ModelName[]; chainCached: boolean[]; ortCached: boolean; speakerCached: boolean };
 
 export async function engineStatus(engine: Engine): Promise<EngineReadiness> {
   const client = await import("./client");
   const chain = chainFor(engine, client.preferredModel(engine));
   const chainCached = await Promise.all(chain.map((m) => client.cacheStatus(m)));
   const ort = await ortCached();
-  return { status: statusFrom({ chainCached, ortCached: ort }), chain, chainCached, ortCached: ort };
+  const speakerCached = await client.speakerCacheStatus().catch(() => false);
+  return { status: statusFrom({ chainCached, ortCached: ort }), chain, chainCached, ortCached: ort, speakerCached };
 }
 
 /**
@@ -82,13 +90,22 @@ export async function prefetchEngine(engine: Engine, onProgress: (pct: number) =
   const abort = () => client.cancelPrefetch();
   signal?.addEventListener("abort", abort);
   try {
+    const sizes = [...chain.map((m) => MODELS[m].downloadMb), SPEAKER_MODEL.downloadMb];
+    const total = sizes.reduce((a, b) => a + b, 0);
+    let done = 0;
+    const report = (partial: number) => onProgress(Math.min(100, Math.round(((done + partial) / total) * 100)));
     for (let i = 0; i < chain.length; i++) {
       if (signal?.aborted) throw new DOMException("Download cancelled", "AbortError");
-      if (await client.cacheStatus(chain[i])) {
-        onProgress(Math.round(((i + 1) / chain.length) * 100));
-        continue;
+      if (!(await client.cacheStatus(chain[i]))) {
+        await client.prefetchModel(chain[i], (pct) => report((pct / 100) * sizes[i]));
       }
-      await client.prefetchModel(chain[i], (pct) => onProgress(Math.round(((i + pct / 100) / chain.length) * 100)));
+      done += sizes[i];
+      report(0);
+    }
+    if (signal?.aborted) throw new DOMException("Download cancelled", "AbortError");
+    if (!(await client.speakerCacheStatus())) {
+      const last = sizes[sizes.length - 1];
+      await client.prefetchSpeakerModel((pct) => report((pct / 100) * last));
     }
   } catch (err) {
     if (signal?.aborted) throw new DOMException("Download cancelled", "AbortError");
