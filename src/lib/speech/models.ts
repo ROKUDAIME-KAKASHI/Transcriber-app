@@ -16,3 +16,6 @@ export const WHISPER_LANGUAGES = [
   { value: "hi", label: "Hindi" },
   { value: "auto", label: "Auto (mixed)" },
 ] as const;
+
+/** Speaker-embedding model for on-device diarization (not an ASR model, so not in MODELS). q8 = onnx/model_quantized.onnx. */
+export const SPEAKER_MODEL = { repo: "onnx-community/wespeaker-voxceleb-resnet34-LM", dtype: "q8", downloadMb: 7, label: "speaker model" } as const;
