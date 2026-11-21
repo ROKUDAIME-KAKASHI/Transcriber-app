@@ -67,6 +67,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
         res = await write(true);
       } catch (err) {
         if (!isMissingColumn(err)) throw err;
+        // Schema not pushed yet: names can't be stored, so don't report success (client keeps retrying).
+        if (speakerNames) {
+          return Response.json({ error: "Speaker names are not available yet. Try again later." }, { status: 503 });
+        }
         res = await write(false);
       }
       if (res.count) nextLen = next.length;

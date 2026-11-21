@@ -72,6 +72,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const { transcriptTail, title, titleUpdatedAt, engine, speakerNames, ...rest } = parsed.data;
 
   const apply = async (legacy: boolean): Promise<Response> => {
+    // Schema not pushed yet: speakerNames can't be stored. Don't claim success, so the client keeps its dirty flag.
+    if (legacy && speakerNames) {
+      return Response.json({ error: "Speaker names are not available yet. Try again later." }, { status: 503 });
+    }
     const extra = legacy ? {} : { ...(engine ? { engine } : {}), ...(speakerNames ? { speakerNames } : {}) };
     const data = { ...rest, ...extra, updatedAt: new Date() };
     let savedParts: number | undefined;
