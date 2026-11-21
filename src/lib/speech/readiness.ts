@@ -49,13 +49,14 @@ export function startGate(a: { preferredCached: boolean; ortCached: boolean; con
 
 // ---- Runtime (browser only) -------------------------------------------------------------
 
-const ORT_URL = "/ort/ort-wasm-simd-threaded.wasm";
+const ORT_URLS = ["/ort/ort-wasm-simd-threaded.mjs", "/ort/ort-wasm-simd-threaded.wasm"];
 
 export async function ortCached(): Promise<boolean> {
   try {
     if (typeof caches === "undefined") return false;
-    const hit = await caches.match(new URL(ORT_URL, self.location.origin).href);
-    return !!hit;
+    // Both the loader and the wasm must be saved, otherwise the runtime cannot start offline.
+    const hits = await Promise.all(ORT_URLS.map((u) => caches.match(new URL(u, self.location.origin).href)));
+    return hits.every(Boolean);
   } catch {
     return false;
   }
