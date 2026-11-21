@@ -18,6 +18,9 @@ import {
   webCanShareFiles,
 } from "@/lib/export/deliver";
 import { isNative } from "@/lib/native";
+import { cacheServerMeeting, setServerDocument, setTitle as setLocalTitle, tombstone } from "@/lib/local/repo";
+import { flush, poke } from "@/lib/local/sync";
+import { useLocalUser } from "./SyncProvider";
 import { ShareMenu } from "./ShareMenu";
 import type { ExportKind, ExportMeeting } from "@/lib/export/types";
 import { TranscriptView } from "./TranscriptView";
@@ -33,13 +36,15 @@ export interface MeetingData {
   template: string | null;
   document: string | null;
   createdAt: string;
+  updatedAt?: string;
   transcript: TranscriptPart[];
 }
 
 const MODEL_KEY = "transcriber.summaryModel";
 
-export function MeetingView({ meeting }: { meeting: MeetingData }) {
+export function MeetingView({ meeting, source = "server" }: { meeting: MeetingData; source?: "server" | "local" }) {
   const router = useRouter();
+  const { userId } = useLocalUser();
   const [title, setTitle] = useState(meeting.title);
   const [savedTitle, setSavedTitle] = useState(meeting.title);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -81,11 +86,23 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
     }
   };
 
+  // Keep a device copy of what the server has, so the meeting opens without a connection.
+  useEffect(() => {
+    if (source !== "server" || !userId) return;
+    void cacheServerMeeting(userId, { ...meeting, updatedAt: meeting.updatedAt ?? meeting.createdAt });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, userId, meeting.id]);
+
   const saveTitle = async () => {
     setEditingTitle(false);
     setTitleError(null);
     const next = title.trim();
     if (!next || next === savedTitle) return setTitle(savedTitle);
+    if (userId && (await setLocalTitle(userId, meeting.id, next))) {
+      setSavedTitle(next);
+      poke(meeting.id);
+      return;
+    }
     try {
       const res = await fetch(`/api/meetings/${meeting.id}`, {
         method: "PATCH",
@@ -123,6 +140,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
       if (m?.document && m.document !== prevDoc.current) {
         setDoc(m.document);
         if (m.template) setDocTemplate(m.template);
+        if (userId) void setServerDocument(userId, meeting.id, m.document, m.template ?? template);
         setTab("document");
         setStatus(null);
         setError(null);
@@ -134,7 +152,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
       /* still offline: try again on the next tick */
     }
     return false;
-  }, [meeting.id, stopPolling]);
+  }, [meeting.id, stopPolling, userId, template]);
 
   const startPolling = useCallback(() => {
     if (polling.current) return;
@@ -168,6 +186,22 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
     setError(null);
     setStatus(null);
     prevDoc.current = doc;
+    if (userId) {
+      // The server summarises what it has, so the whole transcript must be uploaded first.
+      setStatus("Uploading the transcript…");
+      const r = await flush(meeting.id, { timeoutMs: 20000 });
+      setStatus(null);
+      if (r === "needs-auth") {
+        setError("Sign in again to upload this meeting first.");
+        setBusy(false);
+        return;
+      }
+      if (r === "pending" || r === "conflict") {
+        setError("Waiting to upload the transcript. Connect to the internet and try again.");
+        setBusy(false);
+        return;
+      }
+    }
     let res: Response;
     try {
       res = await fetch(`/api/meetings/${meeting.id}/process`, {
@@ -184,6 +218,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
     if (res.ok && data?.document) {
       setDoc(data.document);
       setDocTemplate(template);
+      if (userId) void setServerDocument(userId, meeting.id, data.document, template);
       setTab("document");
       setBusy(false);
       return;
@@ -210,6 +245,12 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
     }
     setConfirmDelete(false);
     setError(null);
+    if (userId && (await tombstone(userId, meeting.id))) {
+      poke(meeting.id);
+      router.push("/meetings");
+      router.refresh();
+      return;
+    }
     try {
       const res = await fetch(`/api/meetings/${meeting.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("delete failed");
