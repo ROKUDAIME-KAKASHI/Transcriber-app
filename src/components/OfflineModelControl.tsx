@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Download } from "lucide-react";
 import { Badge, Button, Panel } from "@/components/ui";
 import { useConnectivity } from "@/lib/connectivity";
-import { chainFor, labelSize, NOT_READY_OFFLINE, totalSizeMb, type ReadinessStatus } from "@/lib/speech/readiness";
+import { chainFor, labelSize, needsSpeakerDownload, NOT_READY_OFFLINE, totalSizeMb, type ReadinessStatus } from "@/lib/speech/readiness";
 import { engineStatus, prefetchEngine, type EngineReadiness } from "@/lib/speech/readiness";
 import { isWorkerBusy, preferredModel } from "@/lib/speech/client";
 
@@ -107,8 +107,10 @@ export function OfflineModelControl({
 
   const chain = chainFor(engine, preferredModel(engine));
   const size = labelSize(totalSizeMb(chain));
-  const subtitle = engine === "whisper" ? `Whisper Base, ${size}` : `Moonshine${chain.length > 1 ? " + backup model" : ""}, ${size}`;
+  const subtitle = engine === "whisper" ? `Whisper Base + speaker model, ${size}` : `Moonshine${chain.length > 1 ? " + backup model" : ""} + speaker model, ${size}`;
   const offline = conn === "offline";
+
+  const speakerMissing = !downloading && needsSpeakerDownload({ status, speakerCached: readiness?.speakerCached ?? true });
 
   let badge: React.ReactNode;
   if (status === "ready") badge = <Badge tone="success"><Check className="w-3 h-3" aria-hidden />Ready offline</Badge>;
@@ -138,7 +140,16 @@ export function OfflineModelControl({
       )}
 
       <div className="mt-3 space-y-2">
-        {status === "ready" && <p className="text-meta text-muted-foreground">Works with no internet.</p>}
+        {status === "ready" && !speakerMissing && <p className="text-meta text-muted-foreground">Works with no internet.</p>}
+
+        {status === "ready" && speakerMissing && (
+          <>
+            <p className="text-meta text-muted-foreground">Speaker labels need the speaker model. Download it to label speakers offline.</p>
+            <Button variant="secondary" icon={<Download className="w-4 h-4" aria-hidden />} onClick={start} disabled={disabled || offline}>
+              Download for offline
+            </Button>
+          </>
+        )}
 
         {status === "downloading" && (
           <>
