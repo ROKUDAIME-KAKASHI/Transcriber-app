@@ -17,5 +17,12 @@
     <p>Check the internet connection and try again.</p>
     <button onclick="location.reload()">Try again</button>
   </div>
+<script>
+  try {
+    if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.App) {
+      Capacitor.Plugins.App.addListener('backButton', function () { Capacitor.Plugins.App.exitApp(); });
+    }
+  } catch (e) {}
+</script>
 </body>
 </html>
