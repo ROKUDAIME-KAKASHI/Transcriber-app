@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "typecheck": "tsc --noEmit",
+    "test": "node --test tests/syncCore.test.ts",
     "db:push": "prisma db push",
     "postinstall": "prisma generate && node scripts/copy-ort.mjs"
   },
@@ -27,6 +28,8 @@
     "@prisma/client": "^6.19.3",
     "ai": "^6.0.201",
     "bcryptjs": "^3.0.3",
+    "dexie": "^4.4.7",
+    "dexie-react-hooks": "^4.4.0",
     "docx": "9.16.0",
     "lucide-react": "^1.17.0",
     "mdast-util-from-markdown": "2.1.0",
