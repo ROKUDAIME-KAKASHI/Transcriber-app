@@ -190,7 +190,7 @@ export function Recorder() {
         {finished && (
           // Phones: the transcript is below the fold after Stop, so offer the meeting up here.
           <Link
-            href={`/meetings/${rec.meetingId}`}
+            href={`/meeting?id=${rec.meetingId}`}
             className="flex items-center gap-3 border-b border-border px-5 py-3.5 text-ui hover:bg-muted/50 lg:hidden"
           >
             <FileText className="h-4 w-4 shrink-0 text-success" />
@@ -431,7 +431,7 @@ export function Recorder() {
         {finished && (
           <div className="border-t border-border p-4 sm:px-6">
             <Link
-              href={`/meetings/${rec.meetingId}`}
+              href={`/meeting?id=${rec.meetingId}`}
               className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-ui font-medium text-accent-foreground hover:bg-accent/90"
             >
               Open meeting for minutes and export <ArrowRight className="h-4 w-4" />

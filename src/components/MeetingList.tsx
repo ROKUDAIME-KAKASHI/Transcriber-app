@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { listMeetings, listPending } from "@/lib/local/repo";
+import { getSyncSnapshot, subscribeSync } from "@/lib/local/sync";
+import { MeetingSkeleton } from "./MeetingLoader";
 import { useLocalUser } from "./SyncProvider";
 import { Search, Smartphone, Monitor, ChevronRight, Mic } from "lucide-react";
 import { formatDuration } from "@/lib/transcript";
@@ -49,7 +51,7 @@ function SyncBadge({ m }: { m: MeetingRow }) {
   return null;
 }
 
-export function MeetingList({ meetings: serverMeetings }: { meetings: MeetingRow[] }) {
+export function MeetingList() {
   const { userId } = useLocalUser();
   const local = useLiveQuery(
     async () =>
@@ -60,47 +62,31 @@ export function MeetingList({ meetings: serverMeetings }: { meetings: MeetingRow
           }
         : null,
     [userId],
-    null,
   );
+  const sync = useSyncExternalStore(subscribeSync, getSyncSnapshot, getSyncSnapshot);
 
-  // Server props are the base so SSR and the first client render match; device state layers on top.
+  // Every non-deleted device row (including ones pulled from the server); badges only for unsynced ones.
   const merged = useMemo<MeetingRow[]>(() => {
-    if (!local) return serverMeetings;
+    if (!local) return [];
     const dead = new Set(local.tombstones);
-    const byId = new Map(local.rows.map((r) => [r.id, r]));
     const syncOf = (l: { syncError: string | null }) => (l.syncError ? "error" : "pending") as "error" | "pending";
     const out: MeetingRow[] = [];
-    const seen = new Set<string>();
-    for (const s of serverMeetings) {
-      if (dead.has(s.id)) continue;
-      seen.add(s.id);
-      const l = byId.get(s.id);
-      if (l && l.pending === 1) {
-        out.push({
-          ...s,
-          title: l.dirty.meta ? l.title : s.title,
-          status: l.dirty.tail || l.dirty.finish ? l.status : s.status,
-          durationSec: l.dirty.tail || l.dirty.finish ? l.durationSec : s.durationSec,
-          sync: syncOf(l),
-        });
-      } else out.push(s);
-    }
     for (const l of local.rows) {
-      if (seen.has(l.id) || dead.has(l.id) || l.pending !== 1) continue;
+      if (dead.has(l.id)) continue;
       out.push({
         id: l.id,
         title: l.title,
         status: l.status,
         language: l.language,
-        durationSec: l.durationSec,
-        deviceName: l.deviceName,
-        template: l.template,
+        durationSec: l.durationSec ?? 0,
+        deviceName: l.deviceName ?? null,
+        template: l.template ?? null,
         createdAt: l.createdAt,
-        sync: syncOf(l),
+        sync: l.pending === 1 ? syncOf(l) : null,
       });
     }
     return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
-  }, [serverMeetings, local]);
+  }, [local]);
 
   const [query, setQuery] = useState("");
   // Day headings and times depend on the viewer's timezone, so they only appear after mount.
@@ -121,20 +107,60 @@ export function MeetingList({ meetings: serverMeetings }: { meetings: MeetingRow
     return out;
   }, [merged, query, mounted]);
 
-  if (merged.length === 0) {
-    return (
-      <div className="rounded-panel border border-dashed border-border bg-card px-6 py-14 text-center">
-        <p className="text-ui font-semibold">No meetings yet</p>
-        <p className="mx-auto mt-1 max-w-[40ch] text-meta text-muted-foreground">
-          Recordings from your phone and laptop appear here, with their transcripts and minutes.
+  const header = (
+    <div className="mb-6 flex items-end justify-between gap-4 sm:mb-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-[1.75rem]">Meetings</h1>
+        <p className="mt-1 text-meta text-muted-foreground">
+          {merged.length === 0
+            ? "Recordings from all your devices."
+            : `${merged.length} recording${merged.length === 1 ? "" : "s"} from all your devices`}
         </p>
-        <Link
-          href="/"
-          className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent px-4 text-ui font-medium text-accent-foreground hover:bg-accent/90"
-        >
-          <Mic className="h-4 w-4" /> Record a meeting
-        </Link>
       </div>
+      <Link
+        href="/"
+        className="hidden min-h-10 shrink-0 items-center gap-2 rounded-xl bg-accent px-4 text-ui font-medium text-accent-foreground hover:bg-accent/90 sm:inline-flex"
+      >
+        <Mic className="h-4 w-4" /> New recording
+      </Link>
+    </div>
+  );
+
+  if (local === undefined) {
+    return (
+      <>
+        {header}
+        <MeetingSkeleton />
+      </>
+    );
+  }
+
+  if (merged.length === 0) {
+    if (sync.state === "syncing" && sync.lastSyncedAt === null) {
+      return (
+        <>
+          {header}
+          <p className="sr-only" role="status">Loading your meetings</p>
+          <MeetingSkeleton />
+        </>
+      );
+    }
+    return (
+      <>
+        {header}
+        <div className="rounded-panel border border-dashed border-border bg-card px-6 py-14 text-center">
+          <p className="text-ui font-semibold">No meetings yet</p>
+          <p className="mx-auto mt-1 max-w-[40ch] text-meta text-muted-foreground">
+            Recordings from your phone and laptop appear here, with their transcripts and minutes.
+          </p>
+          <Link
+            href="/"
+            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent px-4 text-ui font-medium text-accent-foreground hover:bg-accent/90"
+          >
+            <Mic className="h-4 w-4" /> Record a meeting
+          </Link>
+        </div>
+      </>
     );
   }
 
@@ -172,7 +198,7 @@ export function MeetingList({ meetings: serverMeetings }: { meetings: MeetingRow
                 return (
                   <li key={m.id}>
                     <Link
-                      href={`/meetings/${m.id}`}
+                      href={`/meeting?id=${m.id}`}
                       className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-muted/50 sm:grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_4.5rem_1rem] sm:px-5"
                     >
                       <span className="min-w-0">
