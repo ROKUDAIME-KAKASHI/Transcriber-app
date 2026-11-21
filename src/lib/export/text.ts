@@ -9,7 +9,7 @@ export function exportFileName(base: string, ext: string): string {
 }
 
 export function targetText(target: ExportTarget, meeting: ExportMeeting): string {
-  return target === "document" ? (meeting.document ?? "") : transcriptToText(meeting.transcript);
+  return target === "document" ? (meeting.document ?? "") : transcriptToText(meeting.transcript, { names: meeting.speakerNames });
 }
 
 export function buildTxt(target: ExportTarget, meeting: ExportMeeting, base: string): ExportFile {

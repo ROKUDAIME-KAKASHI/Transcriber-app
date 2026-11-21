@@ -16,7 +16,7 @@ export async function buildExport(o: { kind: ExportKind; target: ExportTarget; m
         const blob =
           target === "document"
             ? await buildMinutesDocx({ title: meeting.title, markdown: meeting.document ?? "" })
-            : await buildTranscriptDocx({ title: meeting.title, parts: meeting.transcript });
+            : await buildTranscriptDocx({ title: meeting.title, parts: meeting.transcript, names: meeting.speakerNames });
         return { kind: "docx", name: exportFileName(base, "docx"), mime: DOCX_MIME, blob, text: targetText(target, meeting) };
       }
       case "pdf": {
@@ -24,7 +24,7 @@ export async function buildExport(o: { kind: ExportKind; target: ExportTarget; m
         const html =
           target === "document"
             ? await buildMinutesHtml({ title: meeting.title, markdown: meeting.document ?? "" })
-            : buildTranscriptHtml({ title: meeting.title, parts: meeting.transcript });
+            : buildTranscriptHtml({ title: meeting.title, parts: meeting.transcript, names: meeting.speakerNames });
         return { kind: "pdf", name: exportFileName(base, "pdf"), html, text: targetText(target, meeting) };
       }
     }

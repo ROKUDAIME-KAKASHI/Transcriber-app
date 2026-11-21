@@ -1,5 +1,5 @@
 import type { PhrasingContent, Root, RootContent, TableCell } from "mdast";
-import { formatDuration, type TranscriptPart } from "@/lib/transcript";
+import { formatDuration, speakerLabel, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
 import { parseMarkdown, plainText } from "./markdown";
 
 // Hex colours only, so older print engines can render it.
@@ -118,12 +118,12 @@ export async function buildMinutesHtml(o: { title: string; markdown: string }): 
   return wrapDocument(o.title, mdastToHtml(root));
 }
 
-export function buildTranscriptHtml(o: { title: string; parts: TranscriptPart[] }): string {
+export function buildTranscriptHtml(o: { title: string; parts: TranscriptPart[]; names?: SpeakerNames }): string {
   const multi = new Set(o.parts.map((p) => p.speaker)).size > 1;
   const rows = o.parts
     .map((p) => {
       const time = typeof p.t === "number" ? `<span class="t">[${formatDuration(Math.floor(p.t))}]</span> ` : "";
-      const who = multi ? `<strong>Speaker ${p.speaker + 1}:</strong> ` : "";
+      const who = multi ? `<strong>${escapeHtml(speakerLabel(p.speaker, o.names))}:</strong> ` : "";
       return `<p>${time}${who}${escapeHtml(p.text)}</p>`;
     })
     .join("");

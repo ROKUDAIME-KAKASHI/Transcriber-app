@@ -19,17 +19,31 @@ export const TEMPLATES = [
   { value: "Report", label: "Report" },
 ] as const;
 
+/** Custom speaker names keyed by 0-based speaker number as a string ("0", "1", ...). */
+export type SpeakerNames = Record<string, string> | null | undefined;
+
+/** The single producer of speaker labels: the trimmed custom name, else "Speaker N" (1-based). */
+export function speakerLabel(n: number, names?: SpeakerNames): string {
+  const custom = names?.[String(n)];
+  if (typeof custom === "string" && custom.trim()) return custom.trim();
+  return `Speaker ${n + 1}`;
+}
+
 /**
  * Plain-text transcript for exports and the AI: one phrase per line, with a [mm:ss] time when
- * known. "Speaker N:" labels only appear when the meeting actually has several speakers
- * (older recordings); speakers are numbered from 1 for people (stored 0-based).
+ * known. Speaker labels (a given name or "Speaker N", on-device or cloud) only appear when the
+ * meeting has several speakers; pass `multiSpeaker` to force that decision for a chunk of a
+ * longer meeting.
  */
-export function transcriptToText(parts: TranscriptPart[]): string {
-  const multiSpeaker = new Set(parts.map((p) => p.speaker)).size > 1;
+export function transcriptToText(
+  parts: TranscriptPart[],
+  opts: { names?: SpeakerNames; multiSpeaker?: boolean } = {}
+): string {
+  const multiSpeaker = opts.multiSpeaker ?? new Set(parts.map((p) => p.speaker)).size > 1;
   return parts
     .map((p) => {
       const time = typeof p.t === "number" ? `[${formatDuration(Math.floor(p.t))}] ` : "";
-      const who = multiSpeaker ? `Speaker ${p.speaker + 1}: ` : "";
+      const who = multiSpeaker ? `${speakerLabel(p.speaker, opts.names)}: ` : "";
       return `${time}${who}${p.text}`;
     })
     .join(multiSpeaker ? "\n\n" : "\n");

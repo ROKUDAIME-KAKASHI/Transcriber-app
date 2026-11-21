@@ -1,5 +1,5 @@
 import type { PhrasingContent, RootContent, List, TableCell } from "mdast";
-import { formatDuration, type TranscriptPart } from "@/lib/transcript";
+import { formatDuration, speakerLabel, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
 import { parseMarkdown, plainText } from "./markdown";
 
 type D = typeof import("docx");
@@ -197,7 +197,7 @@ export async function buildMinutesDocx(o: { title: string; markdown: string }): 
   return d.Packer.toBlob(doc);
 }
 
-export async function buildTranscriptDocx(o: { title: string; parts: TranscriptPart[] }): Promise<Blob> {
+export async function buildTranscriptDocx(o: { title: string; parts: TranscriptPart[]; names?: SpeakerNames }): Promise<Blob> {
   const d = await import("docx");
   const multi = new Set(o.parts.map((p) => p.speaker)).size > 1;
   const children: Block[] = [
@@ -210,7 +210,7 @@ export async function buildTranscriptDocx(o: { title: string; parts: TranscriptP
   for (const p of o.parts) {
     const runs: Run[] = [];
     if (typeof p.t === "number") runs.push(new d.TextRun({ text: `[${formatDuration(Math.floor(p.t))}] `, color: "666666" }));
-    if (multi) runs.push(new d.TextRun({ text: `Speaker ${p.speaker + 1}: `, bold: true }));
+    if (multi) runs.push(new d.TextRun({ text: `${speakerLabel(p.speaker, o.names)}: `, bold: true }));
     runs.push(new d.TextRun({ text: p.text }));
     children.push(new d.Paragraph({ spacing: { after: 100 }, children: runs }));
   }

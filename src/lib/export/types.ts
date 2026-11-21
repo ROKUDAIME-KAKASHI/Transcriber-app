@@ -1,4 +1,4 @@
-import type { TranscriptPart } from "@/lib/transcript";
+import type { SpeakerNames, TranscriptPart } from "@/lib/transcript";
 
 export type ExportKind = "txt" | "docx" | "pdf";
 export type ExportTarget = "document" | "transcript";
@@ -10,6 +10,7 @@ export interface ExportMeeting {
   transcript: TranscriptPart[];
   document: string | null;
   docName: "Minutes" | "Report";
+  speakerNames?: SpeakerNames;
 }
 export type DeliverResult = "ok" | "cancelled" | "printed" | "copied";
 export type ExportErrorCode = "PLUGIN_MISSING" | "PDF_PLUGIN_MISSING" | "BUILD_FAILED" | "SHARE_FAILED" | "COPY_FAILED";
