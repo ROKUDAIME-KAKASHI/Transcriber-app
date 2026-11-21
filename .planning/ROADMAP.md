@@ -12,7 +12,8 @@ This milestone fixes the existing Transcriber web app and Android app so it work
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Export, Share & Navigation** - TXT/DOCX/PDF exports and native share work in the APK and on the web, nav fixed, all new native plugins in one APK (completed 2026-11-21)
+- [x] **Phase 1: Export, Share & Navigation** - TXT/DOCX/PDF exports and native share work in the APK and on the web, nav fixed, all new native plugins in one APK
+ (completed 2026-11-21)
 - [ ] **Phase 2: Local-First Meetings & Sync** - Meetings live on the device (Dexie) and sync to the server reliably with client IDs and idempotent upserts
 - [ ] **Phase 3: Offline App Shell & Gating** - The app opens, stays signed in and records on-device with no internet; online-only features are clearly gated
 - [ ] **Phase 4: On-Device Speaker Separation** - Moonshine/Whisper transcripts say who said what, renamable, used by AI minutes
@@ -50,7 +51,14 @@ Plans:
   2. When internet returns, those meetings show up on the server (e.g. from a laptop browser) on their own, with full text and no duplicate rows
   3. Killing the app mid-sync or sending a sync twice never truncates or duplicates the transcript; AI minutes created on the server are not overwritten by the device
   4. Existing online recording (Deepgram and on-device) keeps autosaving exactly as before, with no regression
-**Plans**: TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Server contract, additive: schema fields + prisma generate, explicit selects with P2022 fallback, idempotent client-id POST, title LWW/speakerNames PATCH, speakers relabel, ?since list, /api/health (wave 1)
+- [ ] 02-02-PLAN.md — Device store: Dexie per-user DB (meetings + sibling transcripts table), repo, pure syncCore with node:test tests, connectivity probe (wave 1)
+- [ ] 02-03-PLAN.md — Sync engine (Web Locks, triggers, create/tail/meta/finish/delete push, serverTime pull, flush) + SyncProvider with orphan recovery (wave 2)
+- [ ] 02-04-PLAN.md — Recorder integration: local-first useRecorder with legacy fallback, native mirror, save badge (wave 3)
+- [ ] 02-05-PLAN.md — UI integration: merged meetings list with sync badges, device fallback meeting page, local-first rename/delete, flush before AI minutes (wave 3)
 
 ### Phase 3: Offline App Shell & Gating
 **Goal**: After one online visit, users can open the app, browse meetings and record on-device with no internet, and they always know what needs a connection
@@ -101,7 +109,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Export, Share & Navigation | 4/4 | Complete   | 2026-11-21 |
-| 2. Local-First Meetings & Sync | 0/TBD | Not started | - |
+| 2. Local-First Meetings & Sync | 0/5 | Not started | - |
 | 3. Offline App Shell & Gating | 0/TBD | Not started | - |
 | 4. On-Device Speaker Separation | 0/TBD | Not started | - |
 | 5. Aurora Ink Redesign & Release | 0/TBD | Not started | - |

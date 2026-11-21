@@ -546,11 +546,11 @@ Laptop browser with DevTools (no adb needed):
 | A6 | Prisma `updateMany` bumps `@updatedAt` (so `?since=` sees tail/title changes) | Pattern 8 | If not, pull misses changes. Verify after push with one PATCH then GET `?since`. Fallback: set `updatedAt: new Date()` explicitly in each `updateMany` data (cheap, recommended anyway). |
 | A7 | dexie / dexie-react-hooks are legitimate (slopcheck not run) | Package audit | Low (12-year-old project, official monorepo). Human-verify gate. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should the JS engine take over a native meeting whose final save failed?** After `finished && saveState === "error"` the service never writes again, and the Dexie mirror may hold the missing tail (if the screen was on). Recommendation: optional in 02-04. If `mirror.length >= n.partsCount`, convert it to `origin:"local"` with `pending` tail and learn the server length cheaply with `PATCH {transcriptTail:{from: 1e9, parts: []}}` → 409 `savedParts`. Otherwise leave it.
-2. **Phase 4 needs the relabel endpoint shape now.** D-14 is specified; no further input needed.
-3. **Where to show `needs-auth`.** Phase 2 only needs it in the recorder save badge and list badge; a global banner is Phase 3.
+1. **(RESOLVED: deferred, out of Phase 2 per D-18; JS only mirrors native meetings.) Should the JS engine take over a native meeting whose final save failed?** After `finished && saveState === "error"` the service never writes again, and the Dexie mirror may hold the missing tail (if the screen was on). Recommendation: optional in 02-04. If `mirror.length >= n.partsCount`, convert it to `origin:"local"` with `pending` tail and learn the server length cheaply with `PATCH {transcriptTail:{from: 1e9, parts: []}}` → 409 `savedParts`. Otherwise leave it.
+2. **(RESOLVED: D-14 and plan 02-01.) Phase 4 needs the relabel endpoint shape now.** D-14 is specified; no further input needed.
+3. **(RESOLVED: recorder badge and list badge, plans 02-04 and 02-05.) Where to show `needs-auth`.** Phase 2 only needs it in the recorder save badge and list badge; a global banner is Phase 3.
 
 ## Environment Availability
 
