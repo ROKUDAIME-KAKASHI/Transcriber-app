@@ -9,6 +9,7 @@ import {
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
 import { isNativeApp } from "@/lib/nativeRecorder";
+import { setWebRecording } from "@/lib/recordingFlag";
 import { formatDuration } from "@/lib/transcript";
 import { WHISPER_LANGUAGES } from "@/lib/speech/models";
 import type { RecordEngine } from "@/lib/speech/deepgram";
@@ -116,6 +117,10 @@ export function Recorder() {
   useEffect(() => setInApp(isNativeApp()), []);
   const nativeMode = inApp && (engine === "deepgram" || nativeRec.isRecording || nativeRec.isStarting);
   const rec = nativeMode ? nativeRec : webRec;
+  useEffect(() => {
+    setWebRecording(rec.isRecording);
+  }, [rec.isRecording]);
+  useEffect(() => () => setWebRecording(false), []);
   const battery = useBatteryRestriction(inApp);
   const bottomRef = useRef<HTMLDivElement>(null);
 
