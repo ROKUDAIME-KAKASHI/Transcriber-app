@@ -5,6 +5,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mic, AudioLines, Users, FileText } from "lucide-react";
 import { Button, FieldLabel, Segmented, inputCls } from "@/components/ui";
+import { isReachable, useConnectivity } from "@/lib/connectivity";
+
+const UNREACHABLE = "Couldn't reach the server. Check your connection and try again.";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "register">("signin");
@@ -14,6 +17,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const online = useConnectivity() === "online";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +30,8 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
+      // signIn() hard-navigates to /api/auth/error when its provider fetch fails, so check first.
+      if (!(await isReachable({ force: true }))) return setError(UNREACHABLE);
       if (mode === "register") {
         const res = await fetch("/api/auth/register", {
           method: "POST",
@@ -44,7 +50,7 @@ export default function LoginPage() {
       router.push("/");
       router.refresh();
     } catch {
-      setError("Something went wrong. Check your connection and try again.");
+      setError(UNREACHABLE);
     } finally {
       setLoading(false);
     }
@@ -144,9 +150,14 @@ export default function LoginPage() {
                 {error}
               </p>
             )}
-            <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full">
+            <Button type="submit" variant="primary" size="lg" loading={loading} disabled={!online} aria-disabled={!online} className="w-full">
               {mode === "signin" ? "Sign in" : "Create account"}
             </Button>
+            {!online && (
+              <p className="text-meta text-muted-foreground" role="status">
+                You're offline. Sign in needs internet.
+              </p>
+            )}
           </form>
         </div>
       </main>
