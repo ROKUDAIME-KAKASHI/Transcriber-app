@@ -19,6 +19,12 @@ const nextConfig: NextConfig = {
       const nativeImport = new Function("u", "return import(u)") as (u: string) => Promise<{ buildServiceWorker: (o: { projectDir: string; distDir: string }) => Promise<void> }>;
       const mod = await nativeImport(pathToFileURL(path.resolve(projectDir, "sw/build.mjs")).href);
       await mod.buildServiceWorker({ projectDir, distDir });
+      // Loud failure: a deploy without /sw.js silently loses offline support, so fail the build instead.
+      const fs = await import("node:fs");
+      const swFile = path.resolve(projectDir, "public", "sw.js");
+      if (!fs.existsSync(swFile) || fs.statSync(swFile).size === 0) {
+        throw new Error("Service worker generation failed: public/sw.js was not written by the production build.");
+      }
     },
   },
 
