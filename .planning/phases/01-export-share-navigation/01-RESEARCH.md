@@ -513,12 +513,12 @@ DocumentExport also writes into `cache/exports/`, so the same sweep covers PDFs.
 | A5 | Root `ext.kotlin_version` reaches the plugin's buildscript | Pitfall 8 | An extra download only |
 | A6 | slopcheck not run | Audit | Packages are first-party and their sources were read |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **What do web share-menu rows share, given that a web PDF is a print dialog?**
+1. **What do web share-menu rows share, given that a web PDF is a print dialog?** RESOLVED: web rows share Word (plans 01-04).
    Recommendation: on the web, "Share minutes/transcript" builds the **Word** file (description "Word file"), which UI-SPEC already allows as the fallback description. In the APK with DocumentExport present it is a PDF. In the APK without it, it is Word.
-2. **D-12 detection method.** Use the nav-stack tracker rather than `history.length`/referrer, which is the same intent made reliable. The planner should state this explicitly so the plan checker doesn't flag it as a deviation.
-3. **Minutes HTML for the PDF.** Checked: `mdast-util-to-hast` 13.2.2 and `mdast-util-to-string` 4.0.0 are installed transitively, but `hast-util-to-html` is **not**. So use `react-dom/server` `renderToStaticMarkup(<Markdown remarkPlugins={[remarkGfm]}>)`, which needs no new deps). Recommended: `renderToStaticMarkup`, because it reuses exactly what the screen renders.
+2. **D-12 detection method.** RESOLVED: nav-stack tracker (plan 01-01). Use the nav-stack tracker rather than `history.length`/referrer, which is the same intent made reliable. The planner should state this explicitly so the plan checker doesn't flag it as a deviation.
+3. **Minutes HTML for the PDF.** RESOLVED: plans use a small mdast-to-HTML serializer over the same parse tree as the docx mapper (keeps react-dom/server out of the client bundle), instead of renderToStaticMarkup. Checked: `mdast-util-to-hast` 13.2.2 and `mdast-util-to-string` 4.0.0 are installed transitively, but `hast-util-to-html` is **not**. So use `react-dom/server` `renderToStaticMarkup(<Markdown remarkPlugins={[remarkGfm]}>)`, which needs no new deps). Recommended: `renderToStaticMarkup`, because it reuses exactly what the screen renders.
 
 ## Environment Availability
 

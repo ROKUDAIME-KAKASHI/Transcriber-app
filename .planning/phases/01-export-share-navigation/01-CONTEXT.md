@@ -33,7 +33,7 @@ Requirements: SHARE-01..05, NAV-01..03.
 
 ### Navigation
 - **D-11:** Brand link: `Logo` in `AppShell.tsx` already links to `/`; keep it and make sure it is reachable and works from every route including `/meetings/[id]`, with a >=44px touch target.
-- **D-12:** Meeting page gets a visible back arrow (top-left, `aria-label="Back to meetings"`) that always navigates with `router.push("/meetings")` when there is no history (check `window.history.length`/referrer) else `router.back()`; deterministic parent is `/meetings`.
+- **D-12:** Meeting page gets a visible back arrow (top-left, `aria-label="Back to meetings"`) that always navigates with `router.push("/meetings")` when there is no history (detected with an in-app navigation-stack tracker; `history.length`/referrer are unreliable, see RESEARCH) else `router.back()`; deterministic parent is `/meetings`.
 - **D-13:** Android back button via `@capacitor/app` `backButton` listener in a client `NativeBackHandler` mounted in Providers: close open sheets/modals first (a small shared open-overlay stack registry), then `router.back()`/go to parent; if at root: if recording is active, `App.minimizeApp()` instead of exit; if idle at root, `App.exitApp()`. Falls back to default behavior if plugin absent.
 
 ### Minimal UI (this phase only)
