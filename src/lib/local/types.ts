@@ -30,6 +30,16 @@ export interface LocalMeeting {
   syncError: string | null;
   /** Epoch ms of the last local transcript write; lets other tabs skip live recordings. */
   lastWriteAt?: number;
+  /** Refined speaker labels waiting to be pushed through /speakers (no index). */
+  relabelPending?: 0 | 1;
+}
+
+/** Device-local speaker embedding for one transcript part (D-09: never synced). */
+export interface LocalEmbedding {
+  meetingId: string;
+  part: number;
+  vec: Float32Array;
+  dur: number;
 }
 
 export interface LocalTranscript {
@@ -80,6 +90,7 @@ export interface SyncResultPatch {
   markDirty?: DirtyKey[];
   readRev?: number;
   syncError?: string | null;
+  clearRelabel?: boolean;
 }
 
 export interface MergeResult {

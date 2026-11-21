@@ -2,6 +2,7 @@ import type { TranscriptPart } from "@/lib/transcript";
 import { getLocalDb } from "./db";
 import { computePending, emptyDirty, mergePulledMeeting, planMissing, shouldClearTail } from "./syncCore";
 import type {
+  LocalEmbedding,
   LocalMeeting,
   NewLocalMeeting,
   ServerMeetingFull,
@@ -190,6 +191,46 @@ export function setSpeakerNames(userId: string, id: string, names: Record<string
   );
 }
 
+export function setRelabel(userId: string, id: string, names?: Record<string, string> | null): Promise<boolean> {
+  return updateRow(userId, id, (r) =>
+    r.deleted === 1
+      ? null
+      : {
+          ...r,
+          ...(names !== undefined ? { speakerNames: names } : {}),
+          relabelPending: 1,
+          syncError: r.syncError === "rejected" ? null : r.syncError,
+          dirty: { ...r.dirty, speakers: true },
+        },
+  );
+}
+
+export async function putEmbeddings(
+  userId: string,
+  meetingId: string,
+  rows: Array<{ part: number; vec: Float32Array; dur: number }>,
+): Promise<boolean> {
+  try {
+    const db = getLocalDb(userId);
+    return await db.transaction("rw", db.meetings, db.embeddings, async () => {
+      const row = await db.meetings.get(meetingId);
+      if (!row || row.deleted === 1) return false;
+      await db.embeddings.bulkPut(rows.map((r) => ({ meetingId, part: r.part, vec: r.vec, dur: r.dur })));
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+export async function getEmbeddings(userId: string, meetingId: string): Promise<LocalEmbedding[]> {
+  try {
+    return await getLocalDb(userId).embeddings.where("meetingId").equals(meetingId).sortBy("part");
+  } catch {
+    return [];
+  }
+}
+
 export function tombstone(userId: string, id: string): Promise<boolean> {
   return updateRow(userId, id, (r) => ({ ...r, deleted: 1 }));
 }
@@ -197,9 +238,10 @@ export function tombstone(userId: string, id: string): Promise<boolean> {
 export async function purge(userId: string, id: string): Promise<boolean> {
   try {
     const db = getLocalDb(userId);
-    await db.transaction("rw", db.meetings, db.transcripts, async () => {
+    await db.transaction("rw", db.meetings, db.transcripts, db.embeddings, async () => {
       await db.meetings.delete(id);
       await db.transcripts.delete(id);
+      await db.embeddings.where("meetingId").equals(id).delete();
     });
     return true;
   } catch {
@@ -326,6 +368,7 @@ export async function applySyncResult(userId: string, id: string, r: SyncResultP
       if (r.title !== undefined) next.title = r.title;
       if (r.serverUpdatedAt !== undefined) next.serverUpdatedAt = r.serverUpdatedAt;
       if (r.syncError !== undefined) next.syncError = r.syncError;
+      if (r.clearRelabel) next.relabelPending = 0;
       for (const k of r.markDirty ?? []) next.dirty[k] = true;
       for (const k of r.clear ?? []) {
         if (k === "tail") {
