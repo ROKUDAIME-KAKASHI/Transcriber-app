@@ -77,17 +77,34 @@ export async function PATCH(req: Request, { params }: Ctx) {
     let savedParts: number | undefined;
 
     if (transcriptTail) {
-      const existing = await prisma.meeting.findFirst({ where: { id, userId }, select: { transcript: true } });
-      if (!existing) return notFound();
-      const current = Array.isArray(existing.transcript) ? existing.transcript : [];
-      // The client thinks more is saved than really is (a save got lost): tell it where to resend from.
-      if (transcriptTail.from > current.length) {
-        return Response.json({ error: "Transcript out of sync", savedParts: current.length }, { status: 409 });
+      // Optimistic concurrency: write only if the row is unchanged since we read it (updatedAt),
+      // otherwise re-read and recompute, so a concurrent writer's parts are never silently dropped.
+      let done = false;
+      for (let tries = 0; tries < 4 && !done; tries++) {
+        const existing = await prisma.meeting.findFirst({
+          where: { id, userId },
+          select: { transcript: true, updatedAt: true },
+        });
+        if (!existing) return notFound();
+        const current = Array.isArray(existing.transcript) ? existing.transcript : [];
+        // The client thinks more is saved than really is (a save got lost): tell it where to resend from.
+        if (transcriptTail.from > current.length) {
+          return Response.json({ error: "Transcript out of sync", savedParts: current.length }, { status: 409 });
+        }
+        const merged = [...current.slice(0, transcriptTail.from), ...transcriptTail.parts];
+        if (merged.length > MAX_PARTS) return Response.json({ error: "Transcript too long" }, { status: 413 });
+        const { count } = await prisma.meeting.updateMany({
+          where: { id, userId, updatedAt: existing.updatedAt },
+          data: { ...data, transcript: merged },
+        });
+        if (count) {
+          savedParts = merged.length;
+          done = true;
+        }
       }
-      const merged = [...current.slice(0, transcriptTail.from), ...transcriptTail.parts];
-      if (merged.length > MAX_PARTS) return Response.json({ error: "Transcript too long" }, { status: 413 });
-      await prisma.meeting.updateMany({ where: { id, userId }, data: { ...data, transcript: merged } });
-      savedParts = merged.length;
+      if (!done) {
+        return Response.json({ error: "Meeting was changed at the same time. Try again." }, { status: 503 });
+      }
     } else {
       // updateMany scoped by userId so nobody can write to another account's meeting.
       const { count } = await prisma.meeting.updateMany({ where: { id, userId }, data });

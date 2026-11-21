@@ -33,36 +33,48 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const { relabel, parts, speakerNames } = parsed.data;
 
   try {
-    const existing = await prisma.meeting.findFirst({ where: { id, userId }, select: { transcript: true } });
-    if (!existing) return Response.json({ error: "Meeting not found" }, { status: 404 });
-
-    const current = Array.isArray(existing.transcript) ? (existing.transcript as Record<string, unknown>[]) : [];
-    const map = new Map<number, number>();
-    for (const r of relabel ?? []) map.set(r.from, r.to);
-    // One simultaneous pass, so {0->1, 1->0} swaps instead of collapsing.
-    const next = current.map((p) =>
-      typeof p.speaker === "number" && map.has(p.speaker) ? { ...p, speaker: map.get(p.speaker)! } : p,
-    );
-    for (const o of parts ?? []) {
-      if (o.index < next.length) next[o.index] = { ...next[o.index], speaker: o.speaker };
-    }
-
-    const write = (withNames: boolean) =>
-      prisma.meeting.updateMany({
+    // Optimistic concurrency on updatedAt: retry if a tail PATCH landed between our read and write.
+    let nextLen = -1;
+    for (let tries = 0; tries < 4 && nextLen < 0; tries++) {
+      const existing = await prisma.meeting.findFirst({
         where: { id, userId },
-        data: {
-          transcript: next as unknown as object[],
-          ...(withNames && speakerNames ? { speakerNames } : {}),
-          updatedAt: new Date(),
-        },
+        select: { transcript: true, updatedAt: true },
       });
-    try {
-      await write(true);
-    } catch (err) {
-      if (!isMissingColumn(err)) throw err;
-      await write(false);
+      if (!existing) return Response.json({ error: "Meeting not found" }, { status: 404 });
+
+      const current = Array.isArray(existing.transcript) ? (existing.transcript as Record<string, unknown>[]) : [];
+      const map = new Map<number, number>();
+      for (const r of relabel ?? []) map.set(r.from, r.to);
+      // One simultaneous pass, so {0->1, 1->0} swaps instead of collapsing.
+      const next = current.map((p) =>
+        typeof p.speaker === "number" && map.has(p.speaker) ? { ...p, speaker: map.get(p.speaker)! } : p,
+      );
+      for (const o of parts ?? []) {
+        if (o.index < next.length) next[o.index] = { ...next[o.index], speaker: o.speaker };
+      }
+
+      const write = (withNames: boolean) =>
+        prisma.meeting.updateMany({
+          where: { id, userId, updatedAt: existing.updatedAt },
+          data: {
+            transcript: next as unknown as object[],
+            ...(withNames && speakerNames ? { speakerNames } : {}),
+            updatedAt: new Date(),
+          },
+        });
+      let res;
+      try {
+        res = await write(true);
+      } catch (err) {
+        if (!isMissingColumn(err)) throw err;
+        res = await write(false);
+      }
+      if (res.count) nextLen = next.length;
     }
-    return Response.json({ ok: true, parts: next.length });
+    if (nextLen < 0) {
+      return Response.json({ error: "Meeting was changed at the same time. Try again." }, { status: 503 });
+    }
+    return Response.json({ ok: true, parts: nextLen });
   } catch (err) {
     return dbDown(err);
   }
