@@ -4,6 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { detectDeviceName, type TranscriptPart } from "@/lib/transcript";
 import { MeetingRecorder, isNativeApp, type NativeRecorderState } from "@/lib/nativeRecorder";
 import type { AudioSource, RecorderState } from "./useRecorder";
+import { useLocalUser } from "@/components/SyncProvider";
+import { applySyncResult, createLocal, mirrorNative, purge } from "@/lib/local/repo";
+import { newMeetingId } from "@/lib/local/ids";
+
+/** The service autosaves to the server itself; JS only copies its parts to the device at most this often. */
+const MIRROR_MS = 5000;
 
 /** How often the Record screen reads the native recorder's state while it's on screen. */
 const POLL_MS = 250;
@@ -36,6 +42,10 @@ export function useNativeRecorder(opts: { language: string }) {
   /** The native session this screen shows (a finished one stays shown until a new start). */
   const meetingRef = useRef<string | null>(null);
   const finishingRef = useRef(false);
+  const { userId, available } = useLocalUser();
+  const localUserRef = useRef({ userId, available });
+  localUserRef.current = { userId, available };
+  const lastMirrorRef = useRef(0);
 
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
 
@@ -59,6 +69,26 @@ export function useNativeRecorder(opts: { language: string }) {
       });
     if (changed) partsRef.current = cur.slice(0, n.from).concat(n.parts);
     finishingRef.current = n.finishing;
+    // Mirror the service's transcript into the device store (read-only copy: the service is the server writer).
+    const lu = localUserRef.current;
+    if (lu.userId && lu.available && n.meetingId && (n.finished || Date.now() - lastMirrorRef.current > MIRROR_MS)) {
+      lastMirrorRef.current = Date.now();
+      const uid = lu.userId;
+      const mid = n.meetingId;
+      const status = n.finished ? "DONE" : "RECORDING";
+      const parts = partsRef.current;
+      mirrorNative(uid, mid, parts, n.seconds, status)
+        .then(async (ok) => {
+          if (ok) return;
+          // App reopened mid-recording with no local row: create one, then mirror again.
+          const made = await createLocal(uid, {
+            id: mid, title: "Meeting", language: opts.language, engine: "deepgram",
+            deviceName: detectDeviceName(), origin: "native",
+          });
+          if (made) await mirrorNative(uid, mid, parts, n.seconds, status);
+        })
+        .catch(() => {});
+    }
     const live = n.active && !n.paused && !n.finishing;
     // Running, or it failed to start (finished without ever running).
     if (n.active || n.finished) startingRef.current = false;
@@ -78,6 +108,7 @@ export function useNativeRecorder(opts: { language: string }) {
       statusMsg: n.status,
       saveState: n.saveState,
     }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Read the recorder's state while this screen is visible.
@@ -111,24 +142,43 @@ export function useNativeRecorder(opts: { language: string }) {
     partsRef.current = [];
     meetingRef.current = null;
     setState({ ...initial, isStarting: true, statusMsg: "Creating meeting…" });
+    const id = newMeetingId();
+    const title = `Meeting – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
+    const lu = localUserRef.current;
+    const uid = lu.userId && lu.available ? lu.userId : null;
     try {
+      // Best effort: a device copy exists even if the server is slow. The POST below stays awaited
+      // (the service needs the server row before it starts patching it).
+      if (uid) await createLocal(uid, { id, title, language: opts.language, engine: "deepgram", deviceName: detectDeviceName(), origin: "native" });
       const res = await fetch("/api/meetings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id,
           language: opts.language,
+          engine: "deepgram",
           deviceName: detectDeviceName(),
-          title: `Meeting – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`,
+          title,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.meeting) {
+        if (uid) await purge(uid, id);
         throw new Error(
           res.status === 401 ? "You've been signed out. Sign in again." : data.error || `Could not create the meeting (error ${res.status}).`
         );
       }
       if (!startingRef.current) return; // cancelled
       meetingRef.current = data.meeting.id;
+      if (uid) {
+        if (data.meeting.id !== id) {
+          // Server without client-id support assigned its own id: keep the device row under that id.
+          await purge(uid, id);
+          await createLocal(uid, { id: data.meeting.id, title, language: opts.language, engine: "deepgram", deviceName: detectDeviceName(), origin: "native" });
+        }
+        await applySyncResult(uid, data.meeting.id, { clear: ["create"] });
+      }
+      lastMirrorRef.current = 0;
       patch({ meetingId: data.meeting.id, statusMsg: "Starting the microphone…" });
       await MeetingRecorder.start({ meetingId: data.meeting.id, language: opts.language, baseUrl: window.location.origin });
       // The poll flips isStarting off once the service reports it's running.

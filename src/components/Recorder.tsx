@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
-  MonitorSpeaker, ShieldAlert, BatteryCharging, BatteryWarning, FileText,
+  MonitorSpeaker, HardDrive, ShieldAlert, BatteryCharging, BatteryWarning, FileText,
 } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
@@ -163,7 +163,7 @@ export function Recorder() {
   /** Settings are locked while starting or recording. */
   const locked = busy || starting;
   /** Finished and fully saved: safe to open the meeting page. */
-  const finished = !busy && !starting && !!rec.meetingId && hasTranscript && rec.saveState === "saved";
+  const finished = !busy && !starting && !!rec.meetingId && hasTranscript && (rec.saveState === "saved" || rec.saveState === "local");
   // Memoised: recounting thousands of phrases on every mic-level update made long meetings sluggish.
   const words = useMemo(
     () => rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0),
@@ -175,7 +175,10 @@ export function Recorder() {
   const saveStatus = rec.meetingId && (
     <span className="inline-flex items-center gap-1.5">
       {rec.saveState === "saving" && <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving</>}
-      {rec.saveState === "saved" && <><Cloud className="h-3.5 w-3.5 text-success" /> Saved</>}
+      {rec.saveState === "saved" && <><Cloud className="h-3.5 w-3.5 text-success" /> Synced</>}
+      {rec.saveState === "local" && (
+        <><HardDrive className="h-3.5 w-3.5 text-success" /> Saved on this device{rec.syncNote ? ` · ${rec.syncNote}` : ""}</>
+      )}
       {rec.saveState === "error" && <><CloudOff className="h-3.5 w-3.5 text-danger" /> Offline · will retry</>}
     </span>
   );
