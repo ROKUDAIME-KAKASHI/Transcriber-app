@@ -31,10 +31,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. An older installed APK that lacks the new plugins still loads the new web code, and exports fall back gracefully instead of crashing
   4. Tapping the "Transcriber" brand goes to Record from anywhere. Every meeting page has a back arrow to the meetings list, even when opened directly with no history
   5. The Android back button closes open sheets first, then goes back. It never exits the app while recording (it minimizes instead)
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
-- [ ] 01-01-PLAN.md — Navigation slice: brand link, history-aware back arrow, Android back handler; installs all milestone plugins + native.ts capability layer (wave 1)
+- [x] 01-01-PLAN.md — Navigation slice: brand link, history-aware back arrow, Android back handler; installs all milestone plugins + native.ts capability layer (wave 1)
 - [ ] 01-02-PLAN.md — DocumentExport Android plugin (HTML to PDF + print fallback), cap sync, assembleDebug compile proof (wave 2)
 - [ ] 01-03-PLAN.md — Text / real Word (.docx) / PDF exports through one delivery path with old-APK fallbacks (wave 2)
 - [ ] 01-04-PLAN.md — Share menu (sheet/popover) with share minutes/transcript + copy, overlay back integration, html2pdf.js removed (wave 3)
@@ -100,7 +100,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Export, Share & Navigation | 0/4 | Not started | - |
+| 1. Export, Share & Navigation | 1/4 | In Progress|  |
 | 2. Local-First Meetings & Sync | 0/TBD | Not started | - |
 | 3. Offline App Shell & Gating | 0/TBD | Not started | - |
 | 4. On-Device Speaker Separation | 0/TBD | Not started | - |

@@ -11,13 +11,13 @@
 - [ ] **SHARE-02**: User can export minutes/transcript as a real Word (.docx) file inside the Android app and on the website
 - [ ] **SHARE-03**: User can export minutes/transcript as PDF inside the Android app and on the website, including long meetings and Hindi (Devanagari) text, without the "Couldn't make the PDF" error
 - [ ] **SHARE-04**: User can tap "Share" on a meeting and get the native share sheet (WhatsApp, Drive, Telegram, Messages, Gmail, copy…) with the minutes or transcript as a file or text — in the Android app (Capacitor Share) and on web/iOS browsers (Web Share API), with a download fallback
-- [ ] **SHARE-05**: Web code keeps working on older installed APKs that lack the new native plugins (feature detection + fallback)
+- [x] **SHARE-05**: Web code keeps working on older installed APKs that lack the new native plugins (feature detection + fallback)
 
 ### Navigation
 
-- [ ] **NAV-01**: Tapping the "Transcriber" brand/logo goes to the home/Record screen from anywhere
-- [ ] **NAV-02**: Every sub-page (meeting page, etc.) has a visible back arrow that returns to its parent (meetings list) even with no history
-- [ ] **NAV-03**: Android hardware/gesture back closes open sheets, then goes back, and never exits the app while recording (minimizes instead)
+- [x] **NAV-01**: Tapping the "Transcriber" brand/logo goes to the home/Record screen from anywhere
+- [x] **NAV-02**: Every sub-page (meeting page, etc.) has a visible back arrow that returns to its parent (meetings list) even with no history
+- [x] **NAV-03**: Android hardware/gesture back closes open sheets, then goes back, and never exits the app while recording (minimizes instead)
 
 ### Offline
 
@@ -80,10 +80,10 @@
 | SHARE-02 | Phase 1 | Pending |
 | SHARE-03 | Phase 1 | Pending |
 | SHARE-04 | Phase 1 | Pending |
-| SHARE-05 | Phase 1 | Pending |
-| NAV-01 | Phase 1 | Pending |
-| NAV-02 | Phase 1 | Pending |
-| NAV-03 | Phase 1 | Pending |
+| SHARE-05 | Phase 1 | Complete |
+| NAV-01 | Phase 1 | Complete |
+| NAV-02 | Phase 1 | Complete |
+| NAV-03 | Phase 1 | Complete |
 | OFF-01 | Phase 3 | Pending |
 | OFF-02 | Phase 3 | Pending |
 | OFF-03 | Phase 2 | Pending |
