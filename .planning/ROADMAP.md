@@ -97,10 +97,10 @@ Plans:
   3. User renames "Speaker 1" to a name once, and the name appears across the transcript, TXT/Word/PDF exports and AI minutes
   4. AI minutes for an on-device recording attribute statements, decisions and actions to speakers, as they do for Deepgram meetings
   5. On the Xiaomi phone, live transcription with speaker separation keeps up with speech during a long meeting (no growing backlog)
-**Plans:** 8 plans
+**Plans:** 1/8 plans executed
 
 Plans:
-- [ ] 04-01-PLAN.md — Spike first (scripts/diarize-bench.mjs, 04-BENCHMARK.md, phone UAT item) + pure clustering core diarize.ts with tests (wave 1)
+- [x] 04-01-PLAN.md — Spike first (scripts/diarize-bench.mjs, 04-BENCHMARK.md, phone UAT item) + pure clustering core diarize.ts with tests (wave 1)
 - [ ] 04-02-PLAN.md — SPEAKER_MODEL, pure embedSchedule rules, worker embedding class (lowest priority, crop, skip) + client API (wave 1)
 - [ ] 04-03-PLAN.md — speakerLabel helper, names in TXT/Word/PDF exports, AI minutes route names + D-12 prompt (wave 1)
 - [ ] 04-04-PLAN.md — Dexie v2 embeddings table, setRelabel, sync speakers step via /speakers parts overrides (wave 1)
@@ -133,7 +133,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | 1. Export, Share & Navigation | 4/4 | Complete   | 2026-11-21 |
 | 2. Local-First Meetings & Sync | 5/5 | Complete   | 2026-11-21 |
 | 3. Offline App Shell & Gating | 8/8 | Complete   | 2026-11-21 |
-| 4. On-Device Speaker Separation | 0/8 | Planned | - |
+| 4. On-Device Speaker Separation | 1/8 | In Progress|  |
 | 5. Aurora Ink Redesign & Release | 0/TBD | Not started | - |
 
 ---

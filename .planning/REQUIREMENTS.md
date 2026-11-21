@@ -30,11 +30,11 @@
 
 ### Speakers
 
-- [ ] **SPK-01**: Recordings made with Moonshine or Whisper label each phrase with a speaker (Speaker 1, Speaker 2…) computed on the device, no internet needed
-- [ ] **SPK-02**: Speaker labels are refined after the recording ends (re-clustering) and the improved labels are saved
+- [x] **SPK-01**: Recordings made with Moonshine or Whisper label each phrase with a speaker (Speaker 1, Speaker 2…) computed on the device, no internet needed
+- [x] **SPK-02**: Speaker labels are refined after the recording ends (re-clustering) and the improved labels are saved
 - [ ] **SPK-03**: User can rename a speaker once and the name applies across the transcript, exports and AI minutes
 - [ ] **SPK-04**: AI minutes attribute statements/decisions/actions to speakers for on-device recordings (as already done for Deepgram)
-- [ ] **SPK-05**: Speaker separation doesn't make live transcription fall behind on a mid-range phone
+- [x] **SPK-05**: Speaker separation doesn't make live transcription fall behind on a mid-range phone
 
 ### UI Redesign
 
@@ -90,11 +90,11 @@
 | OFF-04 | Phase 3 | Complete |
 | OFF-05 | Phase 3 | Complete |
 | OFF-06 | Phase 3 | Complete |
-| SPK-01 | Phase 4 | Pending |
-| SPK-02 | Phase 4 | Pending |
+| SPK-01 | Phase 4 | Complete |
+| SPK-02 | Phase 4 | Complete |
 | SPK-03 | Phase 4 | Pending |
 | SPK-04 | Phase 4 | Pending |
-| SPK-05 | Phase 4 | Pending |
+| SPK-05 | Phase 4 | Complete |
 | UI-01 | Phase 5 | Pending |
 | UI-02 | Phase 5 | Pending |
 | UI-03 | Phase 5 | Pending |
