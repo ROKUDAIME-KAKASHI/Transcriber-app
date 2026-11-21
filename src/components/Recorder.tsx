@@ -4,21 +4,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
-  MonitorSpeaker, HardDrive, ShieldAlert, BatteryCharging, BatteryWarning, FileText,
+  MonitorSpeaker, HardDrive, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, FileText,
 } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
 import { isNativeApp } from "@/lib/nativeRecorder";
 import { setWebRecording } from "@/lib/recordingFlag";
 import { formatDuration } from "@/lib/transcript";
+import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
 import { WHISPER_LANGUAGES } from "@/lib/speech/models";
 import type { RecordEngine } from "@/lib/speech/deepgram";
 import { TranscriptView } from "./TranscriptView";
-import { Badge, Button, FieldLabel, LiveDot, Notice, OptionList, Panel, PanelHeader, cx, selectCls } from "./ui";
+import { Badge, Button, FieldLabel, LiveDot, GateReason, Notice, OptionList, Panel, PanelHeader, cx, selectCls } from "./ui";
 
 const MIC_KEY = "transcriber.micId";
 const ENGINE_KEY = "transcriber.engine";
 const LANG_KEY = "transcriber.language";
+const LAST_ON_DEVICE_KEY = "transcriber.lastOnDeviceEngine";
 
 const ENGINES: { value: RecordEngine; title: string; description: string; aside: string; icon: React.ReactNode }[] = [
   {
@@ -108,14 +110,29 @@ export function Recorder() {
   const [canCaptureSystem, setCanCaptureSystem] = useState(false);
   const [micId, setMicId] = useState("");
   const { mics, refresh: refreshMics } = useMicrophones();
+  /** The saved preference. Only ever written by the user's own selection. */
   const [engine, setEngine] = useState<RecordEngine>("moonshine");
+  const [lastOnDevice, setLastOnDevice] = useState<RecordEngine>("moonshine");
   const [language, setLanguage] = useState("en");
-  const webRec = useRecorder({ captureSystemAudio, deviceId: micId, engine, language });
+  const deepgramGate = useFeatureGate("deepgram");
+  // Once a recording is starting or running, the engine is frozen: connectivity flips never change it.
+  const [sessionLocked, setSessionLocked] = useState(false);
+  const computedEngine = effectiveEngine({
+    saved: engine,
+    lastOnDevice,
+    locked: false,
+    deepgramEnabled: deepgramGate.enabled,
+  }) as RecordEngine;
+  const frozenEngine = useRef<RecordEngine>(computedEngine);
+  if (!sessionLocked) frozenEngine.current = computedEngine;
+  const effective: RecordEngine = sessionLocked ? frozenEngine.current : computedEngine;
+  const overridden = effective !== engine;
+  const webRec = useRecorder({ captureSystemAudio, deviceId: micId, engine: effective, language });
   const nativeRec = useNativeRecorder({ language });
   // Android app: cloud mode records in a native service that keeps going with the screen off.
   const [inApp, setInApp] = useState(false);
   useEffect(() => setInApp(isNativeApp()), []);
-  const nativeMode = inApp && (engine === "deepgram" || nativeRec.isRecording || nativeRec.isStarting);
+  const nativeMode = inApp && (effective === "deepgram" || nativeRec.isRecording || nativeRec.isStarting);
   const rec = nativeMode ? nativeRec : webRec;
   useEffect(() => {
     setWebRecording(rec.isRecording);
@@ -130,6 +147,9 @@ export function Recorder() {
     try {
       setMicId(localStorage.getItem(MIC_KEY) ?? "");
       const savedEngine = localStorage.getItem(ENGINE_KEY);
+      const savedOnDevice = localStorage.getItem(LAST_ON_DEVICE_KEY);
+      if (savedOnDevice === "moonshine" || savedOnDevice === "whisper") setLastOnDevice(savedOnDevice);
+      else if (savedEngine === "moonshine" || savedEngine === "whisper") setLastOnDevice(savedEngine);
       if (savedEngine === "moonshine" || savedEngine === "whisper" || savedEngine === "deepgram") setEngine(savedEngine);
       // In the Android app, default to cloud: it's the mode that records with the screen off.
       else if (isNativeApp()) setEngine("deepgram");
@@ -162,6 +182,7 @@ export function Recorder() {
   const starting = rec.isStarting;
   /** Settings are locked while starting or recording. */
   const locked = busy || starting;
+  useEffect(() => setSessionLocked(locked), [locked]);
   /** Finished and fully saved: safe to open the meeting page. */
   const finished = !busy && !starting && !!rec.meetingId && hasTranscript && (rec.saveState === "saved" || rec.saveState === "local");
   // Memoised: recounting thousands of phrases on every mic-level update made long meetings sluggish.
@@ -286,20 +307,35 @@ export function Recorder() {
             <FieldLabel>Speech engine</FieldLabel>
             <OptionList
               label="Speech engine"
-              value={engine}
+              value={effective}
               disabled={locked}
               onChange={(v) => {
                 setEngine(v);
                 remember(ENGINE_KEY, v);
+                if (v !== "deepgram") {
+                  setLastOnDevice(v);
+                  remember(LAST_ON_DEVICE_KEY, v);
+                }
               }}
-              options={inApp ? ENGINES.map((e) => ({ ...e, description: APP_ENGINE_NOTES[e.value] })) : ENGINES}
+              options={(inApp ? ENGINES.map((e) => ({ ...e, description: APP_ENGINE_NOTES[e.value] })) : ENGINES).map((e) =>
+                e.value === "deepgram" && !deepgramGate.enabled
+                  ? { ...e, disabled: true, description: deepgramGate.reason }
+                  : e
+              )}
             />
+            {overridden && !locked && (
+              <div className="mt-3">
+                <Notice icon={<WifiOff className="h-4 w-4" />}>
+                  Offline, using on-device. Your Cloud choice comes back when you&apos;re online.
+                </Notice>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
             <div>
               <FieldLabel htmlFor="rec-language">Language</FieldLabel>
-              {engine === "moonshine" ? (
+              {effective === "moonshine" ? (
                 <select id="rec-language" disabled className={selectCls}>
                   <option>English</option>
                 </select>
@@ -374,14 +410,19 @@ export function Recorder() {
             </Notice>
           )}
 
-          <p className="flex items-start gap-2 text-meta text-muted-foreground">
-            <BatteryCharging className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {nativeMode
-              ? "Keeps recording with the screen off or in another app. Plug in the charger for long meetings."
-              : inApp
-                ? "On-device engines need this screen on. Choose Cloud to record with the screen off."
-                : "Long meetings record for as long as you need. Keep this screen on, and plug in the charger."}
-          </p>
+          {effective !== "deepgram" ? (
+            <Notice icon={<BatteryCharging className="h-4 w-4" />} title="Keep the screen on">
+              On-device recording works with no internet, but it stops if the screen locks. Keep this screen open while you
+              record.
+            </Notice>
+          ) : (
+            <p className="flex items-start gap-2 text-meta text-muted-foreground">
+              <BatteryCharging className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {nativeMode
+                ? "Cloud keeps recording with the screen off, but it needs internet the whole time. Plug in the charger for long meetings."
+                : "Cloud keeps recording with the screen off, but it needs internet the whole time."}
+            </p>
+          )}
         </div>
       </Panel>
 
