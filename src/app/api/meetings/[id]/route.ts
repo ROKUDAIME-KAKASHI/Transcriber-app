@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
+import {
+  MEETING_FULL_SELECT,
+  MEETING_FULL_SELECT_LEGACY,
+  clampClientTime,
+  withLegacyFallback,
+} from "@/lib/meetingSelect";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -17,7 +23,12 @@ export async function GET(_req: Request, { params }: Ctx) {
   const { id } = await params;
 
   try {
-    const meeting = await prisma.meeting.findFirst({ where: { id, userId } });
+    const meeting = await withLegacyFallback((legacy) =>
+      prisma.meeting.findFirst({
+        where: { id, userId },
+        select: legacy ? MEETING_FULL_SELECT_LEGACY : MEETING_FULL_SELECT,
+      }),
+    );
     return meeting ? Response.json({ meeting }) : notFound();
   } catch (err) {
     return dbDown(err);
@@ -40,6 +51,13 @@ const PatchBody = z.object({
   transcriptTail: z.object({ from: z.number().int().min(0), parts: z.array(Part).max(MAX_PARTS) }).optional(),
   durationSec: z.number().int().min(0).optional(),
   status: z.enum(["RECORDING", "DONE"]).optional(),
+  /** Client clock of the title edit; the newer edit wins. */
+  titleUpdatedAt: z.string().datetime({ offset: true }).optional(),
+  engine: z.enum(["deepgram", "moonshine", "whisper"]).optional(),
+  speakerNames: z
+    .record(z.string().regex(/^\d{1,2}$/), z.string().trim().max(60))
+    .refine((r) => Object.keys(r).length <= 50, "Too many speakers")
+    .optional(),
 });
 
 /** Autosave target while recording, and rename afterwards. */
@@ -51,8 +69,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const parsed = PatchBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Invalid request" }, { status: 400 });
 
-  const { transcriptTail, ...data } = parsed.data;
-  try {
+  const { transcriptTail, title, titleUpdatedAt, engine, speakerNames, ...rest } = parsed.data;
+
+  const apply = async (legacy: boolean): Promise<Response> => {
+    const extra = legacy ? {} : { ...(engine ? { engine } : {}), ...(speakerNames ? { speakerNames } : {}) };
+    const data = { ...rest, ...extra, updatedAt: new Date() };
+    let savedParts: number | undefined;
+
     if (transcriptTail) {
       const existing = await prisma.meeting.findFirst({ where: { id, userId }, select: { transcript: true } });
       if (!existing) return notFound();
@@ -64,11 +87,34 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const merged = [...current.slice(0, transcriptTail.from), ...transcriptTail.parts];
       if (merged.length > MAX_PARTS) return Response.json({ error: "Transcript too long" }, { status: 413 });
       await prisma.meeting.updateMany({ where: { id, userId }, data: { ...data, transcript: merged } });
-      return Response.json({ ok: true, savedParts: merged.length });
+      savedParts = merged.length;
+    } else {
+      // updateMany scoped by userId so nobody can write to another account's meeting.
+      const { count } = await prisma.meeting.updateMany({ where: { id, userId }, data });
+      if (!count) return notFound();
+      savedParts = rest.transcript?.length;
     }
-    // updateMany scoped by userId so nobody can write to another account's meeting.
-    const { count } = await prisma.meeting.updateMany({ where: { id, userId }, data });
-    return count ? Response.json({ ok: true, savedParts: data.transcript?.length }) : notFound();
+
+    let storedTitle: string | undefined;
+    if (title !== undefined) {
+      if (legacy) {
+        await prisma.meeting.updateMany({ where: { id, userId }, data: { title, updatedAt: new Date() } });
+      } else {
+        const t = clampClientTime(titleUpdatedAt);
+        // Atomic last-writer-wins: only a newer edit replaces the title.
+        await prisma.meeting.updateMany({
+          where: { id, userId, OR: [{ titleUpdatedAt: null }, { titleUpdatedAt: { lt: t } }] },
+          data: { title, titleUpdatedAt: t, updatedAt: new Date() },
+        });
+      }
+      const row = await prisma.meeting.findFirst({ where: { id, userId }, select: { title: true } });
+      storedTitle = row?.title;
+    }
+    return Response.json({ ok: true, savedParts, ...(storedTitle !== undefined ? { title: storedTitle } : {}) });
+  };
+
+  try {
+    return await withLegacyFallback(apply);
   } catch (err) {
     return dbDown(err);
   }

@@ -218,6 +218,13 @@ Deploy it anywhere with HTTPS (e.g. Vercel, with the same env vars as `.env`), t
 - **Android (Chrome)**: menu ⋮ → *Install app* (or the install banner).
 - **iPhone (Safari)**: Share → *Add to Home Screen*.
 
+### Deploying the local-first update (Phase 2)
+
+This build adds three nullable columns to `Meeting` (`speakerNames`, `engine`, `titleUpdatedAt`). Run
+`npx prisma db push` against the Neon database **before (or together with)** deploying. Pushing first is safe
+for the old code. If the build goes out first, reads and old-client writes fall back to the legacy columns and
+the logs show `Schema not pushed yet; using legacy columns` until the push is done.
+
 ## Android app (records with the screen off)
 
 `android/` is a [Capacitor](https://capacitorjs.com/) app: the screens come from the server, and
