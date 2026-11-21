@@ -12,23 +12,41 @@
  *   { type: "load", model: ModelName, language?: string, slowRtf?: number }
  *   { type: "cache-status", model } -> { type: "cache-status", model, cached }
  *   { type: "prefetch", model, requestId } -> prefetch-progress / prefetched / error (with requestId)
- *   { type: "transcribe", id, audio, kind: "final" | "partial" }   audio = 16 kHz mono Float32Array
+ *   { type: "transcribe", id, audio, kind: "final" | "partial", embed?: boolean }   audio = 16 kHz mono Float32Array
+ *   { type: "load-speaker", localOnly? }      load the speaker-embedding model (after ASR is ready)
+ *   { type: "speaker-cache-status" } -> { type: "speaker-cache-status", cached }
+ *   { type: "prefetch-speaker", requestId }   -> prefetch-progress / prefetched (model: "speaker") / error (with requestId)
+ *   { type: "cancel-embeds" }                 queued embeddings are dropped (skipped: "cancelled")
  * Messages out:
  *   { type: "progress", progress }            first-time download, 0–100
  *   { type: "ready", model, threads }
  *   { type: "result", id, text, rtf }         rtf = processing time ÷ audio length
  *   { type: "skipped", id }                   a partial was replaced by a newer one before it ran
  *   { type: "model", model }                  switched to a lighter model because the device was too slow
+ *   { type: "speaker-ready", ok }             speaker model loaded (ok false = unavailable; never an id-less error)
+ *   { type: "embedding", id, vector?, skipped?, embedMs?, cropSec? }   exactly one per transcribe with embed: true
  *   { type: "error", id?, message }
  *
  * Scheduling (matters on phones): "final" jobs (finished phrases) always run first and in order.
  * "partial" jobs (live word-by-word previews of the phrase being spoken) run only when no final is
  * waiting, and only the newest one is kept — so a slow phone shows fewer previews but never falls
- * behind on the real transcript.
+ * behind on the real transcript. Speaker embeddings are a third, lowest class: they run only when no
+ * final and no partial is waiting, and are skipped (never queued deeper) when the worker is behind.
  */
-import { env, pipeline, ModelRegistry, type ProgressInfo } from "@huggingface/transformers";
+import { env, pipeline, ModelRegistry, AutoFeatureExtractor, AutoModel, type ProgressInfo } from "@huggingface/transformers";
 import { hasLoop } from "../lib/speech/cleanText";
-import { MODELS, type ModelName } from "../lib/speech/models";
+import { MODELS, SPEAKER_MODEL, type ModelName } from "../lib/speech/models";
+import {
+  BUSY_SLOW_FRACTION,
+  BUSY_WINDOW_MS,
+  MAX_EMBED_QUEUE,
+  SLOW_EMBED_MS,
+  busyFraction,
+  cropMiddle,
+  cropSecFor,
+  embedDecision,
+  type EmbedSkip,
+} from "../lib/speech/embedSchedule";
 
 const SAMPLE_RATE = 16000;
 /**
@@ -50,11 +68,22 @@ type Transcriber = ((audio: Float32Array, options?: GenerateOptions) => Promise<
   dispose?: () => Promise<void>;
 };
 
-type Job = { id: number; audio: Float32Array; kind: "final" | "partial" };
+type Job = { id: number; audio: Float32Array; kind: "final" | "partial"; embed?: boolean };
+type EmbedJob = { id: number; audio: Float32Array };
+type SpeakerModel = {
+  fe: (audio: Float32Array) => Promise<Record<string, unknown>>;
+  model: ((inputs: Record<string, unknown>) => Promise<{ last_hidden_state?: { data: Float32Array }; embeddings?: { data: Float32Array } }>) & {
+    dispose?: () => Promise<void>;
+  };
+};
 type InMessage =
   | { type: "load"; model: ModelName; language?: string; slowRtf?: number; localOnly?: boolean }
   | { type: "cache-status"; model: ModelName }
   | { type: "prefetch"; model: ModelName; requestId: number }
+  | { type: "load-speaker"; localOnly?: boolean }
+  | { type: "speaker-cache-status" }
+  | { type: "prefetch-speaker"; requestId: number }
+  | { type: "cancel-embeds" }
   | ({ type: "transcribe" } & Job);
 
 // ---- Runtime setup -----------------------------------------------------------
@@ -81,6 +110,59 @@ let slowRtf = DEFAULT_SLOW_RTF;
 let rtfSamples: number[] = [];
 let phrasesSinceLoad = 0;
 let switching = false;
+/** Set when this load had to fall back to the lighter model: a sign the device is slow. */
+let downgraded = false;
+/** Sticky once an embedding took longer than SLOW_EMBED_MS: later ones use the shorter crop. */
+let cropSlow = false;
+let lastEmbedMs: number | null = null;
+let busyIntervals: Array<[number, number]> = [];
+
+// ---- Speaker embedding model (lazy, lowest priority, never blocks or fails ASR) ----
+let speakerPromise: Promise<SpeakerModel | null> | null = null;
+let speakerModel: SpeakerModel | null = null;
+
+function loadSpeaker(localOnly: boolean): Promise<SpeakerModel | null> {
+  if (speakerPromise) return speakerPromise;
+  const p = (async () => {
+    try {
+      // Never compete with the ASR model for the download or the CPU.
+      await loaded.get(active);
+      const opts = { ...(localOnly ? { local_files_only: true } : {}) };
+      const fe = (await AutoFeatureExtractor.from_pretrained(SPEAKER_MODEL.repo, opts)) as unknown as SpeakerModel["fe"];
+      const model = (await AutoModel.from_pretrained(SPEAKER_MODEL.repo, {
+        device: "wasm",
+        dtype: SPEAKER_MODEL.dtype,
+        ...opts,
+      })) as unknown as SpeakerModel["model"];
+      const sm: SpeakerModel = { fe, model };
+      await embedWith(sm, new Float32Array(SAMPLE_RATE)); // warm-up on 1 s of silence
+      speakerModel = sm;
+      self.postMessage({ type: "speaker-ready", ok: true });
+      return sm;
+    } catch (err) {
+      console.warn("[speaker] model unavailable:", err);
+      speakerModel = null;
+      speakerPromise = null;
+      self.postMessage({ type: "speaker-ready", ok: false });
+      return null;
+    }
+  })();
+  speakerPromise = p;
+  return p;
+}
+
+async function embedWith(sm: SpeakerModel, audio: Float32Array): Promise<Float32Array> {
+  const inputs = await sm.fe(audio);
+  const out = await sm.model(inputs);
+  const data = (out.last_hidden_state ?? out.embeddings)?.data;
+  if (!data) throw new Error("speaker model returned no embedding");
+  const v = Float32Array.from(data);
+  let norm = 0;
+  for (let i = 0; i < v.length; i++) norm += v[i] * v[i];
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < v.length; i++) v[i] /= norm;
+  return v;
+}
 
 async function warmUp(t: Transcriber) {
   // The first inference allocates buffers and compiles kernels; doing it on a second of
@@ -141,6 +223,7 @@ function trackSpeed(rtf: number) {
   // The current model keeps transcribing while the lighter one downloads.
   loadModel(fallback, false)
     .then(() => {
+      downgraded = true;
       active = fallback;
       unloadOthers([fallback]);
       self.postMessage({ type: "model", model: fallback });
@@ -187,23 +270,73 @@ async function run(job: Job) {
     const rtf = (performance.now() - t0) / 1000 / Math.max(seconds, minSeconds);
     self.postMessage({ type: "result", id: job.id, text, rtf });
     if (job.kind === "final") trackSpeed(rtf);
+    if (job.kind === "final" && job.embed) queueEmbed(job, seconds);
   } catch (err) {
     self.postMessage({ type: "error", id: job.id, message: String((err as Error)?.message ?? err) });
+    if (job.kind === "final" && job.embed) skipEmbed(job.id, "error");
+  }
+}
+
+function skipEmbed(id: number, skipped: EmbedSkip) {
+  self.postMessage({ type: "embedding", id, skipped });
+}
+
+/** Decides whether a finished phrase gets an embedding. Crops now so the full buffer can be freed. */
+function queueEmbed(job: Job, seconds: number) {
+  const slow = switching || downgraded || busyFraction(busyIntervals, performance.now()) > BUSY_SLOW_FRACTION;
+  const decision = embedDecision({ seconds, finalsWaiting: finals.length, speakerLoaded: !!speakerModel, slow });
+  if (decision !== "embed") {
+    skipEmbed(job.id, decision);
+    return;
+  }
+  embeds.push({ id: job.id, audio: cropMiddle(job.audio, cropSecFor(lastEmbedMs, cropSlow)) });
+  while (embeds.length > MAX_EMBED_QUEUE) {
+    const dropped = embeds.shift()!;
+    skipEmbed(dropped.id, "queue");
+  }
+}
+
+async function runEmbed(job: EmbedJob) {
+  const sm = speakerModel;
+  if (!sm) {
+    skipEmbed(job.id, "unavailable");
+    return;
+  }
+  try {
+    const t0 = performance.now();
+    const vector = await embedWith(sm, job.audio);
+    const embedMs = Math.round(performance.now() - t0);
+    const cropSec = Math.round((job.audio.length / SAMPLE_RATE) * 10) / 10;
+    lastEmbedMs = embedMs;
+    if (embedMs > SLOW_EMBED_MS) cropSlow = true;
+    console.info(`[speaker] embedMs=${embedMs} cropSec=${cropSec}`);
+    self.postMessage({ type: "embedding", id: job.id, vector, embedMs, cropSec }, [vector.buffer]);
+  } catch (err) {
+    console.warn("[speaker] embedding failed:", err);
+    skipEmbed(job.id, "error"); // silent for the user (D-13)
   }
 }
 
 // ---- Scheduling ------------------------------------------------------------------
 const finals: Job[] = [];
 let partial: Job | null = null;
+const embeds: EmbedJob[] = [];
 let running = false;
 
 function pump() {
   if (running) return;
-  const job = finals.shift() ?? partial;
+  let job: Job | EmbedJob | null = finals.shift() ?? partial;
+  if (job && job === partial) partial = null;
+  // Embeddings are the lowest priority: only when nothing else is waiting.
+  if (!job && finals.length === 0 && !partial) job = embeds.shift() ?? null;
   if (!job) return;
-  if (job === partial) partial = null;
   running = true;
-  run(job).finally(() => {
+  const start = performance.now();
+  const work = "kind" in job ? run(job) : runEmbed(job);
+  work.finally(() => {
+    const end = performance.now();
+    busyIntervals.push([start, end]);
+    busyIntervals = busyIntervals.filter(([, e]) => end - e < BUSY_WINDOW_MS);
     running = false;
     pump();
   });
@@ -218,6 +351,10 @@ self.onmessage = (event: MessageEvent<InMessage>) => {
     if (msg.slowRtf) slowRtf = msg.slowRtf;
     rtfSamples = [];
     phrasesSinceLoad = 0;
+    downgraded = false;
+    cropSlow = false;
+    lastEmbedMs = null;
+    busyIntervals = [];
     unloadOthers([active]);
     loadModel(active, true, !!msg.localOnly)
       .then(() => self.postMessage({ type: "ready", model: active, threads: onnx.wasm?.numThreads ?? 1 }))
@@ -255,8 +392,52 @@ self.onmessage = (event: MessageEvent<InMessage>) => {
     return;
   }
 
+  if (msg.type === "load-speaker") {
+    void loadSpeaker(!!msg.localOnly);
+    return;
+  }
+
+  if (msg.type === "speaker-cache-status") {
+    ModelRegistry.is_cached_files(SPEAKER_MODEL.repo, { device: "wasm", dtype: SPEAKER_MODEL.dtype, include_tokenizer: false } as Parameters<typeof ModelRegistry.is_cached_files>[1])
+      .then((r) => self.postMessage({ type: "speaker-cache-status", cached: !!r.allCached }))
+      .catch(() => self.postMessage({ type: "speaker-cache-status", cached: false }));
+    return;
+  }
+
+  if (msg.type === "prefetch-speaker") {
+    const { requestId } = msg;
+    if (speakerModel) {
+      self.postMessage({ type: "prefetched", requestId, model: "speaker" });
+      return;
+    }
+    let lastPct = -1;
+    const progress_callback = (info: ProgressInfo) => {
+      if (info.status !== "progress_total") return;
+      const pct = Math.round(info.progress);
+      if (pct === lastPct) return;
+      lastPct = pct;
+      self.postMessage({ type: "prefetch-progress", requestId, progress: pct });
+    };
+    (async () => {
+      await AutoFeatureExtractor.from_pretrained(SPEAKER_MODEL.repo, { progress_callback });
+      const m = (await AutoModel.from_pretrained(SPEAKER_MODEL.repo, {
+        device: "wasm",
+        dtype: SPEAKER_MODEL.dtype,
+        progress_callback,
+      })) as unknown as SpeakerModel["model"];
+      await m.dispose?.();
+      self.postMessage({ type: "prefetched", requestId, model: "speaker" });
+    })().catch((err) => self.postMessage({ type: "error", requestId, message: String(err?.message ?? err) }));
+    return;
+  }
+
+  if (msg.type === "cancel-embeds") {
+    for (const e of embeds.splice(0)) skipEmbed(e.id, "cancelled");
+    return;
+  }
+
   if (msg.type === "transcribe") {
-    const job: Job = { id: msg.id, audio: msg.audio, kind: msg.kind };
+    const job: Job = { id: msg.id, audio: msg.audio, kind: msg.kind, embed: msg.embed };
     if (job.kind === "final") {
       finals.push(job);
     } else {
