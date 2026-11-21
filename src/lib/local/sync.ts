@@ -119,7 +119,8 @@ async function fail(uid: string, id: string, cls: ResponseClass, r: Reply): Prom
       state: r.status === null ? "offline" : "idle",
       lastError: r.status === null ? null : `Server error ${r.status}`,
     });
-    return "stop";
+    // A server error on one meeting must not starve the others: keep going unless we are offline.
+    return r.status === null ? "stop" : "next";
   }
   await repo.applySyncResult(uid, id, { syncError: "rejected" });
   return "next";
@@ -219,6 +220,9 @@ async function syncMeeting(uid: string, m: LocalMeeting): Promise<Step> {
         title: typeof r.data?.title === "string" ? r.data.title : cur.title,
         clear: ["meta"],
       });
+    } else if (cls === "bad-request") {
+      // The server will never accept this title: drop the dirty flag so it neither loops nor blocks finish.
+      await repo.applySyncResult(uid, id, { clear: ["meta"], syncError: "rejected" });
     } else {
       return fail(uid, id, cls, r);
     }
@@ -230,6 +234,8 @@ async function syncMeeting(uid: string, m: LocalMeeting): Promise<Step> {
     if (cls === "ok") {
       okReset();
       await repo.applySyncResult(uid, id, { clear: ["speakers"] });
+    } else if (cls === "bad-request") {
+      await repo.applySyncResult(uid, id, { clear: ["speakers"], syncError: "rejected" });
     } else {
       return fail(uid, id, cls, r);
     }
@@ -292,7 +298,8 @@ async function passBody(uid: string, force: boolean, ignoreBackoff: boolean): Pr
   const pending = await repo.listPending(uid);
   for (const m of pending) {
     if (userId !== uid) return;
-    if (m.syncError === "conflict") continue;
+    // Parked rows (conflict / rejected) are not re-sent every pass; a new local edit clears "rejected".
+    if (m.syncError === "conflict" || m.syncError === "rejected") continue;
     if ((await syncMeeting(uid, m)) === "stop") return;
   }
   if (force || Date.now() - lastPullMs > PULL_EVERY_MS) {

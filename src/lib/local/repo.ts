@@ -87,6 +87,7 @@ export async function putParts(
         hasTranscript: true,
         dirty,
         lastWriteAt: Date.now(),
+        syncError: row.syncError === "rejected" ? null : row.syncError,
       };
       if (status === "DONE") {
         next.status = "DONE";
@@ -151,17 +152,32 @@ async function updateRow(
   }
 }
 
-export function setTitle(userId: string, id: string, title: string): Promise<boolean> {
+export function setTitle(userId: string, id: string, rawTitle: string): Promise<boolean> {
+  const title = rawTitle.trim().slice(0, 200); // the server accepts 1-200 chars
+  if (!title) return Promise.resolve(false);
   return updateRow(userId, id, (r) =>
     r.deleted === 1
       ? null
-      : { ...r, title, titleUpdatedAt: new Date().toISOString(), dirty: { ...r.dirty, meta: true } },
+      : {
+          ...r,
+          title,
+          titleUpdatedAt: new Date().toISOString(),
+          syncError: r.syncError === "rejected" ? null : r.syncError,
+          dirty: { ...r.dirty, meta: true },
+        },
   );
 }
 
 export function setSpeakerNames(userId: string, id: string, names: Record<string, string>): Promise<boolean> {
   return updateRow(userId, id, (r) =>
-    r.deleted === 1 ? null : { ...r, speakerNames: names, dirty: { ...r.dirty, speakers: true } },
+    r.deleted === 1
+      ? null
+      : {
+          ...r,
+          speakerNames: names,
+          syncError: r.syncError === "rejected" ? null : r.syncError,
+          dirty: { ...r.dirty, speakers: true },
+        },
   );
 }
 

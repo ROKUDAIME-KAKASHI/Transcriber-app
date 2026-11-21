@@ -441,6 +441,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
             <div className="flex gap-2">
               <input
                 autoFocus
+                maxLength={200}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => {
