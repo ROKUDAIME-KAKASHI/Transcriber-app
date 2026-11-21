@@ -1,7 +1,11 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
-import { formatDuration, type TranscriptPart } from "@/lib/transcript";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Info, Loader2, X } from "lucide-react";
+import { formatDuration, speakerLabel, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
+import type { SpeakerStatus } from "@/lib/speech/diarize";
+import { SpeakerChip } from "./SpeakerChip";
+import { RenameSpeakerSheet } from "./RenameSpeakerSheet";
 
 /**
  * The transcript as a readable document: paragraphs with a time (and, for multi-speaker
@@ -12,10 +16,12 @@ import { formatDuration, type TranscriptPart } from "@/lib/transcript";
  * paragraphs while recording, the first ones on a saved meeting) with a button for the rest.
  * The component is memoised so mic-level updates (~12/s) don't re-render it.
  */
-const SPEAKER_COLORS = 6;
 /** A paragraph closes after this long or this much text, even if the same person keeps talking. */
 const PARAGRAPH_MAX_SECONDS = 60;
 const PARAGRAPH_MAX_CHARS = 700;
+const HINT_KEY = "speakerRenameHintSeen";
+const IDENTIFYING_MIN_MS = 1000;
+const REFINING_DELAY_MS = 300;
 
 type Paragraph = { speaker: number; t?: number; text: string };
 
@@ -34,8 +40,6 @@ function toParagraphs(parts: TranscriptPart[]): Paragraph[] {
   return out;
 }
 
-const speakerColor = (s: number) => `var(--speaker-${s % SPEAKER_COLORS})`;
-
 function TypingDots() {
   return (
     <span className="inline-flex items-center gap-1 align-middle" aria-hidden>
@@ -46,6 +50,28 @@ function TypingDots() {
   );
 }
 
+/** Status shown to the user: "identifying" is held >= 1 s, "refining" appears after 300 ms. */
+function useShownStatus(status: SpeakerStatus | undefined): SpeakerStatus {
+  const [shown, setShown] = useState<SpeakerStatus>(null);
+  const since = useRef(0);
+  const want = status ?? null;
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    if (want === shown) return;
+    if (want === "refining") {
+      t = setTimeout(() => setShown("refining"), REFINING_DELAY_MS);
+    } else if (want === null && shown === "identifying") {
+      const left = IDENTIFYING_MIN_MS - (Date.now() - since.current);
+      t = setTimeout(() => setShown(null), Math.max(0, left));
+    } else {
+      if (want === "identifying") since.current = Date.now();
+      t = setTimeout(() => setShown(want), 0);
+    }
+    return () => clearTimeout(t);
+  }, [want, shown]);
+  return shown;
+}
+
 function TranscriptViewImpl({
   parts,
   interimText,
@@ -53,6 +79,10 @@ function TranscriptViewImpl({
   backlog = 0,
   window: windowMode = "head",
   pageSize = 200,
+  speakerNames,
+  onRenameSpeaker,
+  speakerStatus,
+  renameHint = false,
 }: {
   parts: TranscriptPart[];
   interimText?: string;
@@ -61,6 +91,12 @@ function TranscriptViewImpl({
   /** "tail": newest paragraphs (live recording). "head": from the start (reading a saved meeting). */
   window?: "head" | "tail";
   pageSize?: number;
+  speakerNames?: SpeakerNames;
+  /** Absent: chips are plain labels. Resolves false when the name couldn't be saved. */
+  onRenameSpeaker?: (speaker: number, name: string) => Promise<boolean>;
+  speakerStatus?: SpeakerStatus;
+  /** Show the one-time "tap a name to rename" hint (meeting page only). */
+  renameHint?: boolean;
 }) {
   const paragraphs = useMemo(() => toParagraphs(parts), [parts]);
   const multiSpeaker = useMemo(() => new Set(parts.map((p) => p.speaker)).size > 1, [parts]);
@@ -68,6 +104,65 @@ function TranscriptViewImpl({
   const hidden = Math.max(0, paragraphs.length - shown);
   const visible = windowMode === "tail" ? paragraphs.slice(hidden) : paragraphs.slice(0, shown);
   const showLive = !!interimText || !!liveStatus;
+
+  const [renaming, setRenaming] = useState<{ index: number; speaker: number } | null>(null);
+  const chipRefs = useRef(new Map<number, HTMLButtonElement>());
+  const [hintSeen, setHintSeen] = useState(true);
+  useEffect(() => {
+    let seen = true;
+    try {
+      seen = localStorage.getItem(HINT_KEY) === "1";
+    } catch {}
+    const t = setTimeout(() => setHintSeen(seen), 0);
+    return () => clearTimeout(t);
+  }, []);
+  const markHintSeen = () => {
+    try {
+      localStorage.setItem(HINT_KEY, "1");
+    } catch {}
+    setHintSeen(true);
+  };
+  const closeRename = () => {
+    const idx = renaming?.index;
+    setRenaming(null);
+    if (idx !== undefined) requestAnimationFrame(() => chipRefs.current.get(idx)?.focus());
+  };
+
+  const shownStatus = useShownStatus(speakerStatus);
+  const backlogShown = backlog > 1;
+  const statusLine =
+    backlogShown || !shownStatus ? null : (
+      <p className="flex min-h-5 items-center gap-2 text-meta text-muted-foreground" aria-live="off">
+        {shownStatus === "identifying" && (
+          <>
+            <TypingDots />
+            Identifying speakers
+          </>
+        )}
+        {shownStatus === "catching-up" && "Catching up on transcription first, speakers will follow"}
+        {shownStatus === "refining" && (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
+            Refining speakers
+          </>
+        )}
+      </p>
+    );
+  const wasRefining = useRef(false);
+  const [announce, setAnnounce] = useState("");
+  useEffect(() => {
+    if (shownStatus === "refining") {
+      wasRefining.current = true;
+      const t = setTimeout(() => setAnnounce("Refining speakers"), 0);
+      return () => clearTimeout(t);
+    }
+    if (wasRefining.current) {
+      wasRefining.current = false;
+      const t = setTimeout(() => setAnnounce("Speakers updated"), 0);
+      return () => clearTimeout(t);
+    }
+  }, [shownStatus]);
+
   const more = (
     <button
       type="button"
@@ -81,6 +176,23 @@ function TranscriptViewImpl({
 
   return (
     <div role="log" aria-live="polite" aria-relevant="additions">
+      <span className="sr-only" role="status">
+        {announce}
+      </span>
+      {renameHint && multiSpeaker && onRenameSpeaker && !hintSeen && (
+        <div className="mb-4 flex items-center gap-2 text-meta text-muted-foreground">
+          <Info className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">Tap a speaker&apos;s name to rename it.</span>
+          <button
+            type="button"
+            aria-label="Dismiss hint"
+            onClick={markHintSeen}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-muted"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      )}
       {windowMode === "tail" && hidden > 0 && more}
       <div className="space-y-5">
         {visible.map((p, i) => {
@@ -93,10 +205,37 @@ function TranscriptViewImpl({
               </span>
               <div className="min-w-0">
                 {showSpeaker && (
-                  <span className="mb-1 flex items-center gap-2 text-meta font-semibold" style={{ color: speakerColor(p.speaker) }}>
-                    <span className="h-2 w-2 rounded-full" style={{ background: speakerColor(p.speaker) }} aria-hidden />
-                    Speaker {p.speaker + 1}
-                  </span>
+                  <div className="relative mb-1">
+                    <SpeakerChip
+                      speaker={p.speaker}
+                      label={speakerLabel(p.speaker, speakerNames)}
+                      expanded={renaming?.index === i}
+                      buttonRef={(el) => {
+                        if (el) chipRefs.current.set(i, el);
+                        else chipRefs.current.delete(i);
+                      }}
+                      onClick={
+                        onRenameSpeaker
+                          ? () => (renaming?.index === i ? closeRename() : setRenaming({ index: i, speaker: p.speaker }))
+                          : undefined
+                      }
+                    />
+                    {onRenameSpeaker && renaming?.index === i && (
+                      <RenameSpeakerSheet
+                        speaker={p.speaker}
+                        currentName={speakerNames?.[String(p.speaker)]}
+                        onClose={closeRename}
+                        onSave={async (name) => {
+                          const ok = await onRenameSpeaker(p.speaker, name);
+                          if (ok) {
+                            markHintSeen();
+                            closeRename();
+                          }
+                          return ok;
+                        }}
+                      />
+                    )}
+                  </div>
                 )}
                 <p className="max-w-[68ch] text-base leading-7 text-foreground">{p.text}</p>
               </div>
@@ -118,10 +257,13 @@ function TranscriptViewImpl({
                   <TypingDots />
                 )}
               </p>
-              {backlog > 1 && <p className="mt-1 text-meta text-muted-foreground">Catching up · {backlog} phrases waiting</p>}
+              {backlogShown && <p className="mt-1 text-meta text-muted-foreground">Catching up · {backlog} phrases waiting</p>}
+              {shownStatus !== "refining" && statusLine && <div className="mt-1">{statusLine}</div>}
             </div>
           </div>
         )}
+        {!showLive && shownStatus !== "refining" && statusLine && <div>{statusLine}</div>}
+        {shownStatus === "refining" && <div className="min-h-5">{statusLine}</div>}
       </div>
       {windowMode === "head" && hidden > 0 && <div className="mt-6">{more}</div>}
     </div>
