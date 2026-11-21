@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WifiOff } from "lucide-react";
 import { decideAuth } from "@/lib/authCore";
+import { isRecordingActive } from "@/lib/recordingFlag";
 import { useAuth } from "./AuthProvider";
 import { Button, Panel } from "./ui";
 
@@ -35,12 +36,46 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   const decision = decideAuth({ probe, cached: !!cachedUser, waitedMs });
 
+  // Never unmount an active recording: while one is running, keep the app mounted and show a notice.
+  const [holdForRecording, setHoldForRecording] = useState(false);
+
   useEffect(() => {
     // Only a reachable server answering "no session" sends the user to /login; local data is kept.
-    if (decision === "redirect-login") router.replace("/login");
+    if (decision !== "redirect-login") {
+      setHoldForRecording(false);
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = async () => {
+      const recording = await isRecordingActive();
+      if (cancelled) return;
+      if (recording) {
+        setHoldForRecording(true);
+        timer = setTimeout(() => void attempt(), 3000);
+      } else {
+        setHoldForRecording(false);
+        router.replace("/login");
+      }
+    };
+    void attempt();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [decision, router]);
 
   if (decision === "app" || decision === "app-cached") return <>{children}</>;
+  if (decision === "redirect-login" && holdForRecording) {
+    return (
+      <>
+        <div role="alert" className="sticky top-0 z-50 bg-amber-100 px-4 py-2 text-center text-ui text-amber-900">
+          Your session expired. Your recording is safe and keeps running. Sign in again after you stop it.
+        </div>
+        {children}
+      </>
+    );
+  }
   if (decision === "needs-internet") {
     return (
       <div className="grid min-h-dvh place-items-center px-4">
