@@ -12,6 +12,11 @@ import {
 import { TEMPLATES, formatDuration, transcriptToText, type TranscriptPart } from "@/lib/transcript";
 import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/aiModels";
 import { navBack } from "@/lib/navStack";
+import { buildExport } from "@/lib/export";
+import {
+  ExportError, copyTextSync, nativeFileShareMissing, nativePdfMissing, preloadExport, shareOrSave, shareText,
+} from "@/lib/export/deliver";
+import type { ExportKind, ExportMeeting } from "@/lib/export/types";
 import { TranscriptView } from "./TranscriptView";
 import { Badge, Button, FieldLabel, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
 
@@ -28,22 +33,7 @@ export interface MeetingData {
   transcript: TranscriptPart[];
 }
 
-const fileStamp = () => new Date().toISOString().slice(0, 10);
 const MODEL_KEY = "transcriber.summaryModel";
-
-function download(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoking straight away breaks downloads on iOS and Android WebViews.
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
 
 export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const router = useRouter();
@@ -58,15 +48,14 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [pdfBusy, setPdfBusy] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState<ExportKind | "share" | null>(null);
+  const [exportNote, setExportNote] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const preloaded = useRef(false);
   const [titleError, setTitleError] = useState<string | null>(null);
 
   const rawText = transcriptToText(meeting.transcript);
   const speakers = new Set(meeting.transcript.map((p) => p.speaker)).size;
   const words = meeting.transcript.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0);
-  const [canShare, setCanShare] = useState(false);
-  useEffect(() => setCanShare(!!navigator.share), []);
 
   // AI model for Minutes / Reports; the last choice is remembered on this device.
   const [model, setModel] = useState<SummaryModel>(DEFAULT_SUMMARY_MODEL);
@@ -232,73 +221,60 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   const currentText = showingDoc ? doc! : rawText;
   const currentName = showingDoc ? docName : "Transcript";
 
-  const exportTxt = () =>
-    download(new Blob([currentText], { type: "text/plain;charset=utf-8" }), `${currentName}-${fileStamp()}.txt`);
+  const exportMeeting: ExportMeeting = { title, transcript: meeting.transcript, document: doc, docName };
+  const nothingToExport = !doc && meeting.transcript.length === 0;
 
-  /**
-   * HTML for Word/PDF. The transcript view only draws part of a long meeting, so transcript
-   * exports are built from the full data instead of copying what's on screen.
-   */
-  const exportHtml = (): string => {
-    const el = document.getElementById("export-body");
-    if (showingDoc && el) return el.innerHTML;
-    const esc = (t: string) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
-    const multi = speakers > 1;
-    return (
-      `<h1 style="font-size:18pt">${esc(title)}</h1>` +
-      meeting.transcript
-        .map((p) => {
-          const time = typeof p.t === "number" ? `<span style="color:#666">[${formatDuration(Math.floor(p.t))}]</span> ` : "";
-          const who = multi ? `<strong>Speaker ${p.speaker + 1}:</strong> ` : "";
-          return `<p style="margin:0 0 6pt">${time}${who}${esc(p.text)}</p>`;
-        })
-        .join("")
-    );
+  const warmExport = () => {
+    if (preloaded.current) return;
+    preloaded.current = true;
+    preloadExport();
   };
 
-  const exportWord = () => {
-    const html = exportHtml();
-    const source =
-      "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Export</title></head><body>" +
-      html +
-      "</body></html>";
-    download(new Blob([source], { type: "application/msword" }), `${currentName}-${fileStamp()}.doc`);
-  };
-
-  const exportPdf = async () => {
-    setPdfBusy(true);
-    setExportError(null);
+  const runExport = async (kind: ExportKind) => {
+    setExportNote(null);
+    const target = showingDoc ? "document" : "transcript";
+    // Old APKs without the native plugins: handled synchronously so the clipboard copy stays
+    // inside the tap.
+    if (kind === "pdf" && nativePdfMissing()) {
+      setExportNote({ tone: "error", text: "Update the app to make PDFs here. Try Word or Text instead." });
+      return;
+    }
+    if (kind !== "pdf" && nativeFileShareMissing()) {
+      copyTextSync(currentText);
+      setExportNote({ tone: "error", text: "Update the app to share files. The text is copied to your clipboard instead." });
+      return;
+    }
+    setExportBusy(kind);
     try {
-      const html2pdf = (await import("html2pdf.js")).default;
-      await html2pdf()
-        .set({
-          margin: 0.75,
-          filename: `${currentName}-${fileStamp()}.pdf`,
-          image: { type: "jpeg", quality: 0.98 },
-          html2canvas: { scale: window.innerWidth < 768 ? 1 : 2 },
-          jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
-        } as Record<string, unknown>)
-        .from(
-          Object.assign(document.createElement("div"), {
-            innerHTML: `<div style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.5;color:#111">${exportHtml()}</div>`,
-          })
-        )
-        .save();
+      const file = await buildExport({ kind, target, meeting: exportMeeting });
+      await shareOrSave(file, title); // "cancelled" and "printed" show no message
     } catch (e) {
-      console.error("PDF export failed:", e);
-      setExportError("Couldn't make the PDF. Try Word or TXT instead.");
+      console.error("Export failed:", e);
+      const code = e instanceof ExportError ? e.code : undefined;
+      const text =
+        code === "SHARE_FAILED"
+          ? "Couldn't open the share sheet. Try Copy text instead."
+          : kind === "pdf"
+            ? "Couldn't make the PDF. Try Word or Text instead."
+            : kind === "docx"
+              ? "Couldn't make the Word file. Try PDF or Text instead."
+              : "Couldn't save the text file. Try Copy text instead.";
+      setExportNote({ tone: "error", text });
     } finally {
-      setPdfBusy(false);
+      setExportBusy(null);
     }
   };
 
   const share = async () => {
-    setExportError(null);
+    setExportNote(null);
+    setExportBusy("share");
     try {
-      await navigator.share({ title, text: currentText });
+      await shareText(currentText, title);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return; // user cancelled
-      setExportError("Couldn't share. Try TXT instead.");
+      console.error("Share failed:", e);
+      setExportNote({ tone: "error", text: "Couldn't open the share sheet. Try Copy text instead." });
+    } finally {
+      setExportBusy(null);
     }
   };
 
@@ -318,17 +294,23 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
   );
 
   const exportPanel = (
-    <Panel className="p-5" aria-label="Export">
+    <Panel className="p-5" aria-label="Export" onPointerEnter={warmExport} onFocus={warmExport}>
       <ExportButtons
         name={currentName}
-        canShare={canShare}
+        busy={exportBusy}
+        disabled={nothingToExport}
         onShare={share}
-        onTxt={exportTxt}
-        onWord={exportWord}
-        onPdf={exportPdf}
-        pdfBusy={pdfBusy}
+        onTxt={() => runExport("txt")}
+        onWord={() => runExport("docx")}
+        onPdf={() => runExport("pdf")}
       />
-      {exportError && <p className="mt-3 text-meta text-danger" role="alert">{exportError}</p>}
+      {nothingToExport && <p className="mt-2 text-meta text-muted-foreground">This meeting has nothing to export yet.</p>}
+      {exportNote &&
+        (exportNote.tone === "error" ? (
+          <p className="mt-2 text-meta text-danger" role="alert">{exportNote.text}</p>
+        ) : (
+          <p className="mt-2 text-meta text-success" role="status">{exportNote.text}</p>
+        ))}
       <div className="mt-4 border-t border-border pt-4">{deleteButton}</div>
     </Panel>
   );
@@ -440,7 +422,7 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
           </div>
 
           <Panel className="px-5 py-6 sm:px-8 sm:py-8">
-            <div id="export-body">
+            <div>
               {showingDoc ? (
                 <article className="prose prose-stone max-w-[72ch] dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-h1:mb-3 prose-h1:mt-10 prose-h1:text-lg first:prose-h1:mt-0 prose-h2:text-base prose-p:leading-7 prose-li:my-1 prose-table:text-meta prose-th:bg-muted/60 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 [&_table]:block [&_table]:overflow-x-auto">
                   <Markdown remarkPlugins={[remarkGfm]}>{doc!}</Markdown>
@@ -517,13 +499,15 @@ export function MeetingView({ meeting }: { meeting: MeetingData }) {
 
 function ExportButtons(props: {
   name: string;
-  canShare: boolean;
+  busy: ExportKind | "share" | null;
+  disabled: boolean;
   onShare: () => void;
   onTxt: () => void;
   onWord: () => void;
   onPdf: () => void;
-  pdfBusy: boolean;
 }) {
+  const any = props.busy !== null;
+  const off = (k: ExportKind | "share") => props.disabled || (any && props.busy !== k);
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">
@@ -531,21 +515,19 @@ function ExportButtons(props: {
         <span className="text-meta text-muted-foreground">{props.name}</span>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
-        <Button onClick={props.onPdf} loading={props.pdfBusy} icon={<FileDown className="h-4 w-4" />} className="px-2">
+        <Button onClick={props.onPdf} loading={props.busy === "pdf"} disabled={off("pdf")} icon={<FileDown className="h-4 w-4" />} className="px-2">
           PDF
         </Button>
-        <Button onClick={props.onWord} icon={<FileType className="h-4 w-4" />} className="px-2">
+        <Button onClick={props.onWord} loading={props.busy === "docx"} disabled={off("docx")} icon={<FileType className="h-4 w-4" />} className="px-2">
           Word
         </Button>
-        <Button onClick={props.onTxt} icon={<FileText className="h-4 w-4" />} className="px-2">
+        <Button onClick={props.onTxt} loading={props.busy === "txt"} disabled={off("txt")} icon={<FileText className="h-4 w-4" />} className="px-2">
           Text
         </Button>
       </div>
-      {props.canShare && (
-        <Button onClick={props.onShare} icon={<Share2 className="h-4 w-4" />} className="mt-2 w-full">
-          Share
-        </Button>
-      )}
+      <Button onClick={props.onShare} loading={props.busy === "share"} disabled={off("share")} icon={<Share2 className="h-4 w-4" />} className="mt-2 w-full">
+        {props.busy === "share" ? "Preparing…" : "Share meeting"}
+      </Button>
     </>
   );
 }
