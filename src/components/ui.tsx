@@ -135,7 +135,7 @@ export function OptionList<T extends string>({
   label,
   disabled,
 }: {
-  options: { value: T; title: ReactNode; description?: ReactNode; aside?: ReactNode; icon?: ReactNode }[];
+  options: { value: T; title: ReactNode; description?: ReactNode; aside?: ReactNode; icon?: ReactNode; disabled?: boolean }[];
   value: T;
   onChange: (v: T) => void;
   label: string;
@@ -151,11 +151,15 @@ export function OptionList<T extends string>({
             type="button"
             role="radio"
             aria-checked={on}
+            aria-disabled={o.disabled || undefined}
             disabled={disabled}
-            onClick={() => onChange(o.value)}
+            onClick={() => {
+              if (!o.disabled) onChange(o.value);
+            }}
             className={cx(
               "flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors disabled:opacity-60",
-              on ? "bg-accent/[0.06]" : "bg-card hover:bg-muted/60"
+              o.disabled && "cursor-not-allowed opacity-50",
+              on ? "bg-accent/[0.06]" : o.disabled ? "bg-card" : "bg-card hover:bg-muted/60"
             )}
           >
             <span
@@ -179,6 +183,17 @@ export function OptionList<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+/** One-line reason under a disabled control. Renders nothing when there is no reason. */
+export function GateReason({ id, reason, icon }: { id?: string; reason: string | null | undefined; icon?: ReactNode }) {
+  if (!reason) return null;
+  return (
+    <p id={id} className="mt-2 flex items-center gap-1.5 text-meta text-muted-foreground">
+      {icon}
+      {reason}
+    </p>
   );
 }
 

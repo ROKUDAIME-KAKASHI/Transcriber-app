@@ -24,7 +24,8 @@ import { useLocalUser } from "./SyncProvider";
 import { ShareMenu } from "./ShareMenu";
 import type { ExportKind, ExportMeeting } from "@/lib/export/types";
 import { TranscriptView } from "./TranscriptView";
-import { Badge, Button, FieldLabel, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
+import { useFeatureGate } from "@/lib/featureGate";
+import { Badge, Button, FieldLabel, GateReason, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
 
 export interface MeetingData {
   id: string;
@@ -364,6 +365,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const isPhone = /iPhone|iPad|Android/i.test(meeting.deviceName ?? "");
   const DeviceIcon = isPhone ? Smartphone : Monitor;
   const hasTranscript = meeting.transcript.length > 0;
+  const aiGate = useFeatureGate("ai");
 
   const deleteButton = (
     <Button
@@ -577,11 +579,14 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
                 className="w-full"
                 loading={busy}
                 icon={<Sparkles className="h-4 w-4" />}
-                disabled={!hasTranscript}
+                disabled={!hasTranscript || !aiGate.enabled}
+                aria-disabled={!hasTranscript || !aiGate.enabled}
+                aria-describedby={aiGate.reason ? "ai-gate-reason" : undefined}
                 onClick={generate}
               >
                 {busy ? (status ?? "Writing… this can take a minute") : doc ? `Regenerate ${docWord}` : `Create ${docWord}`}
               </Button>
+              <GateReason id="ai-gate-reason" reason={aiGate.reason} />
               {!hasTranscript && <p className="text-meta text-muted-foreground">This meeting has no transcript to work from.</p>}
               {error && (
                 <p className="text-meta text-danger" role="alert">
