@@ -105,7 +105,8 @@ function TranscriptViewImpl({
   const visible = windowMode === "tail" ? paragraphs.slice(hidden) : paragraphs.slice(0, shown);
   const showLive = !!interimText || !!liveStatus;
 
-  const [renaming, setRenaming] = useState<{ index: number; speaker: number } | null>(null);
+  // Keyed by speaker id, not by paragraph index: indexes shift while recording (tail window, merged paragraphs).
+  const [renaming, setRenaming] = useState<{ speaker: number } | null>(null);
   const chipRefs = useRef(new Map<number, HTMLButtonElement>());
   const [hintSeen, setHintSeen] = useState(true);
   useEffect(() => {
@@ -122,10 +123,17 @@ function TranscriptViewImpl({
     } catch {}
     setHintSeen(true);
   };
+  const chipShownAt = (i: number) => {
+    const p = visible[i];
+    const prev = i > 0 ? visible[i - 1] : windowMode === "tail" && hidden > 0 ? paragraphs[hidden - 1] : undefined;
+    return multiSpeaker && !!p && (!prev || prev.speaker !== p.speaker);
+  };
+  // The sheet opens at the first visible chip of the speaker being renamed.
+  const renameHost = renaming ? visible.findIndex((p, i) => p.speaker === renaming.speaker && chipShownAt(i)) : -1;
   const closeRename = () => {
-    const idx = renaming?.index;
+    const idx = renameHost;
     setRenaming(null);
-    if (idx !== undefined) requestAnimationFrame(() => chipRefs.current.get(idx)?.focus());
+    if (idx >= 0) requestAnimationFrame(() => chipRefs.current.get(idx)?.focus());
   };
 
   const shownStatus = useShownStatus(speakerStatus);
@@ -196,8 +204,7 @@ function TranscriptViewImpl({
       {windowMode === "tail" && hidden > 0 && more}
       <div className="space-y-5">
         {visible.map((p, i) => {
-          const prev = i > 0 ? visible[i - 1] : windowMode === "tail" && hidden > 0 ? paragraphs[hidden - 1] : undefined;
-          const showSpeaker = multiSpeaker && (!prev || prev.speaker !== p.speaker);
+          const showSpeaker = chipShownAt(i);
           return (
             <div key={i} className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[4rem_minmax(0,1fr)] sm:gap-x-4">
               <span className="pt-[3px] text-meta tabular-nums text-muted-foreground">
@@ -209,18 +216,18 @@ function TranscriptViewImpl({
                     <SpeakerChip
                       speaker={p.speaker}
                       label={speakerLabel(p.speaker, speakerNames)}
-                      expanded={renaming?.index === i}
+                      expanded={renameHost === i}
                       buttonRef={(el) => {
                         if (el) chipRefs.current.set(i, el);
                         else chipRefs.current.delete(i);
                       }}
                       onClick={
                         onRenameSpeaker
-                          ? () => (renaming?.index === i ? closeRename() : setRenaming({ index: i, speaker: p.speaker }))
+                          ? () => (renameHost === i ? closeRename() : setRenaming({ speaker: p.speaker }))
                           : undefined
                       }
                     />
-                    {onRenameSpeaker && renaming?.index === i && (
+                    {onRenameSpeaker && renameHost === i && (
                       <RenameSpeakerSheet
                         speaker={p.speaker}
                         currentName={speakerNames?.[String(p.speaker)]}
