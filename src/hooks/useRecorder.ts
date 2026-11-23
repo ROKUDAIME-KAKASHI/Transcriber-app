@@ -999,18 +999,28 @@ export function useRecorder(opts: {
       saved = await save("DONE");
     }
     if (saved && relabelDoneRef.current) {
-      // Server-direct recording: push the refined labels (best effort; vectors never leave the device).
+      // Server-direct recording: push the refined labels with retries (vectors never leave the device).
       const id = meetingIdRef.current;
       const names = relabelNamesRef.current;
       if (id) {
-        void fetch(`/api/meetings/${id}/speakers`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            parts: partsRef.current.map((p, i) => ({ index: i, speaker: p.speaker })).slice(0, 60000),
-            ...(names && Object.keys(names).length ? { speakerNames: names } : {}),
-          }),
-        }).catch(() => {});
+        const body = JSON.stringify({
+          parts: partsRef.current.map((p, i) => ({ index: i, speaker: p.speaker })).slice(0, 60000),
+          ...(names && Object.keys(names).length ? { speakerNames: names } : {}),
+        });
+        // Retry like the final save: a lost request would leave stale live labels on the server for good.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt) await new Promise((r) => setTimeout(r, 1500 * attempt));
+          try {
+            const res = await fetch(`/api/meetings/${id}/speakers`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body,
+            });
+            if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429)) break;
+          } catch {
+            /* retry */
+          }
+        }
       }
     }
     patch({
