@@ -13,7 +13,7 @@ import {
 import type { ModelName } from "@/lib/speech/models";
 import { VoiceChunker } from "@/lib/speech/voiceChunker";
 import { cleanPhrase } from "@/lib/speech/cleanText";
-import { createLocal, getMeta, purge, putEmbeddings, putParts, setRelabel, setSpeakerNames, touchRecording } from "@/lib/local/repo";
+import { createLocal, getMeta, purge, putEmbeddings, putParts, setSpeakerNames, touchRecording } from "@/lib/local/repo";
 import { newMeetingId } from "@/lib/local/ids";
 import { flush, markRecording, poke, type FlushResult } from "@/lib/local/sync";
 import { useLocalUser } from "@/components/SyncProvider";
@@ -237,6 +237,8 @@ export function useRecorder(opts: {
   const speakerNamesRef = useRef<Record<string, string> | null>(null);
   const relabelNamesRef = useRef<Record<string, string> | null>(null);
   const relabelDoneRef = useRef(false);
+  /** Refined names waiting to be written together with the refined parts (one IndexedDB transaction). */
+  const pendingRelabelRef = useRef<{ names: Record<string, string> | null } | null>(null);
 
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
 
@@ -290,7 +292,9 @@ export function useRecorder(opts: {
   const saveLocal = async (id: string, status?: "DONE", closing = false): Promise<boolean> => {
     const uid = localUserRef.current.userId;
     dirtyRef.current = false;
-    const ok = uid ? await putParts(uid, id, partsRef.current, secondsRef.current, status) : false;
+    const relabel = pendingRelabelRef.current ?? undefined;
+    const ok = uid ? await putParts(uid, id, partsRef.current, secondsRef.current, status, relabel) : false;
+    if (ok && relabel && pendingRelabelRef.current === relabel) pendingRelabelRef.current = null;
     if (!uid || !ok) return saveToServer(id, status, closing);
     // No keepalive tail PATCH here: the data is in IndexedDB and the engine uploads it (a stale
     // fire-and-forget PATCH could truncate the server transcript).
@@ -455,6 +459,7 @@ export function useRecorder(opts: {
     speakerNamesRef.current = null;
     relabelNamesRef.current = null;
     relabelDoneRef.current = false;
+    pendingRelabelRef.current = null;
   };
 
   /** Stop-time: drain queued embeddings, re-cluster everything, keep names on the same people. */
@@ -486,7 +491,8 @@ export function useRecorder(opts: {
         const id = meetingIdRef.current;
         if (localModeRef.current && uid && id) {
           flushEmbedBuffer();
-          await setRelabel(uid, id, hasNames ? names : hadNames ? {} : null);
+          // Written with the refined parts by the next putParts, so a sync pass never sees new names on old parts.
+          pendingRelabelRef.current = { names: hasNames ? names : hadNames ? {} : null };
         }
         speakerNamesRef.current = hasNames ? names : hadNames ? {} : null;
         relabelNamesRef.current = hasNames ? names : null;

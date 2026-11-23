@@ -73,6 +73,8 @@ export async function putParts(
   parts: TranscriptPart[],
   durationSec: number,
   status?: "DONE",
+  /** Refined speaker labels: stored in the same transaction as the parts they describe. */
+  relabel?: { names: Record<string, string> | null },
 ): Promise<boolean> {
   try {
     const db = getLocalDb(userId);
@@ -93,6 +95,11 @@ export async function putParts(
       if (status === "DONE") {
         next.status = "DONE";
         dirty.finish = true;
+      }
+      if (relabel) {
+        next.speakerNames = relabel.names;
+        next.relabelPending = 1;
+        dirty.speakers = true;
       }
       next.pending = computePending(dirty, next.deleted);
       await db.transcripts.put({ id, parts });
