@@ -249,7 +249,7 @@ function TranscriptViewImpl({
                   <span className="font-mono text-meta tabular-nums text-muted-foreground">{formatDuration(Math.floor(p.t))}</span>
                 )}
               </div>
-              <p className="mt-1 max-w-[68ch] text-reading leading-[1.6] text-foreground sm:text-base">{p.text}</p>
+              <p className="mt-1 max-w-[68ch] break-words text-reading leading-[1.6] text-foreground sm:text-base">{p.text}</p>
             </div>
           );
         })}
@@ -258,7 +258,7 @@ function TranscriptViewImpl({
           <div className="min-w-0 border-l-[3px] border-border pl-3">
             <span className="font-mono text-meta text-muted-foreground">Now</span>
             <div className="min-w-0">
-              <p className="mt-1 max-w-[68ch] text-reading leading-[1.6] text-muted-foreground sm:text-base" aria-label={interimText ? "Live transcription" : "Listening"}>
+              <p className="mt-1 max-w-[68ch] break-words text-reading leading-[1.6] text-muted-foreground sm:text-base" aria-label={interimText ? "Live transcription" : "Listening"}>
                 {interimText ? (
                   <>
                     {interimText.replace(/\s*…$/, "")}{" "}

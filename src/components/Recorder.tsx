@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
@@ -133,6 +133,12 @@ export function Recorder() {
   useEffect(() => () => setWebRecording(false), []);
   const battery = useBatteryRestriction(inApp);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /** The transcript's own scroll box (bounded on phones too, so a long meeting never runs off the page). */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const followLive = useCallback((smooth = true) => {
+    const c = scrollRef.current;
+    if (c) c.scrollTo({ top: c.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  }, []);
 
   // getDisplayMedia (tab/system audio) is desktop-only.
   useEffect(() => {
@@ -235,10 +241,13 @@ export function Recorder() {
     const el = bottomRef.current;
     let io: IntersectionObserver | undefined;
     if (el && typeof IntersectionObserver !== "undefined") {
-      io = new IntersectionObserver(([e]) => {
-        if (e.isIntersecting) setAtBottom(true);
-        else if (Date.now() - lastUserInput.current < 1000) setAtBottom(false);
-      });
+      io = new IntersectionObserver(
+        ([e]) => {
+          if (e.isIntersecting) setAtBottom(true);
+          else if (Date.now() - lastUserInput.current < 1000) setAtBottom(false);
+        },
+        { root: scrollRef.current }
+      );
       io.observe(el);
     }
     return () => {
@@ -253,12 +262,12 @@ export function Recorder() {
     if (rec.isRecording) setAtBottom(true);
   }, [rec.isRecording]);
 
-  // On phones the page itself scrolls: keep the orb and stop button on screen until the user scrolls down.
+  // Follow the newest line inside the transcript box only: the page itself never jumps, so the
+  // orb and stop button stay where the user left them.
   useEffect(() => {
     if (!rec.isRecording || !atBottom) return;
-    const wide = window.matchMedia("(min-width: 1024px)").matches;
-    if (wide || !heroVisible) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [rec.transcriptParts, rec.interimText, rec.liveStatus, rec.isRecording, atBottom, heroVisible]);
+    followLive();
+  }, [rec.transcriptParts, rec.interimText, rec.liveStatus, rec.isRecording, atBottom, followLive]);
 
   useEffect(() => {
     if (rec.noSound) haptics.warn();
@@ -672,7 +681,10 @@ export function Recorder() {
           {busy && rec.isPaused && <Badge tone="warning">Paused</Badge>}
         </PanelHeader>
 
-        <div className="scroll-thin min-h-[45dvh] flex-1 px-4 py-5 sm:px-6 lg:overflow-y-auto">
+        <div
+          ref={scrollRef}
+          className="scroll-thin h-[55dvh] min-h-64 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 lg:h-auto lg:min-h-0"
+        >
           {busy && rec.noSound && (
             <div className="mb-4 lg:hidden" role="alert">
               <NoSoundNotice />
@@ -705,11 +717,11 @@ export function Recorder() {
         </div>
 
         {busy && !atBottom && (
-          <div className="pointer-events-none sticky bottom-4 flex justify-center">
+          <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
             <button
               onClick={() => {
                 setAtBottom(true);
-                bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+                followLive();
               }}
               className="pop-in pointer-events-auto inline-flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-ui font-medium text-accent-foreground shadow-float"
             >
