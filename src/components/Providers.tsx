@@ -6,6 +6,7 @@ import { SyncProvider } from "./SyncProvider";
 import { NavTracker } from "./NavTracker";
 import { NativeBackHandler } from "./NativeBackHandler";
 import { ServiceWorkerManager } from "./ServiceWorkerManager";
+import { ToastProvider } from "./Toast";
 import { cleanupOldExports } from "@/lib/native";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -16,10 +17,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <SyncProvider>
-        <NavTracker />
-        <NativeBackHandler />
-        <ServiceWorkerManager />
-        {children}
+        <ToastProvider>
+          <NavTracker />
+          <NativeBackHandler />
+          <ServiceWorkerManager />
+          {children}
+        </ToastProvider>
       </SyncProvider>
     </AuthProvider>
   );
