@@ -498,7 +498,7 @@ export function Recorder() {
               backlog={rec.backlog}
               speakerNames={rec.speakerNames}
               speakerStatus={rec.speakerStatus}
-              onRenameSpeaker={"renameSpeaker" in rec ? rec.renameSpeaker : undefined}
+              onRenameSpeaker={nativeMode ? undefined : webRec.renameSpeaker}
               renameHint={false}
               window="tail"
             />
