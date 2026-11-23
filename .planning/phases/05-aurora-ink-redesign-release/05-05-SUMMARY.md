@@ -19,7 +19,7 @@ metrics:
 Meetings page now shows Today/Yesterday/This week/Earlier groups, one card per meeting with status and sync chips, staggered entrance, press-scale, shimmer skeletons and friendly empty/no-results states.
 
 ## Commits
-- dd589d7-range: test (RED) and feat (GREEN) for dateGroup (test(05-05), feat(05-05))
+- 34c773a: test (RED); dd589d7: feat (GREEN) for dateGroup
 - 632310a: feat(05-05) list cards, chips, stagger, empty states, skeleton
 
 ## Deviations from Plan
