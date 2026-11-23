@@ -23,20 +23,34 @@ export const Waveform = memo(function Waveform({
   const buf = useRef<number[]>([]);
   const refs = useRef<(HTMLSpanElement | null)[]>([]);
 
+  const levelRef = useRef(clamped);
   useEffect(() => {
-    if (reduced) return;
-    const b = buf.current;
-    b.push(clamped);
-    if (b.length > bars) b.splice(0, b.length - bars);
-    const floor = 4 / height;
-    const offset = bars - b.length;
-    for (let i = 0; i < bars; i++) {
-      const el = refs.current[i];
-      if (!el) continue;
-      const v = i >= offset ? b[i - offset] : 0;
-      el.style.transform = `scaleY(${Math.max(floor, v)})`;
+    levelRef.current = clamped;
+  });
+
+  // Fixed-cadence sampling so the time axis is uniform even when the level does not change.
+  useEffect(() => {
+    if (reduced) {
+      buf.current = []; // drop stale history so it does not reappear when the bars come back
+      return;
     }
-  }, [clamped, bars, height, reduced]);
+    const floor = 4 / height;
+    const tick = () => {
+      const b = buf.current;
+      b.push(levelRef.current);
+      if (b.length > bars) b.splice(0, b.length - bars);
+      const offset = bars - b.length;
+      for (let i = 0; i < bars; i++) {
+        const el = refs.current[i];
+        if (!el) continue;
+        const v = i >= offset ? b[i - offset] : 0;
+        el.style.transform = `scaleY(${Math.max(floor, v)})`;
+      }
+    };
+    tick();
+    const id = setInterval(tick, 100);
+    return () => clearInterval(id);
+  }, [bars, height, reduced]);
 
   const aria = {
     role: "meter" as const,
