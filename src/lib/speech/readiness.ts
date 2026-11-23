@@ -72,6 +72,7 @@ export async function ortCached(): Promise<boolean> {
 export type EngineReadiness = { status: ReadinessStatus; chain: ModelName[]; chainCached: boolean[]; ortCached: boolean; speakerCached: boolean };
 
 export async function engineStatus(engine: Engine): Promise<EngineReadiness> {
+  await (await import("@/lib/sw/register")).purgeStaleWorkerScripts();
   const client = await import("./client");
   const chain = chainFor(engine, client.preferredModel(engine));
   const chainCached = await Promise.all(chain.map((m) => client.cacheStatus(m)));

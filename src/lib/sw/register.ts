@@ -81,3 +81,29 @@ export function warmLazy(): void {
 export function checkForUpdate(reg: ServiceWorkerRegistration): void {
   reg.update().catch(() => {});
 }
+
+/**
+ * Removes cached copies of Turbopack worker entry scripts that were stored without their query.
+ * An offline-cache version before fab418b served such a copy for "…/turbopack-worker-*.js?params=…",
+ * and the worker then died with "Missing worker bootstrap config". Phones can keep running that old
+ * service worker for a while, so the page cleans the entry itself: on a miss the old worker fetches
+ * the script from the network (keeping its query) and the speech engine starts. Never throws.
+ */
+export async function purgeStaleWorkerScripts(): Promise<number> {
+  if (typeof caches === "undefined") return 0;
+  let removed = 0;
+  try {
+    for (const name of await caches.keys()) {
+      const cache = await caches.open(name);
+      for (const req of await cache.keys()) {
+        const url = new URL(req.url);
+        if (url.pathname.includes("/turbopack-worker") && !url.search) {
+          if (await cache.delete(req)) removed++;
+        }
+      }
+    }
+  } catch {
+    /* ignore: best effort */
+  }
+  return removed;
+}

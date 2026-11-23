@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UpdateNotice, type UpdateNoticeMode } from "@/components/UpdateNotice";
 import { isRecordingActive } from "@/lib/recordingFlag";
-import { applyUpdate, checkForUpdate, registerServiceWorker, warmLazy, watchForUpdate } from "@/lib/sw/register";
+import { applyUpdate, checkForUpdate, purgeStaleWorkerScripts, registerServiceWorker, warmLazy, watchForUpdate } from "@/lib/sw/register";
 import { isChunkLoadError, shouldReloadForChunkError } from "@/lib/sw/updateCore";
 
 const LAST_RELOAD_KEY = "sw.chunkReloadAt";
@@ -24,6 +24,7 @@ export function ServiceWorkerManager() {
   useEffect(() => {
     let cancelled = false;
     const openedAt = Date.now();
+    void purgeStaleWorkerScripts();
     registerServiceWorker().then((reg) => {
       if (cancelled || !reg) return;
       regRef.current = reg;
