@@ -79,6 +79,12 @@ for (const [name, t] of themes) {
     }
   });
 
+  test(`${name}: record text passes AA`, () => {
+    check(t, "record", "card", 4.5, name);
+    check(t, "record", "background", 4.5, name);
+    check(t, "record", "muted", 4.5, name);
+  });
+
   test(`${name}: speaker colours pass AA on card`, () => {
     for (let i = 0; i < 6; i++) check(t, `speaker-${i}`, "card", 4.5, name);
   });
