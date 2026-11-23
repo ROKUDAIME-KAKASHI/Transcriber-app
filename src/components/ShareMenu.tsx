@@ -58,7 +58,6 @@ export function ShareMenu(props: ShareMenuProps) {
   // Overlay registry (Android back closes the sheet first), Escape, outside click, focus, scroll lock.
   useEffect(() => {
     if (!open) return;
-    const anchor = anchorRef.current;
     const unregister = pushOverlay(() => onCloseRef.current());
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") onCloseRef.current();
@@ -83,9 +82,15 @@ export function ShareMenu(props: ShareMenuProps) {
       document.removeEventListener("pointerdown", onPointer);
       document.body.style.overflow = prevOverflow;
       cancelAnimationFrame(focusId);
-      anchor?.focus();
     };
   }, [open, desktop, anchorRef]);
+
+  // Return focus to the trigger only when the menu closes (not when `desktop` flips while open).
+  useEffect(() => {
+    if (!open) return;
+    const anchor = anchorRef.current;
+    return () => anchor?.focus();
+  }, [open, anchorRef]);
 
   if (!mounted && !open) return null;
 
@@ -158,10 +163,9 @@ export function ShareMenu(props: ShareMenuProps) {
         aria-hidden
       />
       <div
-        ref={menuRef}
-        role="menu"
-        aria-label="Share options"
-        onKeyDown={onMenuKey}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Share"
         className={cx(
           "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-panel border-t border-border/70 bg-card shadow-float transition-transform",
           shown && open ? "translate-y-0 duration-[var(--dur-3)] ease-[var(--ease-in-out)]" : "translate-y-full duration-150 ease-in"
@@ -169,7 +173,9 @@ export function ShareMenu(props: ShareMenuProps) {
       >
         <div className="pb-4">
           <div className="mx-auto mt-2 mb-2 h-1 w-9 rounded-full bg-border" aria-hidden />
-          {rows}
+          <div ref={menuRef} role="menu" aria-label="Share options" onKeyDown={onMenuKey}>
+            {rows}
+          </div>
           <div className="px-4">
             <Button variant="ghost" className="mt-2 min-h-11 w-full" onClick={onClose}>
               Close share menu
