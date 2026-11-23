@@ -440,7 +440,16 @@ export function Recorder() {
           </div>
 
           {mode === "calm" && (
-            <p className="mt-2 text-[13px] text-muted-foreground">Calm mode saves battery. Tap to show the animation.</p>
+            <p className="mt-2 text-[13px] text-muted-foreground">
+              Calm mode saves battery.{" "}
+              <button
+                type="button"
+                onClick={() => setBoostUntil(Date.now() + CALM_BOOST_MS)}
+                className="font-semibold text-accent underline underline-offset-2"
+              >
+                Show animation
+              </button>
+            </p>
           )}
 
           <p className="mx-auto mt-2 min-h-[1.25rem] max-w-[30ch] text-[13px] text-muted-foreground" aria-live="polite">
