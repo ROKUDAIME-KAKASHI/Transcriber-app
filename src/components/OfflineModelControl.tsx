@@ -50,6 +50,8 @@ export function OfflineModelControl({
   const { readiness, refresh } = useOfflineReadiness(engine);
   const [downloading, setDownloading] = useState(false);
   const [failed, setFailed] = useState(false);
+  /** The underlying error, shown small under the message so failures on a phone can be diagnosed. */
+  const [failReason, setFailReason] = useState("");
   const [pct, setPct] = useState(0);
   const [announce, setAnnounce] = useState("");
   const abortRef = useRef<AbortController | null>(null);
@@ -83,6 +85,7 @@ export function OfflineModelControl({
     const ctl = new AbortController();
     abortRef.current = ctl;
     setFailed(false);
+    setFailReason("");
     setPct(0);
     setDownloading(true);
     try {
@@ -97,7 +100,10 @@ export function OfflineModelControl({
         ctl.signal
       );
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === "AbortError")) setFailed(true);
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        setFailed(true);
+        setFailReason(String((err as { message?: string })?.message ?? err).slice(0, 200));
+      }
     } finally {
       abortRef.current = null;
       setDownloading(false);
@@ -165,6 +171,7 @@ export function OfflineModelControl({
             <p role="alert" className="text-meta text-danger">
               Couldn&apos;t finish the download. Check your connection and try again.
             </p>
+            {failReason && <p className="text-meta text-muted-foreground break-words">Details: {failReason}</p>}
             <Button variant="secondary" onClick={start} disabled={disabled || offline}>
               Try again
             </Button>

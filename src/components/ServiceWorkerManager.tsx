@@ -7,6 +7,8 @@ import { applyUpdate, checkForUpdate, registerServiceWorker, warmLazy, watchForU
 import { isChunkLoadError, shouldReloadForChunkError } from "@/lib/sw/updateCore";
 
 const LAST_RELOAD_KEY = "sw.chunkReloadAt";
+/** A waiting update found this soon after the app opened is applied straight away (if not recording). */
+const AUTO_APPLY_WINDOW_MS = 20_000;
 
 export function ServiceWorkerManager() {
   const regRef = useRef<ServiceWorkerRegistration | null>(null);
@@ -21,10 +23,18 @@ export function ServiceWorkerManager() {
 
   useEffect(() => {
     let cancelled = false;
+    const openedAt = Date.now();
     registerServiceWorker().then((reg) => {
       if (cancelled || !reg) return;
       regRef.current = reg;
-      watchForUpdate(reg, () => {
+      watchForUpdate(reg, async () => {
+        // Just opened and nothing recording: switch to the new version now. The reload costs
+        // nothing yet, and fixes reach phones without anyone having to spot the update notice
+        // (the Android app keeps the old version running until it is applied).
+        if (Date.now() - openedAt < AUTO_APPLY_WINDOW_MS && !(await isRecordingActive().catch(() => true))) {
+          applyUpdate(reg);
+          return;
+        }
         setDismissed(false);
         setWaiting(true);
         refreshRecording();
