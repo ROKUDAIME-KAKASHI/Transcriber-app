@@ -215,7 +215,7 @@ export function OptionList<T extends string>({
               aria-hidden
               className={cx(
                 "mt-[3px] grid h-4 w-4 shrink-0 place-items-center rounded-full border-[1.5px]",
-                on ? "border-accent" : "border-muted-foreground/50"
+                on ? "border-accent" : "border-muted-foreground/70"
               )}
             >
               {on && <span className="h-2 w-2 rounded-full bg-accent" />}
@@ -381,7 +381,7 @@ export function Switch({
         }}
         className={cx(
           "relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-[var(--dur-2)]",
-          checked ? "bg-accent" : "bg-border"
+          checked ? "bg-accent" : "bg-muted-foreground/45"
         )}
       >
         <span

@@ -363,7 +363,7 @@ export function Recorder() {
           <div
             className={cx(
               "mt-2 font-mono text-display font-normal tabular-nums tracking-[-0.02em]",
-              busy || starting ? "text-foreground" : "text-muted-foreground/60"
+              busy || starting ? "text-foreground" : "text-muted-foreground"
             )}
           >
             {formatDuration(rec.recordingSeconds)}
