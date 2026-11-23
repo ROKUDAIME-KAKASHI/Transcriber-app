@@ -403,7 +403,7 @@ export async function applySyncResult(userId: string, id: string, r: SyncResultP
 export async function applyPull(userId: string, rows: ServerMeetingMeta[], ids: string[]): Promise<string[]> {
   try {
     const db = getLocalDb(userId);
-    return await db.transaction("rw", db.meetings, db.transcripts, async () => {
+    return await db.transaction("rw", db.meetings, db.transcripts, db.embeddings, async () => {
       const refetch: string[] = [];
       for (const s of rows) {
         const existing = await db.meetings.get(s.id);
@@ -420,6 +420,7 @@ export async function applyPull(userId: string, rows: ServerMeetingMeta[], ids: 
         if (plan === "remove") {
           await db.meetings.delete(local.id);
           await db.transcripts.delete(local.id);
+          await db.embeddings.where("meetingId").equals(local.id).delete();
         } else if (plan === "recreate") {
           const dirty = { ...local.dirty, create: true, tail: true };
           await db.meetings.put({ ...local, savedParts: 0, dirty, pending: computePending(dirty, local.deleted) });
