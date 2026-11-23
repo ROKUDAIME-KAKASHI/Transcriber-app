@@ -966,6 +966,8 @@ export function useRecorder(opts: {
     // Wait for the device to finish transcribing the last phrases.
     if (pendingSegmentsRef.current.size) patch({ statusMsg: "Finishing transcription…" });
     await Promise.all([...pendingSegmentsRef.current]);
+    // Device-first checkpoint of everything transcribed before the optional (slow) refinement.
+    try { await save(); } catch { /* the final save below retries */ }
     await refineSpeakers(); // no-op unless on-device diarization ran; never throws
     // Autosave has stopped by now, so retry the final save a few times (phones drop requests).
     if (localModeRef.current) {
