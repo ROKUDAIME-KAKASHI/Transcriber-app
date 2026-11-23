@@ -140,7 +140,7 @@ export function ShareMenu(props: ShareMenuProps) {
         role="menu"
         aria-label="Share options"
         onKeyDown={onMenuKey}
-        className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-xl border border-border bg-card"
+        className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-panel border border-border/70 bg-card shadow-float"
       >
         {rows}
       </div>
@@ -152,7 +152,7 @@ export function ShareMenu(props: ShareMenuProps) {
       <div
         className={cx(
           "fixed inset-0 z-30 bg-black/40 transition-opacity",
-          shown && open ? "opacity-100 duration-200" : "opacity-0 duration-150"
+          shown && open ? "opacity-100 duration-[var(--dur-2)]" : "opacity-0 duration-150"
         )}
         onClick={onClose}
         aria-hidden
@@ -163,8 +163,8 @@ export function ShareMenu(props: ShareMenuProps) {
         aria-label="Share options"
         onKeyDown={onMenuKey}
         className={cx(
-          "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-panel border-t border-border bg-card transition-transform",
-          shown && open ? "translate-y-0 duration-200 ease-out" : "translate-y-full duration-150 ease-in"
+          "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-panel border-t border-border/70 bg-card shadow-float transition-transform",
+          shown && open ? "translate-y-0 duration-[var(--dur-3)] ease-[var(--ease-in-out)]" : "translate-y-full duration-150 ease-in"
         )}
       >
         <div className="pb-4">
@@ -189,11 +189,11 @@ function Row(props: { icon: React.ReactNode; title: string; description: string;
       aria-disabled={props.disabled ? "true" : undefined}
       onClick={props.onClick}
       className={cx(
-        "flex min-h-14 w-full items-start gap-3 px-4 py-2 text-left hover:bg-muted active:bg-muted",
+        "flex min-h-14 w-full items-start gap-3 px-4 py-2 text-left transition-[transform,background-color] duration-[var(--dur-1)] hover:bg-muted/60 enabled:active:scale-[0.98] active:bg-muted",
         props.disabled && "opacity-50"
       )}
     >
-      <span className="mt-1 shrink-0 text-muted-foreground">{props.icon}</span>
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-chip bg-muted text-muted-foreground">{props.icon}</span>
       <span className="min-w-0">
         <span className="block text-ui font-semibold">{props.title}</span>
         <span className="mt-1 block text-meta text-muted-foreground">{props.description}</span>

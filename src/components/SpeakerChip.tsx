@@ -4,7 +4,7 @@ import type { Ref } from "react";
 import { Pencil } from "lucide-react";
 
 const SPEAKER_COLORS = 6;
-const speakerColor = (s: number) => `var(--speaker-${s % SPEAKER_COLORS})`;
+export const speakerColor = (s: number) => `var(--speaker-${s % SPEAKER_COLORS})`;
 
 /** A speaker's name in their colour. Tappable (opens rename) when `onClick` is given. */
 export function SpeakerChip({
@@ -21,10 +21,19 @@ export function SpeakerChip({
   buttonRef?: Ref<HTMLButtonElement>;
 }) {
   const color = speakerColor(speaker);
+  const avatar = (
+    <span
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-meta font-semibold"
+      style={{ color, background: `color-mix(in oklab, ${color} 16%, var(--card))` }}
+      aria-hidden
+    >
+      {(label.trim()[0] ?? "?").toUpperCase()}
+    </span>
+  );
   if (!onClick) {
     return (
-      <span className="mb-1 flex items-center gap-2 text-meta font-semibold" style={{ color }}>
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
+      <span className="inline-flex h-8 items-center gap-2 rounded-full bg-muted/60 pl-1 pr-3 text-meta font-semibold" style={{ color }}>
+        {avatar}
         <span className="max-w-[12rem] truncate" title={label}>
           {label}
         </span>
@@ -40,9 +49,9 @@ export function SpeakerChip({
         aria-label={`Rename ${label}`}
         aria-haspopup="dialog"
         aria-expanded={!!expanded}
-        className="group inline-flex h-7 items-center gap-2 rounded-full px-2 text-meta font-semibold transition-colors hover:bg-muted active:bg-muted"
+        className="group inline-flex h-8 items-center gap-2 rounded-full bg-muted/60 pl-1 pr-3 text-meta font-semibold transition-[transform,background-color] duration-[var(--dur-1)] hover:bg-muted active:scale-[0.96]"
       >
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
+        {avatar}
         <span className="max-w-[12rem] truncate" style={{ color }} title={label}>
           {label}
         </span>

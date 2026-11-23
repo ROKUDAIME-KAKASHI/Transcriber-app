@@ -4,7 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Info, Loader2, X } from "lucide-react";
 import { formatDuration, speakerLabel, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
 import type { SpeakerStatus } from "@/lib/speech/diarize";
-import { SpeakerChip } from "./SpeakerChip";
+import { SpeakerChip, speakerColor } from "./SpeakerChip";
 import { RenameSpeakerSheet } from "./RenameSpeakerSheet";
 
 /**
@@ -202,17 +202,18 @@ function TranscriptViewImpl({
         </div>
       )}
       {windowMode === "tail" && hidden > 0 && more}
-      <div className="space-y-5">
+      <div className="space-y-4">
         {visible.map((p, i) => {
           const showSpeaker = chipShownAt(i);
           return (
-            <div key={i} className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[4rem_minmax(0,1fr)] sm:gap-x-4">
-              <span className="pt-[3px] text-meta tabular-nums text-muted-foreground">
-                {typeof p.t === "number" ? formatDuration(Math.floor(p.t)) : ""}
-              </span>
-              <div className="min-w-0">
+            <div
+              key={i}
+              className={`min-w-0 border-l-[3px] pl-3${windowMode === "tail" ? " text-in" : ""}`}
+              style={{ borderColor: speakerColor(p.speaker) }}
+            >
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 {showSpeaker && (
-                  <div className="relative mb-1">
+                  <div className="relative">
                     <SpeakerChip
                       speaker={p.speaker}
                       label={speakerLabel(p.speaker, speakerNames)}
@@ -244,17 +245,20 @@ function TranscriptViewImpl({
                     )}
                   </div>
                 )}
-                <p className="max-w-[68ch] text-base leading-7 text-foreground">{p.text}</p>
+                {typeof p.t === "number" && (
+                  <span className="font-mono text-meta tabular-nums text-muted-foreground">{formatDuration(Math.floor(p.t))}</span>
+                )}
               </div>
+              <p className="mt-1 max-w-[68ch] text-reading leading-[1.6] text-foreground sm:text-base">{p.text}</p>
             </div>
           );
         })}
 
         {showLive && (
-          <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[4rem_minmax(0,1fr)] sm:gap-x-4">
-            <span className="pt-[3px] text-meta text-muted-foreground">Now</span>
+          <div className="min-w-0 border-l-[3px] border-border pl-3">
+            <span className="font-mono text-meta text-muted-foreground">Now</span>
             <div className="min-w-0">
-              <p className="max-w-[68ch] text-base leading-7 text-muted-foreground" aria-label={interimText ? "Live transcription" : "Listening"}>
+              <p className="mt-1 max-w-[68ch] text-reading leading-[1.6] text-muted-foreground sm:text-base" aria-label={interimText ? "Live transcription" : "Listening"}>
                 {interimText ? (
                   <>
                     {interimText.replace(/\s*…$/, "")}{" "}

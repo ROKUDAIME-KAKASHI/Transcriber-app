@@ -86,20 +86,30 @@ export function RenameSpeakerSheet({
 
   return (
     <>
-      <div className="fixed inset-0 z-30 bg-foreground/30 lg:hidden" onClick={onClose} aria-hidden />
+      <div
+        className={"fixed inset-0 z-30 bg-black/40 transition-opacity duration-[var(--dur-2)] lg:hidden " + (shown ? "opacity-100" : "opacity-0")}
+        onClick={onClose}
+        aria-hidden
+      />
       <div
         ref={panelRef}
         role="dialog"
         aria-label="Rename speaker"
         aria-modal={!desktop}
         className={
-          "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-panel border border-border bg-card p-4 transition duration-150 " +
-          "lg:absolute lg:inset-x-auto lg:bottom-auto lg:left-0 lg:top-full lg:z-30 lg:mt-2 lg:w-72 lg:rounded-xl " +
-          (shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0")
+          "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-panel border border-border/70 bg-card p-4 shadow-float transition-[transform,opacity] duration-[var(--dur-3)] ease-[var(--ease-in-out)] " +
+          "lg:absolute lg:inset-x-auto lg:bottom-auto lg:left-0 lg:top-full lg:z-30 lg:mt-2 lg:w-72 lg:rounded-panel " +
+          (shown ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 lg:translate-y-2")
         }
       >
         <div className="mb-3 flex items-center gap-2 text-ui font-semibold">
-          <span className="h-2 w-2 rounded-full" style={{ background: color }} aria-hidden />
+          <span
+            className="flex h-5 w-5 items-center justify-center rounded-full text-meta font-semibold"
+            style={{ color, background: `color-mix(in oklab, ${color} 16%, var(--card))` }}
+            aria-hidden
+          >
+            {String(speaker + 1)}
+          </span>
           Rename speaker
         </div>
         <FieldLabel htmlFor={inputId}>Name</FieldLabel>
