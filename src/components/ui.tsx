@@ -110,6 +110,23 @@ export function Segmented<T extends string>({
     <div
       role={tabs ? "tablist" : "radiogroup"}
       aria-label={label}
+      onKeyDown={(e) => {
+        const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"];
+        if (disabled || !keys.includes(e.key)) return;
+        const enabled = options.filter((o) => !o.disabled);
+        if (enabled.length === 0) return;
+        const cur = enabled.findIndex((o) => o.value === value);
+        let next = cur;
+        if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = enabled.length - 1;
+        else if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (cur + 1) % enabled.length;
+        else next = (cur - 1 + enabled.length) % enabled.length;
+        e.preventDefault();
+        const target = enabled[next];
+        onChange(target.value);
+        const btn = e.currentTarget.querySelectorAll<HTMLButtonElement>("button")[options.indexOf(target)];
+        btn?.focus();
+      }}
       className={cx("relative grid gap-1 rounded-btn bg-muted p-1", className)}
       style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
     >
@@ -136,6 +153,7 @@ export function Segmented<T extends string>({
             aria-checked={tabs ? undefined : on}
             aria-selected={tabs ? on : undefined}
             aria-controls={tabs ? o.controls : undefined}
+            tabIndex={on || (index < 0 && o === options[0]) ? 0 : -1}
             aria-disabled={o.disabled || undefined}
             disabled={disabled}
             onClick={() => {

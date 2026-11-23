@@ -657,13 +657,13 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
           haptics.tap();
         }}
         options={[
-          { value: "document", label: docName },
-          { value: "transcript", label: "Transcript" },
+          { value: "document", label: docName, id: "meeting-tab-document", controls: "meeting-tabpanel" },
+          { value: "transcript", label: "Transcript", id: "meeting-tab-transcript", controls: "meeting-tabpanel" },
         ]}
         className="mb-4 max-w-[320px]"
       />
 
-      <div key={tab} className="text-in space-y-4">
+      <div key={tab} id="meeting-tabpanel" role="tabpanel" aria-labelledby={`meeting-tab-${tab}`} className="text-in space-y-4">
         {tab === "document" ? (
           doc ? (
             <>
