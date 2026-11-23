@@ -46,7 +46,7 @@
 
 ### Release
 
-- [ ] **REL-01**: A new signed release APK with the new native plugins is built and verified on the Xiaomi phone (export, share, offline open, offline record)
+- [x] **REL-01**: A new signed release APK with the new native plugins is built and verified on the Xiaomi phone (export, share, offline open, offline record)
 
 ## v2 Requirements
 
@@ -100,7 +100,7 @@
 | UI-03 | Phase 5 | Complete |
 | UI-04 | Phase 5 | Complete |
 | UI-05 | Phase 5 | Complete |
-| REL-01 | Phase 5 | Pending |
+| REL-01 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 25 total
