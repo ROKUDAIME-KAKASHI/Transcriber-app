@@ -344,6 +344,14 @@ h2 {
   }
 }
 
+/* Busy spinners keep turning under reduced motion: they are a status cue, not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
 html[data-motion="reduced"] *,
 html[data-motion="reduced"] *::before,
 html[data-motion="reduced"] *::after {
@@ -351,4 +359,9 @@ html[data-motion="reduced"] *::after {
   animation-iteration-count: 1 !important;
   animation-delay: 0s !important;
   transition-duration: 0.001ms !important;
+}
+
+html[data-motion="reduced"] .animate-spin {
+  animation-duration: 1.2s !important;
+  animation-iteration-count: infinite !important;
 }
