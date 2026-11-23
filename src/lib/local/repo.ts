@@ -99,6 +99,7 @@ export async function putParts(
       if (relabel) {
         next.speakerNames = relabel.names;
         next.relabelPending = 1;
+        next.speakersRev = (row.speakersRev ?? 0) + 1;
         dirty.speakers = true;
       }
       next.pending = computePending(dirty, next.deleted);
@@ -192,6 +193,7 @@ export function setSpeakerNames(userId: string, id: string, names: Record<string
       : {
           ...r,
           speakerNames: names,
+          speakersRev: (r.speakersRev ?? 0) + 1,
           syncError: r.syncError === "rejected" ? null : r.syncError,
           dirty: { ...r.dirty, speakers: true },
         },
@@ -206,6 +208,7 @@ export function setRelabel(userId: string, id: string, names?: Record<string, st
           ...r,
           ...(names !== undefined ? { speakerNames: names } : {}),
           relabelPending: 1,
+          speakersRev: (r.speakersRev ?? 0) + 1,
           syncError: r.syncError === "rejected" ? null : r.syncError,
           dirty: { ...r.dirty, speakers: true },
         },
@@ -375,11 +378,15 @@ export async function applySyncResult(userId: string, id: string, r: SyncResultP
       if (r.title !== undefined) next.title = r.title;
       if (r.serverUpdatedAt !== undefined) next.serverUpdatedAt = r.serverUpdatedAt;
       if (r.syncError !== undefined) next.syncError = r.syncError;
-      if (r.clearRelabel) next.relabelPending = 0;
+      // A rename/relabel made while the request was in flight bumped the rev: keep it pending.
+      const speakersStale = r.speakersRev !== undefined && (row.speakersRev ?? 0) !== r.speakersRev;
+      if (r.clearRelabel && !speakersStale) next.relabelPending = 0;
       for (const k of r.markDirty ?? []) next.dirty[k] = true;
       for (const k of r.clear ?? []) {
         if (k === "tail") {
           if (shouldClearTail(r.readRev ?? -1, row.localRev, next.savedParts, row.partsCount)) next.dirty.tail = false;
+        } else if (k === "speakers" && speakersStale) {
+          // keep dirty.speakers
         } else {
           next.dirty[k] = false;
         }

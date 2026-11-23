@@ -229,16 +229,21 @@ async function syncMeeting(uid: string, m: LocalMeeting): Promise<Step> {
   }
 
   if (cur.dirty.speakers) {
+    const rev = cur.speakersRev ?? 0;
     const parts = cur.relabelPending === 1 && !native ? ((await repo.getParts(uid, id))?.parts ?? null) : null;
+    if (cur.relabelPending === 1 && !native && !parts) {
+      // Never fall back to names-only: that would drop the pending relabel. Retry later.
+      return fail(uid, id, "retry", { status: 503, data: null } as Reply);
+    }
     const q = speakersRequest({ relabelPending: cur.relabelPending === 1, native, speakerNames: cur.speakerNames, parts });
     const r = await req("PATCH", q.path === "speakers" ? `${url}/speakers` : url, q.body);
     const cls = classifyResponse(r.status);
     const clearRelabel = q.path === "speakers" || (native && cur.relabelPending === 1);
     if (cls === "ok") {
       okReset();
-      await repo.applySyncResult(uid, id, { clear: ["speakers"], clearRelabel });
+      await repo.applySyncResult(uid, id, { clear: ["speakers"], clearRelabel, speakersRev: rev });
     } else if (cls === "bad-request") {
-      await repo.applySyncResult(uid, id, { clear: ["speakers"], clearRelabel, syncError: "rejected" });
+      await repo.applySyncResult(uid, id, { clear: ["speakers"], clearRelabel, speakersRev: rev, syncError: "rejected" });
     } else {
       return fail(uid, id, cls, r);
     }

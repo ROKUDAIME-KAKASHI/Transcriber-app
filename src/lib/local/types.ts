@@ -32,6 +32,8 @@ export interface LocalMeeting {
   lastWriteAt?: number;
   /** Refined speaker labels waiting to be pushed through /speakers (no index). */
   relabelPending?: 0 | 1;
+  /** Bumped on every local speaker-name/label change; sync clears the dirty flag only if unchanged. */
+  speakersRev?: number;
 }
 
 /** Device-local speaker embedding for one transcript part (D-09: never synced). */
@@ -91,6 +93,8 @@ export interface SyncResultPatch {
   readRev?: number;
   syncError?: string | null;
   clearRelabel?: boolean;
+  /** The speakersRev the request was built from; "speakers" and clearRelabel are cleared only if it still matches. */
+  speakersRev?: number;
 }
 
 export interface MergeResult {
