@@ -7,10 +7,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ size: st
   const size = Number((await params).size);
   if (!ALLOWED.has(size)) return new Response("Not found", { status: 404 });
 
-  // Maskable icons need the artwork inside the central 80% safe zone.
+  // Maskable icons need the artwork inside the central 80% safe zone, on a full-bleed background.
+  // Artwork mirrors assets/icon-art.svg ("live bubble"): speech that turns into text.
   const maskable = new URL(req.url).searchParams.has("maskable");
   const radius = maskable ? 0 : size * 0.22;
-  const mic = size * (maskable ? 0.42 : 0.55);
+  const art = size * (maskable ? 0.78 : 0.92);
 
   return new ImageResponse(
     (
@@ -21,14 +22,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ size: st
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#0E0F17",
+          background: "#171926",
           borderRadius: radius,
         }}
       >
-        <svg width={mic} height={mic} viewBox="0 0 24 24" fill="none" stroke="#8EA2FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          <line x1="12" x2="12" y1="19" y2="22" />
+        <svg width={art} height={art} viewBox="0 0 108 108">
+          <path d="M26 30h56a8 8 0 0 1 8 8v28a8 8 0 0 1-8 8H50l-14 11v-11h-10a8 8 0 0 1-8-8V38a8 8 0 0 1 8-8z" fill="#3651F5" />
+          <rect x="33" y="46" width="5" height="12" rx="2.5" fill="#FFFFFF" />
+          <rect x="42" y="40" width="5" height="24" rx="2.5" fill="#FFFFFF" />
+          <rect x="51" y="35" width="5" height="34" rx="2.5" fill="#FFFFFF" />
+          <rect x="60" y="42" width="5" height="20" rx="2.5" fill="#FFFFFF" />
+          <rect x="69" y="47" width="5" height="10" rx="2.5" fill="#FFFFFF" />
+          <circle cx="80" cy="34" r="6" fill="#FF6369" />
         </svg>
       </div>
     ),

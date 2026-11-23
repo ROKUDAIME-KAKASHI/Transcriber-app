@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   applicationName: "Transcriber",
   appleWebApp: { capable: true, title: "Transcriber", statusBarStyle: "default" },
   icons: {
-    icon: [{ url: "/api/icons/192", sizes: "192x192", type: "image/png" }],
-    apple: [{ url: "/api/icons/180", sizes: "180x180", type: "image/png" }],
+    icon: [{ url: "/api/icons/192?v=2", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/api/icons/180?v=2", sizes: "180x180", type: "image/png" }],
   },
 };
 
