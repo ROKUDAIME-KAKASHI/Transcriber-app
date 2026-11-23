@@ -2,54 +2,91 @@
 @plugin "@tailwindcss/typography";
 
 /*
- * Design tokens.
- * - 90–95% neutral UI with one warm near-black ink. Colour comes from content (speakers, state),
- *   not chrome. A single blue accent for the primary action, links, focus and selection.
- * - Hairlines are ~12% ink. Panels are 1px hairline, no shadows. Nav is opaque.
- * - Radius family "soft": 8 (small), 12 (controls), 20 (panels).
+ * Aurora Ink design tokens.
+ * - Tinted near-black (#0E0F17) dark and soft cool-white (#F7F7FB) light, one indigo accent.
+ *   Colour comes from content (speakers, state), not chrome.
+ * - Existing token names keep their meaning, so components re-theme without edits.
+ * - Fonts are self-hosted by next/font at build time (COEP require-corp safe): no remote @import here.
  */
 :root {
-  --background: #f6f6f4;
+  --background: #f7f7fb;
   --card: #ffffff;
-  --muted: #efeeeb;
-  --border: #e3e1dc;
-  --foreground: #1c1b18;
-  --muted-foreground: #63605a;
-  --accent: #2356d1;
+  --muted: #eff0f6;
+  --border: #e2e4ee;
+  --foreground: #14151f;
+  --muted-foreground: #5b5f73;
+  --accent: #3651f5;
   --accent-foreground: #ffffff;
-  --danger: #cf2f29;
-  --success: #17784a;
-  --warning: #9a5b00;
+  --record: #e5484d;
+  --record-fill: #e5484d;
+  --danger: #c9353b;
+  --success: #1a7f5a;
+  --warning: #a15c00;
 
-  /* Speaker colours (content, not chrome). No violet. */
-  --speaker-0: #2356d1;
-  --speaker-1: #0e8073;
-  --speaker-2: #b25d06;
-  --speaker-3: #bf3769;
-  --speaker-4: #4d6a10;
-  --speaker-5: #8a5a2b;
+  /* Speaker colours (content, not chrome). */
+  --speaker-0: #3651f5;
+  --speaker-1: #0b7d70;
+  --speaker-2: #b25a08;
+  --speaker-3: #c23a72;
+  --speaker-4: #5a7a12;
+  --speaker-5: #7a5af0;
+
+  --surface-2: var(--muted);
+  --accent-soft: color-mix(in oklab, var(--accent) 12%, var(--card));
+  --warning-soft: color-mix(in oklab, var(--warning) 10%, var(--card));
+  --success-soft: color-mix(in oklab, var(--success) 10%, var(--card));
+  --danger-soft: color-mix(in oklab, var(--danger) 10%, var(--card));
+  --glow-a: rgb(54 81 245 / 0.3);
+  --glow-b: rgb(20 184 196 / 0.3);
+
+  --elev-card: 0 1px 2px rgba(20, 21, 31, 0.04), 0 4px 16px -4px rgba(20, 21, 31, 0.06);
+  --elev-float: 0 8px 32px -8px rgba(14, 15, 23, 0.18);
+  --glass: color-mix(in oklab, var(--card) 78%, transparent);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235B5F73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+
+  /* Motion tokens (theme independent). */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --dur-4: 500ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121 24%, 1.129 26.3%, 1.12 28.7%, 1.088 32.4%, 1.019 42.8%, 0.995 49.8%, 0.992 57.7%, 1.001 82%, 1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0f0f0e;
-    --card: #171716;
-    --muted: #21211f;
-    --border: #2d2c29;
-    --foreground: #ecebe7;
-    --muted-foreground: #a3a099;
-    --accent: #7398ff;
-    --accent-foreground: #0f0f0e;
-    --danger: #f2685e;
-    --success: #4fc98c;
-    --warning: #e6a23c;
+    --background: #0e0f17;
+    --card: #171926;
+    --muted: #20233a;
+    --border: #2a2d44;
+    --foreground: #edeef5;
+    --muted-foreground: #9a9db3;
+    --accent: #8ea2ff;
+    --accent-foreground: #0e0f17;
+    --record: #ff6369;
+    --record-fill: #e5484d;
+    --danger: #ff6369;
+    --success: #3dd68c;
+    --warning: #f5b544;
 
-    --speaker-0: #7398ff;
-    --speaker-1: #3cc4b2;
-    --speaker-2: #f0a54a;
-    --speaker-3: #f07aa3;
-    --speaker-4: #a8c95a;
-    --speaker-5: #d3a26e;
+    --speaker-0: #8ea2ff;
+    --speaker-1: #3ccfbc;
+    --speaker-2: #f4a955;
+    --speaker-3: #f483ae;
+    --speaker-4: #b0d163;
+    --speaker-5: #b39cff;
+
+    --accent-soft: color-mix(in oklab, var(--accent) 16%, var(--card));
+    --warning-soft: color-mix(in oklab, var(--warning) 16%, var(--card));
+    --success-soft: color-mix(in oklab, var(--success) 16%, var(--card));
+    --danger-soft: color-mix(in oklab, var(--danger) 16%, var(--card));
+    --glow-a: rgb(91 108 255 / 0.35);
+    --glow-b: rgb(34 211 238 / 0.35);
+
+    --elev-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+    --elev-float: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239A9DB3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 }
 
@@ -65,23 +102,58 @@
   --color-danger: var(--danger);
   --color-success: var(--success);
   --color-warning: var(--warning);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --color-record: var(--record);
+  --color-record-fill: var(--record-fill);
+  --color-accent-soft: var(--accent-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-success-soft: var(--success-soft);
+  --color-danger-soft: var(--danger-soft);
+  --color-surface-2: var(--surface-2);
 
-  /* Type scale: 13 meta/labels · 15 UI · 16 reading · 20/24/30 headings. Nothing smaller than 13. */
+  /* System fallback keeps Devanagari rendering. */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  /* Two weights only: every font-medium renders 600. */
+  --font-weight-medium: 600;
+
+  /* Type scale: 13 meta/labels · 15 UI · 17 reading · 20/24/30 headings · 56 display. Nothing smaller than 13. */
   --text-meta: 0.8125rem;
   --text-meta--line-height: 1.25rem;
   --text-ui: 0.9375rem;
   --text-ui--line-height: 1.375rem;
+  --text-reading: 1.0625rem;
+  --text-reading--line-height: 1.6;
+  --text-display: 3.5rem;
+  --text-display--line-height: 1;
 
-  --radius-panel: 1.25rem;
+  --radius-chip: 10px;
+  --radius-btn: 14px;
+  --radius-panel: 22px;
+
+  --shadow-card: var(--elev-card);
+  --shadow-float: var(--elev-float);
 }
 
 html,
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
   -webkit-tap-highlight-color: transparent;
-  font-feature-settings: "cv11", "ss01";
+}
+
+body {
+  background-image: radial-gradient(
+    1200px 600px at 50% -10%,
+    color-mix(in oklab, var(--glow-a) 10%, transparent),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+h1,
+h2 {
+  letter-spacing: -0.015em;
 }
 
 /* Visible keyboard focus everywhere, never on mouse/touch. */
@@ -102,7 +174,7 @@ body {
 /* Native selects styled like the rest of the UI, with our own chevron. */
 .select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2363605a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   padding-right: 2.25rem;
@@ -114,12 +186,169 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
+/* Frosted surface for floating bars and pills. */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .glass {
+    background: var(--card);
+  }
+}
+
+/* Motion: transform/opacity only (plus filter for text-in). */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes orb-breathe {
+  0%,
+  100% {
+    transform: scale(0.96);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+@keyframes live-ring {
+  from {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  to {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+@keyframes live-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(72px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes text-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.page-enter {
+  animation: page-enter var(--dur-3) var(--ease-out);
+}
+.stagger-item {
+  animation: fade-up 240ms ease-out both;
+  animation-delay: calc(min(var(--i, 0), 8) * 30ms);
+}
+.orb-breathe {
+  animation: orb-breathe 4s ease-in-out infinite;
+}
+.live-ring {
+  animation: live-ring 1.6s ease-out infinite;
+}
+.live-blink {
+  animation: live-blink 1s ease-in-out infinite;
+}
+.shimmer {
+  background-image: linear-gradient(90deg, var(--muted) 0%, var(--card) 50%, var(--muted) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+.toast-in {
+  animation: toast-in var(--dur-4) var(--spring);
+}
+.pop-in {
+  animation: pop-in var(--dur-4) var(--spring);
+}
+.slide-in-left {
+  animation: slide-in-left var(--dur-4) var(--spring);
+}
+.text-in {
+  animation: text-in var(--dur-2) var(--ease-out);
+}
+
+/* Reduced motion: OS setting and the in-app switch (html[data-motion="reduced"]). */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0s !important;
+  transition-duration: 0.001ms !important;
 }
