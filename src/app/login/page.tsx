@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mic, AudioLines, Users, FileText } from "lucide-react";
 import { Button, FieldLabel, Panel, Segmented, inputCls } from "@/components/ui";
+import { useAuth } from "@/components/AuthProvider";
 import { isReachable, useConnectivity } from "@/lib/connectivity";
 
 const UNREACHABLE = "Couldn't reach the server. Check your connection and try again.";
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { recheck } = useAuth();
   const online = useConnectivity() === "online";
 
   const submit = async (e: React.FormEvent) => {
@@ -47,6 +49,14 @@ export default function LoginPage() {
         setError(res.error.includes("No account") || res.error.includes("Incorrect") ? res.error : "Sign in failed.");
         return;
       }
+      // AuthProvider lives in the root layout and still holds the pre-sign-in "no session" probe.
+      // Refresh it first, otherwise AuthGate on "/" bounces us back here (a refresh used to fix it).
+      let state = await recheck();
+      if (state !== "ok-user") {
+        await new Promise((r) => setTimeout(r, 400));
+        state = await recheck();
+      }
+      if (state !== "ok-user") return setError("Signed in, but the session didn't load. Tap Sign in again.");
       router.push("/");
       router.refresh();
     } catch {

@@ -16,3 +16,8 @@ export function decideAuth(a: { probe: Probe; cached: boolean; waitedMs: number 
       return a.cached ? "app-cached" : "needs-internet";
   }
 }
+
+/** A probe that started before a newer one (e.g. the post-sign-in recheck) must not overwrite its result. */
+export function isStaleProbe(startedGen: number, currentGen: number): boolean {
+  return startedGen !== currentGen;
+}

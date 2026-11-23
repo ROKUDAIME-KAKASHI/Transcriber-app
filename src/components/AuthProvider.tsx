@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { setAuthStatus } from "@/lib/authStore";
 import { useConnectivity } from "@/lib/connectivity";
-import type { Probe } from "@/lib/authCore";
+import { isStaleProbe, type Probe } from "@/lib/authCore";
 
 export const LAST_USER_KEY = "transcriber.lastUserId";
 export const LAST_EMAIL_KEY = "transcriber.lastUserEmail";
@@ -21,7 +21,8 @@ interface AuthCtx {
   user: AuthUser | null;
   cachedUser: AuthUser | null;
   probing: boolean;
-  recheck: () => void;
+  /** Forces a fresh session probe (discarding any older in-flight one) and resolves with its outcome. */
+  recheck: () => Promise<Probe>;
 }
 
 const Ctx = createContext<AuthCtx>({
@@ -30,7 +31,7 @@ const Ctx = createContext<AuthCtx>({
   user: null,
   cachedUser: null,
   probing: false,
-  recheck: () => {},
+  recheck: async () => "pending",
 });
 
 export function useAuth(): AuthCtx {
@@ -63,13 +64,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const probeRef = useRef<Probe>("pending");
   const wasAuthed = useRef(false);
   const inflight = useRef(false);
+  const gen = useRef(0);
   const conn = useConnectivity();
 
-  const run = useCallback(async () => {
-    if (inflight.current) return;
+  const run = useCallback(async (force = false): Promise<Probe> => {
+    if (inflight.current && !force) return probeRef.current;
+    // A forced probe (after sign-in) supersedes any older one, whose late "no session" answer would
+    // otherwise bounce the user straight back to /login.
+    const myGen = ++gen.current;
     inflight.current = true;
     setProbing(true);
     const r = await runProbe();
+    if (isStaleProbe(myGen, gen.current)) return probeRef.current;
     inflight.current = false;
     setProbing(false);
     if (r.probe === "ok-user") {
@@ -93,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       probeRef.current = "unreachable";
       setProbe("unreachable");
     }
+    return probeRef.current;
   }, []);
 
   useEffect(() => {
@@ -132,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     probe === "ok-user" ? "authenticated" : probe === "ok-empty" ? "unauthenticated" : probe === "unreachable" ? "unreachable" : "loading";
 
   const value = useMemo(
-    () => ({ probe, status, user, cachedUser, probing, recheck: () => void run() }),
+    () => ({ probe, status, user, cachedUser, probing, recheck: () => run(true) }),
     [probe, status, user, cachedUser, probing, run]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
