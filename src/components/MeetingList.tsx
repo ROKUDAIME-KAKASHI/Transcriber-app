@@ -5,12 +5,15 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { listMeetings, listPending } from "@/lib/local/repo";
-import { getSyncSnapshot, subscribeSync } from "@/lib/local/sync";
+import { stopRecordingRemotely } from "@/lib/local/stopRemote";
+import { canStopFromList, isStaleRecording, stopConfirmText, type MeetingOrigin } from "@/lib/recordingState";
+import { getSyncSnapshot, isRecordingId, subscribeSync } from "@/lib/local/sync";
 import { MeetingSkeleton } from "./MeetingLoader";
 import { useLocalUser } from "./SyncProvider";
 import { Search, ChevronRight, Mic, Loader2 } from "lucide-react";
 import { formatDuration } from "@/lib/transcript";
 import { dateGroup } from "@/lib/dateGroup";
+import { useToast } from "./Toast";
 import { Badge, Button, LiveDot, Panel, cx, inputCls } from "./ui";
 
 export interface MeetingRow {
@@ -23,9 +26,13 @@ export interface MeetingRow {
   template: string | null;
   createdAt: string;
   sync?: "pending" | "error" | null;
+  origin?: MeetingOrigin;
+  lastWriteAt?: number;
+  serverUpdatedAt?: string | null;
 }
 
-function StatusChip({ m }: { m: MeetingRow }) {
+function StatusChip({ m, stale }: { m: MeetingRow; stale: boolean }) {
+  if (m.status === "RECORDING" && stale) return <Badge tone="warning">Not responding</Badge>;
   if (m.status === "RECORDING") {
     return (
       <Badge tone="live">
@@ -85,10 +92,30 @@ export function MeetingList() {
         template: l.template ?? null,
         createdAt: l.createdAt,
         sync: l.pending === 1 ? syncOf(l) : null,
+        origin: l.origin,
+        lastWriteAt: l.lastWriteAt,
+        serverUpdatedAt: l.serverUpdatedAt,
       });
     }
     return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }, [local]);
+
+  const toast = useToast();
+  // Re-check "Not responding" as time passes.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+  const [stopping, setStopping] = useState<string | null>(null);
+  const stopRecording = async (m: MeetingRow) => {
+    if (stopping || !window.confirm(stopConfirmText(m.deviceName))) return;
+    setStopping(m.id);
+    const r = await stopRecordingRemotely(userId, m.id);
+    setStopping(null);
+    if (r === "ok") toast("Recording stopped");
+    else toast(r === "auth" ? "Signed out. Sign in again to stop it." : "Couldn't stop it. Check the connection and try again.", "danger");
+  };
 
   const [query, setQuery] = useState("");
   // Group headings and times depend on the viewer's timezone, so they only appear after mount.
@@ -224,6 +251,13 @@ export function MeetingList() {
             <ul className="grid gap-3">
               {g.items.map((m) => {
                 const idx = index++;
+                const stale = isStaleRecording(m, now);
+                const canStop = canStopFromList({
+                  status: m.status,
+                  origin: m.origin ?? "server",
+                  activeHere: isRecordingId(m.id),
+                  stale,
+                });
                 return (
                   <li key={m.id} className="stagger-item" style={{ "--i": idx } as CSSProperties}>
                     <Link
@@ -244,12 +278,22 @@ export function MeetingList() {
                       </span>
                       <span className="flex items-center gap-3">
                         <span className="flex flex-col items-end gap-1.5">
-                          <StatusChip m={m} />
+                          <StatusChip m={m} stale={stale} />
                           <SyncChip m={m} syncing={sync.state === "syncing"} />
                         </span>
                         <ChevronRight className="hidden h-4 w-4 text-muted-foreground lg:block" />
                       </span>
                     </Link>
+                    {canStop && (
+                      <div className="mt-2 flex items-center justify-end gap-3">
+                        {stale && (
+                          <span className="text-meta text-muted-foreground">No update for a while. It may be stuck.</span>
+                        )}
+                        <Button variant="danger" onClick={() => stopRecording(m)} disabled={stopping === m.id}>
+                          {stopping === m.id ? "Stopping…" : "Stop recording"}
+                        </Button>
+                      </div>
+                    )}
                   </li>
                 );
               })}

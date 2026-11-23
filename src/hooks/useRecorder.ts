@@ -15,7 +15,8 @@ import { VoiceChunker } from "@/lib/speech/voiceChunker";
 import { cleanPhrase } from "@/lib/speech/cleanText";
 import { createLocal, getMeta, purge, putEmbeddings, putParts, setSpeakerNames, touchRecording } from "@/lib/local/repo";
 import { newMeetingId } from "@/lib/local/ids";
-import { flush, markRecording, poke, type FlushResult } from "@/lib/local/sync";
+import { flush, markRecording, onRemoteStop, poke, type FlushResult } from "@/lib/local/sync";
+import { isStoppedReply } from "@/lib/recordingState";
 import { useLocalUser } from "@/components/SyncProvider";
 import { useMeetingSync } from "@/hooks/useSync";
 import {
@@ -70,6 +71,8 @@ export interface RecorderState {
   saveState: "idle" | "saving" | "saved" | "local" | "error";
   /** Why a "local" save has not reached the server yet. */
   syncNote?: string | null;
+  /** The meeting was stopped from another device (Meetings list) while this one was recording. */
+  stoppedRemotely?: boolean;
   /** Names given to speakers (index as string -> name), live during on-device recording. */
   speakerNames: Record<string, string> | null;
   /** On-device speaker identification activity, for the transcript hint. */
@@ -219,6 +222,21 @@ export function useRecorder(opts: {
   /** The last bubble can still grow (same speaker, no pause since). */
   const openBubbleRef = useRef(false);
   const stopRef = useRef<() => Promise<void>>(async () => {});
+  /** The server said this meeting was stopped elsewhere: finish the same way as the Stop button. */
+  const handleRemoteStop = () => {
+    if (!wantRecordingRef.current) return; // already stopping (our own Stop also ends in DONE)
+    patch({ stoppedRemotely: true });
+    void stopRef.current();
+  };
+  const handleRemoteStopRef = useRef(handleRemoteStop);
+  handleRemoteStopRef.current = handleRemoteStop;
+  useEffect(
+    () =>
+      onRemoteStop((id) => {
+        if (id === meetingIdRef.current) handleRemoteStopRef.current();
+      }),
+    [],
+  );
 
   // On-device speaker separation (additive; every use is wrapped so failures stay silent)
   const diarizeOnRef = useRef(false);
@@ -277,6 +295,7 @@ export function useRecorder(opts: {
           if (!res.ok) throw new Error();
           savedPartsRef.current = typeof data.savedParts === "number" ? data.savedParts : parts.length;
           patch({ saveState: "saved" });
+          if (isStoppedReply(data) && !status) handleRemoteStop();
           return true;
         } catch {
           break;
@@ -1126,7 +1145,7 @@ export function useRecorder(opts: {
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
       recordingSeconds: 0, isPaused: false, isStarting: true, isRecording: false,
       statusMsg: useSample ? "Loading sample audio…" : "Requesting microphone…", saveState: "idle", meetingId: null,
-      syncNote: null,
+      syncNote: null, stoppedRemotely: false,
     });
 
     // The audio context is created before any await so it counts as part of the tap

@@ -132,12 +132,18 @@ export async function mirrorNative(
         durationSec,
         status,
         hasTranscript: true,
+        lastWriteAt: Date.now(),
       });
       return true;
     });
   } catch {
     return false;
   }
+}
+
+/** The meeting was stopped from another device (or the list): reflect DONE locally so sync doesn't reopen it. */
+export function markStoppedRemotely(userId: string, id: string): Promise<boolean> {
+  return updateRow(userId, id, (r) => (r.deleted === 1 ? null : { ...r, status: "DONE", lastWriteAt: undefined }));
 }
 
 async function updateRow(

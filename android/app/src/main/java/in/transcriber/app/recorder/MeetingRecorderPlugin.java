@@ -116,6 +116,7 @@ public class MeetingRecorderPlugin extends Plugin {
             out.put("saveState", RecordingService.saveState);
             out.put("interim", RecordingService.interim);
             out.put("noSound", RecordingService.noSound);
+            out.put("stoppedRemotely", RecordingService.stoppedRemotely);
             out.put("online", RecordingService.online);
             out.put("backlogSeconds", RecordingService.backlogSeconds);
             out.put("level", RecordingService.level);

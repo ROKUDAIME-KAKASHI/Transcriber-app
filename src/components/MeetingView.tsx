@@ -23,7 +23,9 @@ import {
 } from "@/lib/export/deliver";
 import { isNative } from "@/lib/native";
 import { cacheServerMeeting, setServerDocument, setSpeakerNames, setTitle as setLocalTitle, tombstone } from "@/lib/local/repo";
-import { flush, poke } from "@/lib/local/sync";
+import { flush, isRecordingId, poke } from "@/lib/local/sync";
+import { stopRecordingRemotely } from "@/lib/local/stopRemote";
+import { isStaleRecording, stopConfirmText } from "@/lib/recordingState";
 import { useLocalUser } from "./SyncProvider";
 import { ShareMenu } from "./ShareMenu";
 import type { ExportKind, ExportMeeting } from "@/lib/export/types";
@@ -63,6 +65,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [stoppedHere, setStoppedHere] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [exportBusy, setExportBusy] = useState<ExportKind | "share" | null>(null);
   const [exportNote, setExportNote] = useState<{ tone: "error"; text: string } | null>(null);
   const preloaded = useRef(false);
@@ -541,10 +545,35 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
               <DeviceIcon className="h-3.5 w-3.5" /> {meeting.deviceName}
             </span>
           )}
-          {meeting.status === "RECORDING" && (
-            <Badge tone="live">
-              <LiveDot /> Still recording on a device
-            </Badge>
+          {meeting.status === "RECORDING" && !stoppedHere && (
+            isStaleRecording({ status: meeting.status, serverUpdatedAt: meeting.updatedAt, createdAt: meeting.createdAt }, Date.now()) ? (
+              <Badge tone="warning">Not responding</Badge>
+            ) : (
+              <Badge tone="live">
+                <LiveDot /> Still recording on a device
+              </Badge>
+            )
+          )}
+          {meeting.status === "RECORDING" && !stoppedHere && !isRecordingId(meeting.id) && (
+            <Button
+              variant="danger"
+              disabled={stopping}
+              onClick={async () => {
+                if (stopping || !window.confirm(stopConfirmText(meeting.deviceName))) return;
+                setStopping(true);
+                const r = await stopRecordingRemotely(userId, meeting.id);
+                setStopping(false);
+                if (r === "ok") {
+                  setStoppedHere(true);
+                  toast("Recording stopped");
+                  router.refresh();
+                } else {
+                  toast(r === "auth" ? "Signed out. Sign in again to stop it." : "Couldn't stop it. Check the connection and try again.", "danger");
+                }
+              }}
+            >
+              {stopping ? "Stopping…" : "Stop recording"}
+            </Button>
           )}
         </div>
         {speakers > 1 && (

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
-  MonitorSpeaker, HardDrive, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, FileText, ChevronDown, ArrowDown,
+  MonitorSpeaker, HardDrive, Info, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, FileText, ChevronDown, ArrowDown,
 } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
@@ -546,6 +546,14 @@ export function Recorder() {
               </div>
             )}
           </div>
+
+          {rec.stoppedRemotely && (
+            <div className="mt-3" role="status">
+              <Notice icon={<Info className="h-4 w-4" />} title="Stopped from another device">
+                This recording was stopped from the Meetings list. Everything saved so far is kept.
+              </Notice>
+            </div>
+          )}
 
           {nativeMode && battery.restricted && (
             <Notice icon={<BatteryWarning className="h-4 w-4 text-warning" />} tone="warning" title="Let long meetings run">

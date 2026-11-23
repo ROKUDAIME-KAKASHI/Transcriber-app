@@ -22,6 +22,8 @@ export interface NativeRecorderState {
   saveState: "idle" | "saving" | "saved" | "error";
   interim: string;
   noSound: boolean;
+  /** Newer APKs only: the service stopped itself because the meeting was stopped from another device. */
+  stoppedRemotely?: boolean;
   online: boolean;
   /** Seconds of audio waiting to be sent (after time offline). */
   backlogSeconds: number;

@@ -7,6 +7,7 @@ import type { AudioSource, RecorderState } from "./useRecorder";
 import { useLocalUser } from "@/components/SyncProvider";
 import { applySyncResult, createLocal, mirrorNative, purge } from "@/lib/local/repo";
 import { newMeetingId } from "@/lib/local/ids";
+import { markRecording, onRemoteStop } from "@/lib/local/sync";
 
 /** The service autosaves to the server itself; JS only copies its parts to the device at most this often. */
 const MIRROR_MS = 5000;
@@ -52,6 +53,19 @@ export function useNativeRecorder(opts: { language: string }) {
 
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
 
+  // Works with the installed APK too: if the meeting was stopped from another device, stop the service from here.
+  // (New APKs also notice this by themselves while the screen is off.)
+  const activeRef = useRef<string | null>(null);
+  useEffect(
+    () =>
+      onRemoteStop((id) => {
+        if (id !== activeRef.current) return;
+        patch({ stoppedRemotely: true });
+        MeetingRecorder.stop({ force: false }).catch(() => {});
+      }),
+    [],
+  );
+
   const apply = useCallback((n: NativeRecorderState) => {
     if (!n.meetingId) return;
     // A different meeting than the one shown (e.g. reopened the app mid-recording): start over.
@@ -94,6 +108,11 @@ export function useNativeRecorder(opts: { language: string }) {
         .catch(() => {});
     }
     const live = n.active && !n.paused && !n.finishing;
+    const wasActive = activeRef.current;
+    const nowActive = n.active && !n.finished ? n.meetingId : null;
+    if (wasActive && wasActive !== nowActive) markRecording(wasActive, false);
+    if (nowActive && nowActive !== wasActive) markRecording(nowActive, true);
+    activeRef.current = nowActive;
     // Running, or it failed to start (finished without ever running).
     if (n.active || n.finished) startingRef.current = false;
     setState((s) => ({
@@ -111,6 +130,7 @@ export function useNativeRecorder(opts: { language: string }) {
       isPaused: n.paused,
       statusMsg: n.status,
       saveState: n.saveState,
+      stoppedRemotely: !!n.stoppedRemotely || (n.meetingId === s.meetingId ? s.stoppedRemotely : false),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

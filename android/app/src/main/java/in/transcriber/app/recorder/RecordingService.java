@@ -106,6 +106,8 @@ public class RecordingService extends Service {
     /** The last meeting is over and saved (or the final save failed: see saveState). */
     static volatile boolean finished;
     static boolean noSound;
+    /** The server said this meeting was stopped from another device (Meetings list). */
+    static volatile boolean stoppedRemotely;
     static boolean online = true;
     static double backlogSeconds;
     static volatile float level;
@@ -223,6 +225,7 @@ public class RecordingService extends Service {
             finishing = false;
             finished = false;
             noSound = false;
+            stoppedRemotely = false;
             online = true;
             backlogSeconds = 0;
             openBubble = false;
@@ -708,6 +711,14 @@ public class RecordingService extends Service {
                         savedParts = data.optInt("savedParts", sent);
                         saveState = "saved";
                     }
+                    // Stopped from the Meetings list on another device: the tail was merged, now finish normally.
+                    if (finalStatus == null && !finishRequested && !completed
+                            && (data.optBoolean("stopped", false) || "DONE".equals(data.optString("status")))) {
+                        stoppedRemotely = true;
+                        Log.i(TAG, "Meeting was stopped from another device");
+                        setStatus("Stopped from another device. Saving…");
+                        ctl.execute(() -> beginStop(false));
+                    }
                     return true;
                 }
             } catch (Exception e) {
@@ -812,7 +823,9 @@ public class RecordingService extends Service {
             interim = "";
             backlogSeconds = 0;
             saveState = ok ? "saved" : "error";
-            status = ok
+            status = ok && stoppedRemotely
+                    ? "Stopped from another device. Meeting saved"
+                    : ok
                     ? (dropped > 1 ? String.format(Locale.US, "Saved. %d min recorded offline could not be kept.", Math.round(dropped / 60)) : "Meeting saved")
                     : "Couldn't save the end of the meeting. Check the connection; the transcript up to the last autosave is safe.";
         }

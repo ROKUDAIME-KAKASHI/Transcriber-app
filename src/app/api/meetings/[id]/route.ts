@@ -77,8 +77,15 @@ export async function PATCH(req: Request, { params }: Ctx) {
       return Response.json({ error: "Speaker names are not available yet. Try again later." }, { status: 503 });
     }
     const extra = legacy ? {} : { ...(engine ? { engine } : {}), ...(speakerNames ? { speakerNames } : {}) };
-    const data = { ...rest, ...extra, updatedAt: new Date() };
+    // A meeting that was stopped (marked DONE) is never reopened by a late autosave from the device that was recording.
+    const dataFor = (priorStatus: string | undefined) => {
+      const { status, ...others } = rest;
+      const keepStatus = status !== undefined && !(status === "RECORDING" && priorStatus === "DONE");
+      return { ...others, ...(keepStatus ? { status } : {}), ...extra, updatedAt: new Date() };
+    };
     let savedParts: number | undefined;
+    /** The meeting was already DONE when this autosave arrived (stopped from another device). */
+    let stopped = false;
 
     if (transcriptTail) {
       // Optimistic concurrency: write only if the row is unchanged since we read it (updatedAt),
@@ -87,7 +94,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       for (let tries = 0; tries < 4 && !done; tries++) {
         const existing = await prisma.meeting.findFirst({
           where: { id, userId },
-          select: { transcript: true, updatedAt: true },
+          select: { transcript: true, updatedAt: true, status: true },
         });
         if (!existing) return notFound();
         const current = Array.isArray(existing.transcript) ? existing.transcript : [];
@@ -99,9 +106,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
         if (merged.length > MAX_PARTS) return Response.json({ error: "Transcript too long" }, { status: 413 });
         const { count } = await prisma.meeting.updateMany({
           where: { id, userId, updatedAt: existing.updatedAt },
-          data: { ...data, transcript: merged },
+          data: { ...dataFor(existing.status), transcript: merged },
         });
         if (count) {
+          stopped = existing.status === "DONE" && rest.status !== "DONE";
           savedParts = merged.length;
           done = true;
         }
@@ -111,7 +119,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
       }
     } else {
       // updateMany scoped by userId so nobody can write to another account's meeting.
-      const { count } = await prisma.meeting.updateMany({ where: { id, userId }, data });
+      let prior: string | undefined;
+      if (rest.status !== "DONE" && (rest.transcript !== undefined || rest.durationSec !== undefined)) {
+        prior = (await prisma.meeting.findFirst({ where: { id, userId }, select: { status: true } }))?.status;
+        stopped = prior === "DONE";
+      }
+      const { count } = await prisma.meeting.updateMany({ where: { id, userId }, data: dataFor(prior) });
       if (!count) return notFound();
       savedParts = rest.transcript?.length;
     }
@@ -131,7 +144,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const row = await prisma.meeting.findFirst({ where: { id, userId }, select: { title: true } });
       storedTitle = row?.title;
     }
-    return Response.json({ ok: true, savedParts, ...(storedTitle !== undefined ? { title: storedTitle } : {}) });
+    return Response.json({ ok: true, savedParts, ...(stopped ? { stopped: true, status: "DONE" } : {}), ...(storedTitle !== undefined ? { title: storedTitle } : {}) });
   };
 
   try {

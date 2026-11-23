@@ -2,6 +2,7 @@ import { getApp, hasPlugin } from "@/lib/native";
 import { isReachable, markUnreachable, onConnectivityHint } from "@/lib/connectivity";
 import { parseTranscript } from "@/lib/transcript";
 import * as repo from "./repo";
+import { isStoppedReply } from "@/lib/recordingState";
 import { MAX_BATCH_PARTS, backoffDelay, classifyResponse, nextTailBatch, speakersRequest, type ResponseClass } from "./syncCore";
 import type { LocalMeeting } from "./types";
 
@@ -54,6 +55,24 @@ export function markRecording(id: string, active: boolean): void {
 }
 export function isRecordingId(id: string): boolean {
   return activeRecordings.has(id);
+}
+
+const remoteStopListeners = new Set<(id: string) => void>();
+/** Called when the server says a meeting this device is recording was stopped from elsewhere. */
+export function onRemoteStop(cb: (id: string) => void): () => void {
+  remoteStopListeners.add(cb);
+  return () => {
+    remoteStopListeners.delete(cb);
+  };
+}
+function emitRemoteStop(id: string) {
+  remoteStopListeners.forEach((l) => {
+    try {
+      l(id);
+    } catch {
+      /* listener errors never break sync */
+    }
+  });
 }
 
 // ---- engine state ----
@@ -186,6 +205,7 @@ async function syncMeeting(uid: string, m: LocalMeeting): Promise<Step> {
         okReset();
         saved = typeof r.data?.savedParts === "number" ? r.data.savedParts : batch.end;
         await repo.applySyncResult(uid, id, { savedParts: saved });
+        if (isStoppedReply(r.data) && activeRecordings.has(id)) emitRemoteStop(id);
         if (batch.done) break;
       } else if (cls === "conflict") {
         if (typeof r.data?.savedParts === "number" && ++conflicts <= 3) {
@@ -274,6 +294,9 @@ async function pull(uid: string): Promise<Step> {
   const data = r.data;
   if (!data || !Array.isArray(data.meetings) || !Array.isArray(data.ids)) return "next";
   const refetch = await repo.applyPull(uid, data.meetings, data.ids);
+  for (const s of data.meetings) {
+    if (s?.status === "DONE" && typeof s.id === "string" && activeRecordings.has(s.id)) emitRemoteStop(s.id);
+  }
   // Only advance lastPullAt when every refetch finished, so unfinished ones are returned again next pull.
   let complete = refetch.length <= 5;
   for (const id of refetch.slice(0, 5)) {
