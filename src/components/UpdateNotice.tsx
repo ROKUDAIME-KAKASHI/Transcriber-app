@@ -7,9 +7,9 @@ export type UpdateNoticeMode = "ready" | "ready-recording" | "chunk-error";
 export function UpdateNotice({ mode, onReload, onDismiss }: { mode: UpdateNoticeMode; onReload: () => void; onDismiss: () => void }) {
   const title = mode === "chunk-error" ? "Update needed" : "Update ready";
   return (
-    <div role="status" className="fixed inset-x-4 bottom-20 z-50 lg:inset-x-auto lg:bottom-4 lg:right-4 lg:w-80">
-      <div className="rounded-xl bg-card shadow-lg">
-        <Notice title={title}>
+    <div role="status" className="fixed inset-x-4 bottom-[calc(88px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-50 lg:inset-x-auto lg:bottom-4 lg:right-4 lg:w-80">
+      <div className="rounded-panel shadow-float">
+        <Notice tone="accent" title={title}>
           {mode === "ready" && "Reload to get the latest version."}
           {mode === "ready-recording" && "It will install the next time you open the app."}
           {mode === "chunk-error" && "Part of the app couldn't load. Finish recording, then reload."}

@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, WifiOff, X } from "lucide-react";
+import { Check, CloudOff, X } from "lucide-react";
 import { useConnectivity } from "@/lib/connectivity";
 import { pushOverlay } from "@/lib/overlays";
+import { useToast } from "./Toast";
 
 const WORKS = ["Record on-device", "Read saved meetings", "Export and share saved meetings"];
 const NEEDS = ["Cloud recording with speaker labels", "Creating minutes with AI"];
 
 export function ConnectivityPill({ className = "" }: { className?: string }) {
   const conn = useConnectivity();
+  const toast = useToast();
   const offline = conn === "offline";
   const [open, setOpen] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -25,9 +27,10 @@ export function ConnectivityPill({ className = "" }: { className?: string }) {
     } else if (conn === "online" && wasOffline.current) {
       wasOffline.current = false;
       setAnnounce("Back online");
+      toast("Back online", "success");
       setOpen(false);
     }
-  }, [offline, conn]);
+  }, [offline, conn, toast]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,8 +67,8 @@ export function ConnectivityPill({ className = "" }: { className?: string }) {
             onClick={() => setOpen((o) => !o)}
             className="-my-2 inline-flex items-center py-2"
           >
-            <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted px-2 text-meta font-semibold text-muted-foreground">
-              <WifiOff size={14} className="text-warning" aria-hidden />
+            <span className="pop-in inline-flex h-7 items-center gap-1.5 rounded-full bg-warning-soft px-2.5 text-meta font-semibold text-warning">
+              <CloudOff size={14} aria-hidden />
               Offline
             </span>
           </button>
@@ -74,7 +77,7 @@ export function ConnectivityPill({ className = "" }: { className?: string }) {
               id={panelId}
               role="dialog"
               aria-label="Offline help"
-              className="fixed inset-x-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-30 rounded-xl border border-border bg-card p-4 text-left lg:absolute lg:inset-x-auto lg:left-0 lg:top-full lg:mt-2 lg:w-72"
+              className="fixed inset-x-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-30 rounded-panel border border-border/70 bg-card p-4 shadow-float text-left lg:absolute lg:inset-x-auto lg:left-0 lg:top-full lg:mt-2 lg:w-72"
             >
               <h2 className="text-ui font-semibold">You&apos;re offline</h2>
               <p className="mt-3 text-meta font-semibold text-muted-foreground">Works</p>
