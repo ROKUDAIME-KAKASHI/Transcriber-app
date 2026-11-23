@@ -120,13 +120,13 @@ Plans:
   3. Presses, page/list transitions, tab changes and toasts animate smoothly, and the animations turn off when reduced motion is set
   4. The meetings list and meeting page have readable cards, Share as the primary action, Minutes/Transcript tabs and friendly empty states. Both themes pass contrast at phone and laptop width, with no new clutter
   5. A new signed release APK with all the native plugins is installed on the Xiaomi phone, and export, share, offline open and offline record are verified there
-**Plans:** 3/7 plans executed
+**Plans:** 4/7 plans executed
 
 Plans:
 - [x] 05-01-PLAN.md — Aurora Ink tokens (light/dark), Geist fonts, motion tokens/keyframes, glass, reduced-motion switches, contrast test, haptics helper (wave 1)
 - [x] 05-02-PLAN.md — ui.tsx primitives restyle (pill buttons, sliding Segmented, Switch), motion preference store, Toast provider, Waveform (wave 1)
 - [x] 05-03-PLAN.md — Shell: glass tab bar, sidebar, page enter, Offline pill, floating native recording pill, Login/Offline pages (wave 2)
-- [ ] 05-04-PLAN.md — Record hero: orb, record->stop morph, waveform, engine Segmented, Options disclosure, Reduce motion, calm mode (wave 2)
+- [x] 05-04-PLAN.md — Record hero: orb, record->stop morph, waveform, engine Segmented, Options disclosure, Reduce motion, calm mode (wave 2)
 - [ ] 05-05-PLAN.md — Meetings list: date groups, cards, status chips, stagger, shimmer skeleton, empty states (wave 2)
 - [ ] 05-06-PLAN.md — Meeting page: Share primary, Minutes|Transcript tabs, AI card, speaker-ruled transcript, chips, toasts (wave 2)
 - [ ] 05-07-PLAN.md — Phase gate (typecheck/test/build/check-build/audits/smoke) + 05-HUMAN-UAT.md; APK build is a post-review orchestrator step (wave 3)
@@ -143,7 +143,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | 2. Local-First Meetings & Sync | 5/5 | Complete   | 2026-11-21 |
 | 3. Offline App Shell & Gating | 8/8 | Complete   | 2026-11-21 |
 | 4. On-Device Speaker Separation | 8/8 | Code complete (device UAT pending) | 2026-11-23 |
-| 5. Aurora Ink Redesign & Release | 3/7 | In Progress|  |
+| 5. Aurora Ink Redesign & Release | 4/7 | In Progress|  |
 
 ---
 *Roadmap created: 2026-11-20*
