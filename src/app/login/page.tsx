@@ -4,7 +4,7 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mic, AudioLines, Users, FileText } from "lucide-react";
-import { Button, FieldLabel, Segmented, inputCls } from "@/components/ui";
+import { Button, FieldLabel, Panel, Segmented, inputCls } from "@/components/ui";
 import { isReachable, useConnectivity } from "@/lib/connectivity";
 
 const UNREACHABLE = "Couldn't reach the server. Check your connection and try again.";
@@ -65,9 +65,9 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       {/* About (laptops) */}
-      <aside className="hidden flex-col justify-between border-r border-border bg-card px-12 py-10 lg:flex xl:px-16">
+      <aside className="hidden flex-col justify-between border-r border-border/70 bg-card px-12 py-10 lg:flex xl:px-16">
         <div className="flex items-center gap-2.5 text-ui font-semibold tracking-tight">
-          <span className="grid h-7 w-7 place-items-center rounded-lg bg-foreground text-background">
+          <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
             <AudioLines className="h-4 w-4" />
           </span>
           Transcriber
@@ -79,7 +79,7 @@ export default function LoginPage() {
           <ul className="mt-10 space-y-6">
             {features.map(({ icon: Icon, title, text }) => (
               <li key={title} className="flex gap-4">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-chip bg-accent-soft text-accent">
                   <Icon className="h-4 w-4" />
                 </span>
                 <span>
@@ -95,9 +95,9 @@ export default function LoginPage() {
 
       {/* Form */}
       <main className="grid place-items-center px-4 py-10 sm:px-8">
-        <div className="w-full max-w-sm">
+        <Panel className="w-full max-w-sm p-6 sm:p-8">
           <div className="mb-8 flex items-center gap-2.5 text-ui font-semibold tracking-tight lg:hidden">
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-foreground text-background">
+            <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
               <AudioLines className="h-4 w-4" />
             </span>
             Transcriber
@@ -159,7 +159,7 @@ export default function LoginPage() {
               </p>
             )}
           </form>
-        </div>
+        </Panel>
       </main>
     </div>
   );
