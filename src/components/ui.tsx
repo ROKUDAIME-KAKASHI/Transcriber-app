@@ -2,7 +2,7 @@
 
 /**
  * Small design-system primitives, so every screen uses the same buttons, panels, labels and
- * controls. Tokens live in globals.css.
+ * controls. Tokens live in globals.css (Aurora Ink).
  */
 import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { Loader2 } from "lucide-react";
@@ -20,18 +20,21 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 export function Button({ variant = "secondary", size = "md", loading, icon, className, children, disabled, ...rest }: ButtonProps) {
+  const pill = variant === "primary" || variant === "danger-solid";
   return (
     <button
       {...rest}
       disabled={disabled || loading}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-xl font-semibold whitespace-nowrap transition-colors",
+        "inline-flex items-center justify-center gap-2 font-semibold whitespace-nowrap",
+        "transition-[transform,background-color,color,box-shadow] duration-[var(--dur-1)] ease-[var(--ease-out)] enabled:active:scale-[0.96]",
         "disabled:opacity-50 disabled:cursor-not-allowed",
-        size === "lg" ? "min-h-12 px-5 text-ui" : "min-h-11 lg:min-h-10 px-4 text-ui",
-        variant === "primary" && "bg-accent text-accent-foreground hover:bg-accent/90",
-        variant === "secondary" && "border border-border bg-card text-foreground hover:bg-muted",
+        pill ? "rounded-full" : "rounded-btn",
+        size === "lg" ? "min-h-12 px-5 text-ui" : "min-h-12 lg:min-h-10 px-4 text-ui",
+        variant === "primary" && "bg-accent text-accent-foreground hover:bg-accent/90 shadow-[0_4px_14px_-6px_var(--accent)]",
+        variant === "secondary" && "border border-border/70 bg-card text-foreground shadow-card hover:bg-muted",
         variant === "ghost" && "text-muted-foreground hover:bg-muted hover:text-foreground",
-        variant === "danger" && "text-danger hover:bg-danger/10",
+        variant === "danger" && "text-danger hover:bg-danger-soft",
         variant === "danger-solid" && "bg-danger text-white hover:bg-danger/90",
         className
       )}
@@ -50,7 +53,7 @@ export function Panel({
   ...rest
 }: { children: ReactNode; className?: string; as?: "section" | "div" | "aside" } & Record<string, unknown>) {
   return (
-    <Tag {...rest} className={cx("rounded-panel border border-border bg-card", className)}>
+    <Tag {...rest} className={cx("rounded-panel border border-border/70 dark:border-border bg-card shadow-card", className)}>
       {children}
     </Tag>
   );
@@ -58,7 +61,7 @@ export function Panel({
 
 export function PanelHeader({ title, meta, children }: { title: ReactNode; meta?: ReactNode; children?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5 min-h-14">
+    <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-3.5 min-h-14">
       <div className="flex min-w-0 items-center gap-2.5">
         <h2 className="truncate text-ui font-semibold">{title}</h2>
         {children}
@@ -71,14 +74,14 @@ export function PanelHeader({ title, meta, children }: { title: ReactNode; meta?
 /* ---------- Labels & fields ---------- */
 export function FieldLabel({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-meta font-medium text-foreground">
+    <label htmlFor={htmlFor} className="mb-1.5 block text-meta font-semibold text-foreground">
       {children}
     </label>
   );
 }
 
 export const inputCls =
-  "w-full min-h-11 rounded-xl border border-border bg-card px-3.5 text-base sm:text-ui outline-none transition-colors placeholder:text-muted-foreground focus:border-accent disabled:opacity-60";
+  "w-full min-h-12 lg:min-h-11 rounded-chip border border-transparent bg-muted px-3.5 text-base sm:text-ui outline-none transition-[box-shadow,background-color] duration-[var(--dur-2)] placeholder:text-muted-foreground focus:ring-2 focus:ring-accent disabled:opacity-60";
 export const selectCls = cx("select", inputCls);
 
 /* ---------- Segmented control ---------- */
@@ -89,36 +92,63 @@ export function Segmented<T extends string>({
   label,
   disabled,
   className,
+  semantics = "radio",
 }: {
-  options: { value: T; label: ReactNode }[];
+  options: { value: T; label: ReactNode; disabled?: boolean; icon?: ReactNode; id?: string; controls?: string }[];
   value: T;
   onChange: (v: T) => void;
   label: string;
   disabled?: boolean;
   className?: string;
+  semantics?: "radio" | "tabs";
 }) {
+  const n = options.length;
+  const index = options.findIndex((o) => o.value === value);
+  const tabs = semantics === "tabs";
   return (
     <div
-      role="radiogroup"
+      role={tabs ? "tablist" : "radiogroup"}
       aria-label={label}
-      className={cx("grid gap-1 rounded-xl bg-muted p-1", className)}
-      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      className={cx("relative grid gap-1 rounded-btn bg-muted p-1", className)}
+      style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
     >
+      {index >= 0 && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-chip bg-card shadow-card"
+          style={{
+            width: `calc((100% - 0.5rem - ${(n - 1) * 0.25}rem) / ${n})`,
+            transform: `translateX(calc(${index} * (100% + 0.25rem)))`,
+            transition: "transform var(--dur-4) var(--spring)",
+          }}
+        />
+      )}
       {options.map((o) => {
         const on = o.value === value;
+        const off = disabled || o.disabled;
         return (
           <button
             key={o.value}
             type="button"
-            role="radio"
-            aria-checked={on}
+            id={o.id}
+            role={tabs ? "tab" : "radio"}
+            aria-checked={tabs ? undefined : on}
+            aria-selected={tabs ? on : undefined}
+            aria-controls={tabs ? o.controls : undefined}
+            aria-disabled={o.disabled || undefined}
             disabled={disabled}
-            onClick={() => onChange(o.value)}
+            onClick={() => {
+              if (!o.disabled) onChange(o.value);
+            }}
             className={cx(
-              "min-h-10 rounded-lg px-3 text-ui font-medium transition-colors disabled:opacity-60",
-              on ? "bg-card text-foreground ring-1 ring-border" : "text-muted-foreground hover:text-foreground"
+              "relative z-10 inline-flex min-h-10 items-center justify-center gap-1.5 rounded-chip px-3 text-ui",
+              "transition-[color,transform] duration-[var(--dur-2)] enabled:active:scale-[0.96]",
+              on ? "font-semibold text-foreground" : "font-semibold text-muted-foreground hover:text-foreground",
+              o.disabled && "cursor-not-allowed",
+              off && "opacity-60"
             )}
           >
+            {o.icon}
             {o.label}
           </button>
         );
@@ -142,7 +172,7 @@ export function OptionList<T extends string>({
   disabled?: boolean;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="overflow-hidden rounded-xl border border-border divide-y divide-border">
+    <div role="radiogroup" aria-label={label} className="overflow-hidden rounded-chip border border-border/70 divide-y divide-border/70">
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -159,7 +189,7 @@ export function OptionList<T extends string>({
             className={cx(
               "flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors disabled:opacity-60",
               o.disabled && "cursor-not-allowed opacity-50",
-              on ? "bg-accent/[0.06]" : o.disabled ? "bg-card" : "bg-card hover:bg-muted/60"
+              on ? "bg-accent-soft" : o.disabled ? "bg-card" : "bg-card hover:bg-muted/60"
             )}
           >
             <span
@@ -174,7 +204,7 @@ export function OptionList<T extends string>({
             {o.icon && <span className="mt-px shrink-0 text-muted-foreground">{o.icon}</span>}
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline justify-between gap-2">
-                <span className="text-ui font-medium">{o.title}</span>
+                <span className="text-ui font-semibold">{o.title}</span>
                 {o.aside && <span className="shrink-0 text-meta text-muted-foreground">{o.aside}</span>}
               </span>
               {o.description && <span className="mt-0.5 block text-meta text-muted-foreground">{o.description}</span>}
@@ -198,15 +228,23 @@ export function GateReason({ id, reason, icon }: { id?: string; reason: string |
 }
 
 /* ---------- Badge / status ---------- */
-export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "live" | "success" | "accent"; children: ReactNode }) {
+export function Badge({
+  tone = "neutral",
+  children,
+}: {
+  tone?: "neutral" | "live" | "success" | "accent" | "warning" | "danger";
+  children: ReactNode;
+}) {
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-meta font-medium",
+        "inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-meta font-semibold",
         tone === "neutral" && "bg-muted text-muted-foreground",
-        tone === "live" && "bg-danger/10 text-danger",
-        tone === "success" && "bg-success/10 text-success",
-        tone === "accent" && "bg-accent/10 text-accent"
+        tone === "accent" && "bg-accent-soft text-accent",
+        tone === "success" && "bg-success-soft text-success",
+        tone === "warning" && "bg-warning-soft text-warning",
+        tone === "danger" && "bg-danger-soft text-danger",
+        tone === "live" && "bg-danger-soft text-record"
       )}
     >
       {children}
@@ -214,33 +252,125 @@ export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "live
   );
 }
 
-export function LiveDot({ paused = false }: { paused?: boolean }) {
+export function LiveDot({ paused = false, solid = false }: { paused?: boolean; solid?: boolean }) {
   if (paused) return <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground" aria-hidden />;
   return (
     <span className="relative flex h-2 w-2" aria-hidden>
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger opacity-60" />
-      <span className="relative inline-flex h-2 w-2 rounded-full bg-danger" />
+      {!solid && (
+        <span
+          className="absolute inline-flex h-full w-full rounded-full bg-record opacity-60"
+          style={{ animation: "live-ring 1.6s var(--ease-out) infinite" }}
+        />
+      )}
+      <span className="relative inline-flex h-2 w-2 rounded-full bg-record" />
     </span>
   );
 }
 
 /* ---------- Inline messages ---------- */
-export function Notice({ tone = "neutral", title, children, icon }: { tone?: "neutral" | "danger" | "success"; title?: ReactNode; children?: ReactNode; icon?: ReactNode }) {
+export function Notice({
+  tone = "neutral",
+  title,
+  children,
+  icon,
+}: {
+  tone?: "neutral" | "danger" | "success" | "warning" | "accent";
+  title?: ReactNode;
+  children?: ReactNode;
+  icon?: ReactNode;
+}) {
   return (
     <div
       role={tone === "danger" ? "alert" : undefined}
       className={cx(
-        "flex gap-3 rounded-xl border px-3.5 py-3 text-ui",
-        tone === "neutral" && "border-border bg-muted/50",
-        tone === "danger" && "border-danger/30 bg-danger/[0.06]",
-        tone === "success" && "border-success/30 bg-success/[0.06]"
+        "flex gap-3 rounded-chip border px-3.5 py-3 text-ui",
+        tone === "neutral" && "border-border/70 bg-muted/50",
+        tone === "danger" && "border-danger/30 bg-danger-soft",
+        tone === "success" && "border-success/30 bg-success-soft",
+        tone === "warning" && "border-warning/30 bg-warning-soft",
+        tone === "accent" && "border-accent/30 bg-accent-soft"
       )}
     >
-      {icon && <span className={cx("mt-0.5 shrink-0", tone === "danger" ? "text-danger" : tone === "success" ? "text-success" : "text-muted-foreground")}>{icon}</span>}
+      {icon && (
+        <span
+          className={cx(
+            "mt-0.5 shrink-0",
+            tone === "danger"
+              ? "text-danger"
+              : tone === "success"
+                ? "text-success"
+                : tone === "warning"
+                  ? "text-warning"
+                  : tone === "accent"
+                    ? "text-accent"
+                    : "text-muted-foreground"
+          )}
+        >
+          {icon}
+        </span>
+      )}
       <div className="min-w-0">
-        {title && <p className="font-medium">{title}</p>}
+        {title && <p className="font-semibold">{title}</p>}
         {children && <div className={cx("text-meta text-muted-foreground", title ? "mt-0.5" : "")}>{children}</div>}
       </div>
+    </div>
+  );
+}
+
+/* ---------- Switch row ---------- */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  description,
+  id,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: ReactNode;
+  description?: ReactNode;
+  id?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      onClick={() => {
+        if (!disabled) onChange(!checked);
+      }}
+      className={cx(
+        "flex min-h-12 w-full cursor-pointer items-center justify-between gap-3 rounded-chip px-3 py-2 transition-colors hover:bg-muted",
+        disabled && "cursor-not-allowed opacity-60"
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block text-ui font-semibold">{label}</span>
+        {description && <span className="mt-0.5 block text-meta text-muted-foreground">{description}</span>}
+      </span>
+      <button
+        type="button"
+        id={id}
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange(!checked);
+        }}
+        className={cx(
+          "relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-[var(--dur-2)]",
+          checked ? "bg-accent" : "bg-border"
+        )}
+      >
+        <span
+          aria-hidden
+          className="absolute left-[3px] top-[3px] h-5 w-5 rounded-full bg-white shadow-card"
+          style={{
+            transform: checked ? "translateX(18px)" : "translateX(0)",
+            transition: "transform var(--dur-2) var(--spring)",
+          }}
+        />
+      </button>
     </div>
   );
 }
