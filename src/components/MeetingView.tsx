@@ -1,15 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  ArrowLeft, Pencil, Share2, Sparkles, Trash2, Check, X, Calendar, Clock, Monitor, Smartphone, FileText, FileType,
-  FileDown, Users,
+  ChevronLeft, ChevronDown, Pencil, Share2, Sparkles, Trash2, Check, X, Monitor, Smartphone, FileText, FileType,
+  FileDown, Copy,
 } from "lucide-react";
-import { TEMPLATES, formatDuration, transcriptToText, type TranscriptPart } from "@/lib/transcript";
+import { TEMPLATES, formatDuration, speakerLabel, transcriptToText, type TranscriptPart } from "@/lib/transcript";
+import * as haptics from "@/lib/haptics";
+import { useToast } from "./Toast";
+import { SpeakerChip } from "./SpeakerChip";
+import { RenameSpeakerSheet } from "./RenameSpeakerSheet";
 import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/aiModels";
 import { navBack } from "@/lib/navStack";
 import { buildExport } from "@/lib/export";
@@ -46,6 +50,7 @@ const MODEL_KEY = "transcriber.summaryModel";
 
 export function MeetingView({ meeting, source = "server" }: { meeting: MeetingData; source?: "server" | "local" }) {
   const router = useRouter();
+  const toast = useToast();
   const { userId } = useLocalUser();
   const [title, setTitle] = useState(meeting.title);
   const [savedTitle, setSavedTitle] = useState(meeting.title);
@@ -59,15 +64,19 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const [status, setStatus] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exportBusy, setExportBusy] = useState<ExportKind | "share" | null>(null);
-  const [exportNote, setExportNote] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const [exportNote, setExportNote] = useState<{ tone: "error"; text: string } | null>(null);
   const preloaded = useRef(false);
   const [shareOpen, setShareOpen] = useState(false);
   const shareBtnRef = useRef<HTMLButtonElement>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
+  const [headerRenaming, setHeaderRenaming] = useState<number | null>(null);
+  const [regenOpen, setRegenOpen] = useState(false);
+  const chipRefs = useRef(new Map<number, HTMLButtonElement>());
 
   const [names, setNames] = useState<Record<string, string> | null>(meeting.speakerNames ?? null);
   const rawText = transcriptToText(meeting.transcript, { names });
-  const speakers = new Set(meeting.transcript.map((p) => p.speaker)).size;
+  const speakerIds = Array.from(new Set(meeting.transcript.map((p) => p.speaker)));
+  const speakers = speakerIds.length;
   const words = meeting.transcript.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0);
 
   // AI model for Minutes / Reports; the last choice is remembered on this device.
@@ -319,7 +328,11 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     setExportBusy(kind);
     try {
       const file = await buildExport({ kind, target, meeting: exportMeeting });
-      await shareOrSave(file, title); // "cancelled" and "printed" show no message
+      const result = await shareOrSave(file, title); // "cancelled" and "printed" show no message
+      if (result === "ok") {
+        toast(kind === "pdf" ? "Saved PDF" : kind === "docx" ? "Saved Word file" : "Saved text file");
+        haptics.success();
+      }
     } catch (e) {
       console.error("Export failed:", e);
       const code = e instanceof ExportError ? e.code : undefined;
@@ -350,11 +363,20 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     setExportBusy("share");
     try {
       if (!isNative() && !webCanShareFiles() && typeof navigator.share === "function") {
-        if ((await shareText(text, title)) === "copied") {
-          setExportNote({ tone: "success", text: "Copied to clipboard" });
+        const result = await shareText(text, title);
+        if (result === "copied") {
+          toast("Copied to clipboard");
+          haptics.success();
+        } else if (result === "ok") {
+          toast("Shared");
+          haptics.success();
         }
       } else {
-        await shareOrSave(await buildExport({ kind: fileKind, target, meeting: exportMeeting }), title);
+        const result = await shareOrSave(await buildExport({ kind: fileKind, target, meeting: exportMeeting }), title);
+        if (result === "ok") {
+          toast("Shared");
+          haptics.success();
+        }
       }
     } catch (e) {
       console.error("Share failed:", e);
@@ -369,18 +391,12 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     }
   };
 
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-  }, []);
-
   const runCopy = async () => {
     setExportNote(null);
     try {
       await copyText(currentText);
-      setExportNote({ tone: "success", text: "Copied to clipboard" });
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-      copyTimer.current = setTimeout(() => setExportNote(null), 2500);
+      toast("Copied to clipboard");
+      haptics.success();
     } catch (e) {
       console.error("Copy failed:", e);
       setExportNote({ tone: "error", text: "Couldn't copy. Select the text and copy it by hand." });
@@ -391,11 +407,11 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const DeviceIcon = isPhone ? Smartphone : Monitor;
   const hasTranscript = meeting.transcript.length > 0;
   const aiGate = useFeatureGate("ai");
+  const aiReason = aiGate.reason === "Needs internet" ? "Needs internet. We'll keep this meeting ready." : aiGate.reason;
 
   const deleteButton = (
     <Button
       variant={confirmDelete ? "danger-solid" : "danger"}
-      className="w-full"
       icon={<Trash2 className="h-4 w-4" />}
       onClick={remove}
     >
@@ -403,65 +419,76 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     </Button>
   );
 
-  const exportPanel = (
-    <Panel className="p-5" aria-label="Export" onPointerEnter={warmExport} onFocus={warmExport}>
-      <ExportButtons
-        name={currentName}
-        busy={exportBusy}
-        disabled={nothingToExport}
-        onShare={() => {
-          preloadExport();
-          setShareOpen((o) => !o);
-        }}
-        shareRef={shareBtnRef}
-        shareOpen={shareOpen}
-        menu={
-          <ShareMenu
-            open={shareOpen}
-            onClose={() => setShareOpen(false)}
-            anchorRef={shareBtnRef}
-            docLabel={doc ? (docTemplate === "Report" ? "report" : "minutes") : null}
-            fileDescription={fileKind === "pdf" ? "PDF file" : "Word file"}
-            hasTranscript={hasTranscript}
-            copyDescription={showingDoc ? `Copies the ${docName.toLowerCase()}` : "Copies the transcript"}
-            canCopy={currentText.trim().length > 0}
-            onShareDocument={() => runShare("document")}
-            onShareTranscript={() => runShare("transcript")}
-            onCopy={runCopy}
-          />
-        }
-        onTxt={() => runExport("txt")}
-        onWord={() => runExport("docx")}
-        onPdf={() => runExport("pdf")}
-      />
-      {nothingToExport && <p className="mt-2 text-meta text-muted-foreground">This meeting has nothing to export yet.</p>}
-      {exportNote &&
-        (exportNote.tone === "error" ? (
-          <p className="mt-2 text-meta text-danger" role="alert">{exportNote.text}</p>
-        ) : (
-          <p className="mt-2 text-meta text-success" role="status">{exportNote.text}</p>
-        ))}
-      <div className="mt-4 border-t border-border pt-4">{deleteButton}</div>
-    </Panel>
-  );
+  const anyBusy = exportBusy !== null;
+  const off = (k: ExportKind | "share") => nothingToExport || (anyBusy && exportBusy !== k);
 
   const docWord = template === "Report" ? "report" : "minutes";
 
+  const aiForm = (
+    <div className="space-y-4 p-5">
+      <div>
+        <FieldLabel>Document</FieldLabel>
+        <Segmented
+          label="Document type"
+          value={template as "MOM" | "Report"}
+          onChange={setTemplate}
+          disabled={busy}
+          options={TEMPLATES.map((t) => ({ value: t.value, label: t.value === "MOM" ? "Minutes" : t.label }))}
+        />
+      </div>
+      <div>
+        <FieldLabel>Model</FieldLabel>
+        <OptionList
+          label="AI model"
+          value={model}
+          disabled={busy}
+          onChange={chooseModel}
+          options={SUMMARY_MODELS.map((m) => ({
+            value: m.value,
+            title: m.label.split(" · ")[1],
+            aside: m.label.split(" · ")[0],
+            description: m.hint,
+          }))}
+        />
+      </div>
+      <Button
+        variant="primary"
+        size="lg"
+        className="w-full"
+        loading={busy}
+        icon={<Sparkles className="h-4 w-4" />}
+        disabled={!hasTranscript || !aiGate.enabled}
+        aria-disabled={!hasTranscript || !aiGate.enabled}
+        aria-describedby={aiReason ? "ai-gate-reason" : undefined}
+        onClick={generate}
+      >
+        {busy ? (status ?? "Writing… this can take a minute") : doc ? `Regenerate ${docWord}` : `Create ${docWord}`}
+      </Button>
+      <GateReason id="ai-gate-reason" reason={aiReason} />
+      {!hasTranscript && <p className="text-meta text-muted-foreground">This meeting has no transcript to work from.</p>}
+      {error && (
+        <p className="text-meta text-danger" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+
   return (
-    <div>
+    <div className="mx-auto max-w-3xl">
       {/* ---------- Header ---------- */}
       <header className="mb-6 sm:mb-8">
         <Link
           href="/meetings"
           aria-label="Back to meetings"
-          className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-meta font-semibold text-muted-foreground hover:text-foreground"
+          className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-btn px-2 text-meta font-semibold text-muted-foreground hover:text-foreground"
           onClick={(e) => {
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
             e.preventDefault();
             navBack(router, "/meetings");
           }}
         >
-          <ArrowLeft className="h-4 w-4" /> Meetings
+          <ChevronLeft className="h-4 w-4" /> Meetings
         </Link>
         <div className="mt-1">
           {editingTitle ? (
@@ -493,7 +520,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
             </div>
           ) : (
             <button onClick={() => setEditingTitle(true)} className="group -mx-1 rounded-lg px-1 text-left" title="Rename">
-              <h1 className="break-words text-2xl font-semibold tracking-tight sm:text-[1.75rem] sm:leading-tight">
+              <h1 className="break-words text-2xl font-semibold tracking-tight">
                 {title}
                 <Pencil className="ml-2 inline h-4 w-4 align-middle text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 max-lg:opacity-60" />
               </h1>
@@ -501,22 +528,16 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
           )}
         </div>
         {titleError && <p className="mt-2 text-meta text-danger" role="alert">{titleError}</p>}
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-meta text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5" suppressHydrationWarning>
-            <Calendar className="h-3.5 w-3.5" />
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-meta tabular-nums text-muted-foreground">
+          <span suppressHydrationWarning>
             {new Date(meeting.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
           </span>
-          <span className="inline-flex items-center gap-1.5 tabular-nums">
-            <Clock className="h-3.5 w-3.5" /> {formatDuration(meeting.durationSec)}
-          </span>
-          <span className="tabular-nums">{words.toLocaleString("en-IN")} words</span>
-          {speakers > 1 && (
-            <span className="inline-flex items-center gap-1.5">
-              <Users className="h-3.5 w-3.5" /> {speakers} speakers
-            </span>
-          )}
+          <span aria-hidden>·</span>
+          <span>{formatDuration(meeting.durationSec)}</span>
+          <span aria-hidden>·</span>
+          <span>{words.toLocaleString("en-IN")} words</span>
           {meeting.deviceName && (
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 font-sans">
               <DeviceIcon className="h-3.5 w-3.5" /> {meeting.deviceName}
             </span>
           )}
@@ -526,157 +547,162 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
             </Badge>
           )}
         </div>
+        {speakers > 1 && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+            {speakerIds.map((n) => (
+              <span key={n} className="relative">
+                <SpeakerChip
+                  speaker={n}
+                  label={speakerLabel(n, names)}
+                  expanded={headerRenaming === n}
+                  buttonRef={(el) => {
+                    if (el) chipRefs.current.set(n, el);
+                    else chipRefs.current.delete(n);
+                  }}
+                  onClick={() => setHeaderRenaming((cur) => (cur === n ? null : n))}
+                />
+                {headerRenaming === n && (
+                  <RenameSpeakerSheet
+                    speaker={n}
+                    currentName={names?.[String(n)]}
+                    onClose={() => {
+                      setHeaderRenaming(null);
+                      requestAnimationFrame(() => chipRefs.current.get(n)?.focus());
+                    }}
+                    onSave={async (name) => {
+                      const ok = await renameSpeaker(n, name);
+                      if (ok) {
+                        setHeaderRenaming(null);
+                        requestAnimationFrame(() => chipRefs.current.get(n)?.focus());
+                      }
+                      return ok;
+                    }}
+                  />
+                )}
+              </span>
+            ))}
+          </div>
+        )}
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
-        {/* ---------- Document / transcript ---------- */}
-        <div className={cx("min-w-0", doc ? "order-1" : "order-2 lg:order-1")}>
-          <div className="mb-4 flex gap-6 border-b border-border" role="tablist">
-            {(["document", "transcript"] as const).map((t) => {
-              const on = tab === t;
-              return (
-                <button
-                  key={t}
-                  role="tab"
-                  aria-selected={on}
-                  onClick={() => setTab(t)}
-                  disabled={t === "document" && !doc}
-                  className={cx(
-                    "-mb-px min-h-11 border-b-2 text-ui font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-                    on ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {t === "document" ? docName : "Transcript"}
-                </button>
-              );
-            })}
+      {/* ---------- Actions ---------- */}
+      <section aria-label="Export" onPointerEnter={warmExport} onFocus={warmExport} className="mb-6">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <div className="relative w-full lg:w-auto lg:min-w-[200px]">
+            <Button
+              ref={shareBtnRef}
+              variant="primary"
+              size="lg"
+              className="w-full"
+              onClick={() => {
+                preloadExport();
+                setShareOpen((o) => !o);
+              }}
+              loading={exportBusy === "share"}
+              disabled={off("share")}
+              aria-haspopup="menu"
+              aria-expanded={shareOpen}
+              icon={<Share2 className="h-4 w-4" />}
+            >
+              {exportBusy === "share" ? "Preparing…" : "Share"}
+            </Button>
+            <ShareMenu
+              open={shareOpen}
+              onClose={() => setShareOpen(false)}
+              anchorRef={shareBtnRef}
+              docLabel={doc ? (docTemplate === "Report" ? "report" : "minutes") : null}
+              fileDescription={fileKind === "pdf" ? "PDF file" : "Word file"}
+              hasTranscript={hasTranscript}
+              copyDescription={showingDoc ? `Copies the ${docName.toLowerCase()}` : "Copies the transcript"}
+              canCopy={currentText.trim().length > 0}
+              onShareDocument={() => runShare("document")}
+              onShareTranscript={() => runShare("transcript")}
+              onCopy={runCopy}
+            />
           </div>
-
-          <Panel className="px-5 py-6 sm:px-8 sm:py-8">
-            <div>
-              {showingDoc ? (
-                <article className="prose prose-stone max-w-[72ch] dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-h1:mb-3 prose-h1:mt-10 prose-h1:text-lg first:prose-h1:mt-0 prose-h2:text-base prose-p:leading-7 prose-li:my-1 prose-table:text-meta prose-th:bg-muted/60 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 [&_table]:block [&_table]:overflow-x-auto">
-                  <Markdown remarkPlugins={[remarkGfm]}>{doc!}</Markdown>
-                </article>
-              ) : hasTranscript ? (
-                <TranscriptView parts={meeting.transcript} window="head" speakerNames={names} onRenameSpeaker={renameSpeaker} renameHint />
-              ) : (
-                <p className="text-ui text-muted-foreground">No transcript was captured.</p>
-              )}
-            </div>
-          </Panel>
+          <Button
+            variant="secondary"
+            size="lg"
+            className="w-full rounded-full lg:w-auto"
+            icon={<Copy className="h-4 w-4" />}
+            disabled={currentText.trim().length === 0}
+            onClick={runCopy}
+          >
+            Copy
+          </Button>
         </div>
+        <p className="mb-2 mt-4 text-meta font-semibold text-muted-foreground">More formats</p>
+        <div className="grid grid-cols-3 gap-2">
+          <Button onClick={() => runExport("pdf")} loading={exportBusy === "pdf"} disabled={off("pdf")} icon={<FileDown className="h-4 w-4" />} className="min-h-11 px-2">
+            PDF
+          </Button>
+          <Button onClick={() => runExport("docx")} loading={exportBusy === "docx"} disabled={off("docx")} icon={<FileType className="h-4 w-4" />} className="min-h-11 px-2">
+            Word
+          </Button>
+          <Button onClick={() => runExport("txt")} loading={exportBusy === "txt"} disabled={off("txt")} icon={<FileText className="h-4 w-4" />} className="min-h-11 px-2">
+            Text
+          </Button>
+        </div>
+        {nothingToExport && <p className="mt-2 text-meta text-muted-foreground">This meeting has nothing to export yet.</p>}
+        {exportNote && <p className="mt-2 text-meta text-danger" role="alert">{exportNote.text}</p>}
+      </section>
 
-        {/* ---------- Side panel ---------- */}
-        {/* Phones: with a document, read it first; without one, the AI panel leads. */}
-        <aside className={cx("space-y-4 lg:sticky lg:top-10 lg:order-2", doc ? "order-2" : "order-1")}>
-          <Panel aria-label="AI document">
-            <PanelHeader title={doc ? "Regenerate with AI" : "Create with AI"} />
-            <div className="space-y-4 p-5">
-              <div>
-                <FieldLabel>Document</FieldLabel>
-                <Segmented
-                  label="Document type"
-                  value={template as "MOM" | "Report"}
-                  onChange={setTemplate}
-                  disabled={busy}
-                  options={TEMPLATES.map((t) => ({ value: t.value, label: t.value === "MOM" ? "Minutes" : t.label }))}
-                />
-              </div>
-              <div>
-                <FieldLabel>Model</FieldLabel>
-                <OptionList
-                  label="AI model"
-                  value={model}
-                  disabled={busy}
-                  onChange={chooseModel}
-                  options={SUMMARY_MODELS.map((m) => ({
-                    value: m.value,
-                    title: m.label.split(" · ")[1],
-                    aside: m.label.split(" · ")[0],
-                    description: m.hint,
-                  }))}
-                />
-              </div>
-              <Button
-                variant="primary"
-                size="lg"
-                className="w-full"
-                loading={busy}
-                icon={<Sparkles className="h-4 w-4" />}
-                disabled={!hasTranscript || !aiGate.enabled}
-                aria-disabled={!hasTranscript || !aiGate.enabled}
-                aria-describedby={aiGate.reason ? "ai-gate-reason" : undefined}
-                onClick={generate}
-              >
-                {busy ? (status ?? "Writing… this can take a minute") : doc ? `Regenerate ${docWord}` : `Create ${docWord}`}
-              </Button>
-              <GateReason id="ai-gate-reason" reason={aiGate.reason} />
-              {!hasTranscript && <p className="text-meta text-muted-foreground">This meeting has no transcript to work from.</p>}
-              {error && (
-                <p className="text-meta text-danger" role="alert">
-                  {error}
-                </p>
-              )}
-            </div>
+      {/* ---------- Tabs ---------- */}
+      <Segmented
+        semantics="tabs"
+        label="Meeting content"
+        value={tab}
+        onChange={(t) => {
+          setTab(t);
+          haptics.tap();
+        }}
+        options={[
+          { value: "document", label: docName },
+          { value: "transcript", label: "Transcript" },
+        ]}
+        className="mb-4 max-w-[320px]"
+      />
+
+      <div key={tab} className="text-in space-y-4">
+        {tab === "document" ? (
+          doc ? (
+            <>
+              <Panel className="px-5 py-6 sm:px-8 sm:py-8">
+                <article className="prose prose-stone max-w-[72ch] text-reading sm:text-base dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-h1:mb-3 prose-h1:mt-10 prose-h1:text-lg first:prose-h1:mt-0 prose-h2:text-base prose-p:leading-[1.6] prose-li:my-1 prose-table:text-meta prose-th:bg-muted/60 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 [&_table]:block [&_table]:overflow-x-auto">
+                  <Markdown remarkPlugins={[remarkGfm]}>{doc}</Markdown>
+                </article>
+              </Panel>
+              <Panel aria-label="AI document">
+                <button
+                  type="button"
+                  aria-expanded={regenOpen}
+                  onClick={() => setRegenOpen((o) => !o)}
+                  className="flex min-h-14 w-full items-center justify-between gap-3 rounded-panel px-5 text-left text-ui font-semibold"
+                >
+                  Regenerate with AI
+                  <ChevronDown className={cx("h-4 w-4 transition-transform duration-[var(--dur-2)]", regenOpen && "rotate-180")} aria-hidden />
+                </button>
+                {regenOpen && <div className="border-t border-border/70">{aiForm}</div>}
+              </Panel>
+            </>
+          ) : (
+            <Panel aria-label="AI document">
+              <PanelHeader title="Create with AI" />
+              {aiForm}
+            </Panel>
+          )
+        ) : (
+          <Panel className="px-5 py-6 sm:px-8 sm:py-8">
+            {hasTranscript ? (
+              <TranscriptView parts={meeting.transcript} window="head" speakerNames={names} onRenameSpeaker={renameSpeaker} renameHint />
+            ) : (
+              <p className="text-ui text-muted-foreground">No transcript was captured.</p>
+            )}
           </Panel>
-
-          <div className={cx(!doc && "max-lg:hidden")}>{exportPanel}</div>
-        </aside>
-
-        {/* Phones without a document: export + delete after the transcript */}
-        {!doc && <div className="order-3 lg:hidden">{exportPanel}</div>}
+        )}
       </div>
+
+      <div className="mt-8 flex justify-center border-t border-border pt-6">{deleteButton}</div>
     </div>
-  );
-}
-
-function ExportButtons(props: {
-  name: string;
-  busy: ExportKind | "share" | null;
-  disabled: boolean;
-  onShare: () => void;
-  shareRef: RefObject<HTMLButtonElement | null>;
-  shareOpen: boolean;
-  menu: ReactNode;
-  onTxt: () => void;
-  onWord: () => void;
-  onPdf: () => void;
-}) {
-  const any = props.busy !== null;
-  const off = (k: ExportKind | "share") => props.disabled || (any && props.busy !== k);
-  return (
-    <>
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-ui font-semibold">Export</h2>
-        <span className="text-meta text-muted-foreground">{props.name}</span>
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <Button onClick={props.onPdf} loading={props.busy === "pdf"} disabled={off("pdf")} icon={<FileDown className="h-4 w-4" />} className="px-2">
-          PDF
-        </Button>
-        <Button onClick={props.onWord} loading={props.busy === "docx"} disabled={off("docx")} icon={<FileType className="h-4 w-4" />} className="px-2">
-          Word
-        </Button>
-        <Button onClick={props.onTxt} loading={props.busy === "txt"} disabled={off("txt")} icon={<FileText className="h-4 w-4" />} className="px-2">
-          Text
-        </Button>
-      </div>
-      <div className="relative mt-2">
-        <Button
-          ref={props.shareRef}
-          onClick={props.onShare}
-          loading={props.busy === "share"}
-          disabled={off("share")}
-          aria-haspopup="menu"
-          aria-expanded={props.shareOpen}
-          icon={<Share2 className="h-4 w-4" />}
-          className="w-full"
-        >
-          {props.busy === "share" ? "Preparing…" : "Share meeting"}
-        </Button>
-        {props.menu}
-      </div>
-    </>
   );
 }
