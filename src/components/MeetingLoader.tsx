@@ -40,7 +40,7 @@ export function MeetingSkeleton() {
     <div role="status" className="space-y-3">
       <span className="sr-only">Loading</span>
       {[0, 1, 2].map((i) => (
-        <div key={i} className="h-24 animate-pulse rounded-panel bg-muted" />
+        <div key={i} className="shimmer h-[88px] rounded-panel bg-muted" />
       ))}
     </div>
   );
@@ -48,7 +48,7 @@ export function MeetingSkeleton() {
 
 function Message({ title, body, children }: { title: string; body: string; children?: React.ReactNode }) {
   return (
-    <Panel as="div" className="border-dashed px-6 py-14 text-center">
+    <Panel as="div" className="px-6 py-12 text-center">
       <FileX className="mx-auto mb-3 h-6 w-6 text-muted-foreground" aria-hidden />
       <p className="text-ui font-semibold">{title}</p>
       <p className="mx-auto mt-1 max-w-[40ch] text-meta text-muted-foreground">{body}</p>

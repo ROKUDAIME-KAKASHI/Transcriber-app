@@ -23,3 +23,6 @@ test("7+ days ago is Earlier", () => {
 test("future date is Today", () => {
   assert.equal(dateGroup(new Date(2026, 10, 25, 9, 0), now), "Today");
 });
+test("exactly 6 days ago is still This week", () => {
+  assert.equal(dateGroup(new Date(2026, 10, 17, 23, 59), now), "This week");
+});
