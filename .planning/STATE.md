@@ -89,3 +89,9 @@ None yet.
 Last session: 2026-11-23T05:19:25.910Z
 Stopped at: Phase 5 UI-SPEC approved
 Resume file: None
+
+### Quick Tasks Completed
+
+| Date | Task | Commit |
+|------|------|--------|
+| 2026-11-23 | stop-stuck-recording (.planning/quick/20261123-stop-stuck-recording) | fbb7b53 |
