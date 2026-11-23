@@ -4,6 +4,7 @@
  * Small design-system primitives, so every screen uses the same buttons, panels, labels and
  * controls. Tokens live in globals.css (Aurora Ink).
  */
+import { useId } from "react";
 import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { Loader2 } from "lucide-react";
 
@@ -333,6 +334,7 @@ export function Switch({
   id?: string;
   disabled?: boolean;
 }) {
+  const labelId = useId();
   return (
     <div
       onClick={() => {
@@ -344,13 +346,15 @@ export function Switch({
       )}
     >
       <span className="min-w-0">
-        <span className="block text-ui font-semibold">{label}</span>
-        {description && <span className="mt-0.5 block text-meta text-muted-foreground">{description}</span>}
+        <span id={labelId} className="block text-ui font-semibold">{label}</span>
+        {description && <span id={`${labelId}-d`} className="mt-0.5 block text-meta text-muted-foreground">{description}</span>}
       </span>
       <button
         type="button"
         id={id}
         role="switch"
+        aria-labelledby={labelId}
+        aria-describedby={description ? `${labelId}-d` : undefined}
         aria-checked={checked}
         disabled={disabled}
         onClick={(e) => {
