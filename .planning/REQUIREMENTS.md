@@ -39,7 +39,7 @@
 ### UI Redesign
 
 - [x] **UI-01**: New visual direction ("Aurora Ink" from research): tinted, non-pure-black dark theme and a light theme, single electric accent, depth (soft elevation, subtle gradient), applied through design tokens
-- [ ] **UI-02**: Record screen feels alive: mic-reactive visual (orb/waveform), animated record→stop button, clear live state, with a calm low-power mode during long recordings
+- [x] **UI-02**: Record screen feels alive: mic-reactive visual (orb/waveform), animated record→stop button, clear live state, with a calm low-power mode during long recordings
 - [x] **UI-03**: Motion and micro-interactions across the app (press feedback, page/list transitions, tab changes, toasts), respecting reduced motion
 - [ ] **UI-04**: Meetings list and meeting page redesigned: readable cards, Share as primary action, Minutes/Transcript tabs, friendly empty states
 - [x] **UI-05**: Stays simple: no new clutter; works at phone width and laptop width; light and dark both pass contrast
@@ -96,7 +96,7 @@
 | SPK-04 | Phase 4 | Complete |
 | SPK-05 | Phase 4 | Complete |
 | UI-01 | Phase 5 | Complete |
-| UI-02 | Phase 5 | Pending |
+| UI-02 | Phase 5 | Complete |
 | UI-03 | Phase 5 | Complete |
 | UI-04 | Phase 5 | Pending |
 | UI-05 | Phase 5 | Complete |
