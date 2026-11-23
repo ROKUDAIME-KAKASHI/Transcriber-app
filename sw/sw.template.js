@@ -124,7 +124,16 @@ async function cachedShell(shell) {
 async function handleAsset(request) {
   var cache = await caches.open(ASSET_CACHE);
   var hit = await cache.match(request, { ignoreVary: true, ignoreSearch: true });
-  if (hit) return hit;
+  if (hit) {
+    // A cached response keeps the URL it was stored under. With ignoreSearch that drops the
+    // request's query, and worker scripts read their own location: Turbopack's worker entry needs
+    // "?params=…" from it ("Missing worker bootstrap config"). A rebuilt response has no URL of its
+    // own, so the page/worker sees the URL it actually requested.
+    if (new URL(request.url).search) {
+      return new Response(hit.body, { status: hit.status, statusText: hit.statusText, headers: hit.headers });
+    }
+    return hit;
+  }
   var res = await fetch(request);
   if (res.status === 200 && res.type === "basic") {
     try { await cache.put(request, res.clone()); } catch (e) { /* quota */ }
