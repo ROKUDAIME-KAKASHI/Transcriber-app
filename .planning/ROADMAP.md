@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
  (completed 2026-11-21)
 - [x] **Phase 3: Offline App Shell & Gating** - The app opens, stays signed in and records on-device with no internet; online-only features are clearly gated
  (completed 2026-11-21)
-- [ ] **Phase 4: On-Device Speaker Separation** - Moonshine/Whisper transcripts say who said what, renamable, used by AI minutes
+- [x] **Phase 4: On-Device Speaker Separation** - Moonshine/Whisper transcripts say who said what, renamable, used by AI minutes
 - [ ] **Phase 5: Aurora Ink Redesign & Release** - Alive, modern, simple UI with motion; signed APK built and verified on the Xiaomi phone
 
 ## Phase Details
@@ -97,17 +97,17 @@ Plans:
   3. User renames "Speaker 1" to a name once, and the name appears across the transcript, TXT/Word/PDF exports and AI minutes
   4. AI minutes for an on-device recording attribute statements, decisions and actions to speakers, as they do for Deepgram meetings
   5. On the Xiaomi phone, live transcription with speaker separation keeps up with speech during a long meeting (no growing backlog)
-**Plans:** 1/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 - [x] 04-01-PLAN.md — Spike first (scripts/diarize-bench.mjs, 04-BENCHMARK.md, phone UAT item) + pure clustering core diarize.ts with tests (wave 1)
-- [ ] 04-02-PLAN.md — SPEAKER_MODEL, pure embedSchedule rules, worker embedding class (lowest priority, crop, skip) + client API (wave 1)
-- [ ] 04-03-PLAN.md — speakerLabel helper, names in TXT/Word/PDF exports, AI minutes route names + D-12 prompt (wave 1)
-- [ ] 04-04-PLAN.md — Dexie v2 embeddings table, setRelabel, sync speakers step via /speakers parts overrides (wave 1)
-- [ ] 04-05-PLAN.md — Speaker chip, rename sheet, status line, hint; meeting page rename + names in exports (wave 2)
-- [ ] 04-06-PLAN.md — Offline download/readiness includes the speaker model (wave 2)
-- [ ] 04-07-PLAN.md — useRecorder: live labels, stop-time refine with name mapping, relabel sync, live rename (wave 2)
-- [ ] 04-08-PLAN.md — Record screen wiring, phase gate + audits, complete HUMAN-UAT (wave 3)
+- [x] 04-02-PLAN.md — SPEAKER_MODEL, pure embedSchedule rules, worker embedding class (lowest priority, crop, skip) + client API (wave 1)
+- [x] 04-03-PLAN.md — speakerLabel helper, names in TXT/Word/PDF exports, AI minutes route names + D-12 prompt (wave 1)
+- [x] 04-04-PLAN.md — Dexie v2 embeddings table, setRelabel, sync speakers step via /speakers parts overrides (wave 1)
+- [x] 04-05-PLAN.md — Speaker chip, rename sheet, status line, hint; meeting page rename + names in exports (wave 2)
+- [x] 04-06-PLAN.md — Offline download/readiness includes the speaker model (wave 2)
+- [x] 04-07-PLAN.md — useRecorder: live labels, stop-time refine with name mapping, relabel sync, live rename (wave 2)
+- [x] 04-08-PLAN.md — Record screen wiring, phase gate + audits, complete HUMAN-UAT (wave 3)
 
 ### Phase 5: Aurora Ink Redesign & Release
 **Goal**: The app feels alive, modern and still simple on phone and laptop, and a verified signed APK ships with everything from this milestone
@@ -133,7 +133,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | 1. Export, Share & Navigation | 4/4 | Complete   | 2026-11-21 |
 | 2. Local-First Meetings & Sync | 5/5 | Complete   | 2026-11-21 |
 | 3. Offline App Shell & Gating | 8/8 | Complete   | 2026-11-21 |
-| 4. On-Device Speaker Separation | 1/8 | In Progress|  |
+| 4. On-Device Speaker Separation | 8/8 | Code complete (device UAT pending) | 2026-11-23 |
 | 5. Aurora Ink Redesign & Release | 0/TBD | Not started | - |
 
 ---
