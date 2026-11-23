@@ -120,6 +120,15 @@ let busyIntervals: Array<[number, number]> = [];
 // ---- Speaker embedding model (lazy, lowest priority, never blocks or fails ASR) ----
 let speakerPromise: Promise<SpeakerModel | null> | null = null;
 let speakerModel: SpeakerModel | null = null;
+/** True while the speaker session is being created and warmed up: phrases that overlap it are not used for the speed check. */
+let speakerBusy = false;
+
+/** Resolves once no transcription or embedding work is queued or running (the speaker load is lowest priority). */
+async function untilIdle() {
+  while (running || finals.length > 0 || partial || embeds.length > 0) {
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
 
 function loadSpeaker(localOnly: boolean): Promise<SpeakerModel | null> {
   if (speakerPromise) return speakerPromise;
@@ -129,13 +138,21 @@ function loadSpeaker(localOnly: boolean): Promise<SpeakerModel | null> {
       await loaded.get(active);
       const opts = { ...(localOnly ? { local_files_only: true } : {}) };
       const fe = (await AutoFeatureExtractor.from_pretrained(SPEAKER_MODEL.repo, opts)) as unknown as SpeakerModel["fe"];
-      const model = (await AutoModel.from_pretrained(SPEAKER_MODEL.repo, {
-        device: "wasm",
-        dtype: SPEAKER_MODEL.dtype,
-        ...opts,
-      })) as unknown as SpeakerModel["model"];
-      const sm: SpeakerModel = { fe, model };
-      await embedWith(sm, new Float32Array(SAMPLE_RATE)); // warm-up on 1 s of silence
+      // Session creation and warm-up are CPU-heavy: do them only when no phrase is waiting.
+      await untilIdle();
+      speakerBusy = true;
+      let sm: SpeakerModel;
+      try {
+        const model = (await AutoModel.from_pretrained(SPEAKER_MODEL.repo, {
+          device: "wasm",
+          dtype: SPEAKER_MODEL.dtype,
+          ...opts,
+        })) as unknown as SpeakerModel["model"];
+        sm = { fe, model };
+        await embedWith(sm, new Float32Array(SAMPLE_RATE)); // warm-up on 1 s of silence
+      } finally {
+        speakerBusy = false;
+      }
       speakerModel = sm;
       self.postMessage({ type: "speaker-ready", ok: true });
       return sm;
@@ -257,6 +274,7 @@ async function run(job: Job) {
     const transcriber = await loadModel(active, false);
     const seconds = job.audio.length / SAMPLE_RATE;
     const t0 = performance.now();
+    const overlapsSpeakerLoad = speakerBusy;
     const options = optionsFor(job, seconds);
     const textOf = (o: Awaited<ReturnType<Transcriber>>) => ((Array.isArray(o) ? o[0]?.text : o.text) ?? "").trim();
     let text = textOf(await transcriber(job.audio, options));
@@ -269,7 +287,7 @@ async function run(job: Job) {
     const minSeconds = MODELS[active].family === "whisper" ? 2 : 0.5;
     const rtf = (performance.now() - t0) / 1000 / Math.max(seconds, minSeconds);
     self.postMessage({ type: "result", id: job.id, text, rtf });
-    if (job.kind === "final") trackSpeed(rtf);
+    if (job.kind === "final" && !overlapsSpeakerLoad && !speakerBusy) trackSpeed(rtf);
     if (job.kind === "final" && job.embed) queueEmbed(job, seconds);
   } catch (err) {
     self.postMessage({ type: "error", id: job.id, message: String((err as Error)?.message ?? err) });
