@@ -426,6 +426,7 @@ export function ActionItems({
         onClose={() => setAgendaItems(null)}
         items={agendaItems ?? []}
         meetingTitle={meetingTitle ?? null}
+        meetingId={meetingId}
       />
     </div>
   );

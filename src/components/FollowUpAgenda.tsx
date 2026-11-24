@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CalendarCheck, Copy, RotateCcw, Share2, Sparkles, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CalendarCheck, CalendarClock, Copy, RotateCcw, Share2, Sparkles, X } from "lucide-react";
 import { useFeatureGate } from "@/lib/featureGate";
 import { pushOverlay } from "@/lib/overlays";
-import { copyText, shareOrSave } from "@/lib/export/deliver";
+import { copyText, shareOrSave, shareText } from "@/lib/export/deliver";
+import { useConnectivity } from "@/lib/connectivity";
 import { agendaFileName, buildAgendaDraft, type AgendaItem } from "@/lib/followUpAgenda";
 import { localToday } from "@/lib/taskTracker";
 import { useToast } from "./Toast";
@@ -38,13 +40,19 @@ export function FollowUpAgendaSheet({
   onClose,
   items,
   meetingTitle,
+  meetingId = null,
 }: {
   open: boolean;
   onClose: () => void;
   items: AgendaItem[];
   meetingTitle: string | null;
+  /** The meeting this agenda follows up on, when it is a single meeting. */
+  meetingId?: string | null;
 }) {
   const toast = useToast();
+  const router = useRouter();
+  const offline = useConnectivity() === "offline";
+  const [scheduling, setScheduling] = useState(false);
   const aiGate = useFeatureGate("ai");
   const draft = useMemo(
     () => buildAgendaDraft(items, { meetingTitle, today: localToday() }),
@@ -139,6 +147,49 @@ export function FollowUpAgendaSheet({
       } catch {
         toast("Couldn't share the agenda. Try Copy.", "danger");
       }
+    }
+  };
+
+  /** Save the agenda, then share a booking link that carries it. No handle yet: go set one up. */
+  const scheduleFollowUp = async () => {
+    if (!text.trim() || scheduling) return;
+    setError(null);
+    setScheduling(true);
+    try {
+      const sres = await fetch("/api/schedule/settings", { cache: "no-store" });
+      const settings = (await sres.json().catch(() => null)) as {
+        error?: string;
+        handle?: string | null;
+        eventTypes?: { id: string | null; slug: string; active: boolean }[];
+      } | null;
+      if (!sres.ok || !settings) {
+        setError(settings?.error || "Couldn't check your booking link. Try again.");
+        return;
+      }
+      const slug = settings.eventTypes?.find((e) => e.id && e.active)?.slug;
+      if (!settings.handle || !slug) {
+        onCloseRef.current();
+        toast("Set up your booking link first, then come back.", "neutral");
+        router.push("/schedule");
+        return;
+      }
+      const res = await fetch("/api/schedule/agenda-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, followUpFromMeetingId: meetingId }),
+      });
+      const data = (await res.json().catch(() => null)) as { id?: string; error?: string } | null;
+      if (!res.ok || !data?.id) {
+        setError(data?.error || "Couldn't create the link. Try again.");
+        return;
+      }
+      const url = `${window.location.origin}/book/${settings.handle}/${slug}?agenda=${data.id}`;
+      const r = await shareText(url, `Book a follow-up${meetingTitle?.trim() ? `: ${meetingTitle.trim()}` : ""}`);
+      if (r === "copied") toast("Booking link copied", "success");
+    } catch {
+      setError("Couldn't reach the server. Check the connection and try again.");
+    } finally {
+      setScheduling(false);
     }
   };
 
@@ -241,6 +292,15 @@ export function FollowUpAgendaSheet({
               className="sm:mr-auto"
             >
               Reset to draft
+            </Button>
+            <Button
+              loading={scheduling}
+              icon={<CalendarClock className="h-4 w-4" aria-hidden />}
+              onClick={() => void scheduleFollowUp()}
+              disabled={!text.trim() || offline}
+              title={offline ? "Scheduling needs internet" : undefined}
+            >
+              Schedule follow-up
             </Button>
             <Button icon={<Copy className="h-4 w-4" aria-hidden />} onClick={() => void copy()} disabled={!text.trim()}>
               Copy

@@ -395,6 +395,7 @@ function TaskTrackerInner() {
         onClose={() => setAgendaOpen(false)}
         items={shown}
         meetingTitle={agendaTitle}
+        meetingId={meetingId || null}
       />
     </div>
   );
