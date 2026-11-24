@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ChevronDown, CloudOff, ListChecks } from "lucide-react";
 import { useConnectivity } from "@/lib/connectivity";
 import { useToast } from "./Toast";
+import { AgendaButton, FollowUpAgendaSheet } from "./FollowUpAgenda";
 import { Badge, Button, Notice, Panel, cx, selectCls } from "./ui";
 import {
   STATUSES, STATUS_FILTERS, STATUS_FILTER_LABEL, STATUS_LABEL, UNASSIGNED,
@@ -269,6 +270,8 @@ function TaskTrackerInner() {
   const counts = useMemo(() => statusCounts(all, { owner, meetingId }), [all, owner, meetingId]);
   const shown = useMemo(() => filterTasks(all, { status, owner, meetingId }), [all, status, owner, meetingId]);
   const today = localToday();
+  const [agendaOpen, setAgendaOpen] = useState(false);
+  const agendaTitle = meetingId ? (meetings.find((m) => m.id === meetingId)?.title ?? null) : null;
   const wide = "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.2fr)] lg:items-start";
 
   return (
@@ -360,6 +363,10 @@ function TaskTrackerInner() {
             </div>
           </div>
 
+          <div>
+            <AgendaButton onClick={() => setAgendaOpen(true)} disabled={shown.length === 0} className="w-full sm:w-auto" />
+          </div>
+
           <Panel aria-label="Tasks">
             <div
               className={cx("hidden gap-3 border-b border-border/70 px-4 py-2 text-meta font-semibold text-muted-foreground lg:grid", wide)}
@@ -383,6 +390,12 @@ function TaskTrackerInner() {
           </Panel>
         </>
       )}
+      <FollowUpAgendaSheet
+        open={agendaOpen}
+        onClose={() => setAgendaOpen(false)}
+        items={shown}
+        meetingTitle={agendaTitle}
+      />
     </div>
   );
 }

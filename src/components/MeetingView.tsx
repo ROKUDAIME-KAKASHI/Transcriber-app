@@ -746,7 +746,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
             </Panel>
           )
         ) : tab === "tasks" ? (
-          <ActionItems meetingId={meeting.id} parts={meeting.transcript} names={names} hasTranscript={hasTranscript} />
+          <ActionItems meetingId={meeting.id} meetingTitle={meeting.title} parts={meeting.transcript} names={names} hasTranscript={hasTranscript} />
         ) : (
           <Panel className="px-5 py-6 sm:px-8 sm:py-8">
             {hasTranscript ? (

@@ -7,6 +7,8 @@ import type { SpeakerNames, TranscriptPart } from "@/lib/transcript";
 import Link from "next/link";
 import { STATUS_LABEL, type TaskStatus } from "@/lib/taskTracker";
 import { useToast } from "./Toast";
+import { AgendaButton, FollowUpAgendaSheet } from "./FollowUpAgenda";
+import type { AgendaItem } from "@/lib/followUpAgenda";
 import { Badge, Button, GateReason, Panel, PanelHeader, cx, inputCls } from "./ui";
 
 interface SavedItem {
@@ -41,8 +43,10 @@ export function ActionItems({
   parts,
   names,
   hasTranscript,
+  meetingTitle,
 }: {
   meetingId: string;
+  meetingTitle?: string;
   parts: TranscriptPart[];
   names: SpeakerNames;
   hasTranscript: boolean;
@@ -57,6 +61,27 @@ export function ActionItems({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const keyRef = useRef(0);
+  const [agendaItems, setAgendaItems] = useState<AgendaItem[] | null>(null);
+  const [agendaLoading, setAgendaLoading] = useState(false);
+  const [agendaError, setAgendaError] = useState<string | null>(null);
+
+  // Fresh status and due dates come from the tracker endpoint, not the saved list on screen.
+  const openAgenda = async () => {
+    setAgendaError(null);
+    setAgendaLoading(true);
+    try {
+      const res = await fetch(`/api/action-items?meetingId=${encodeURIComponent(meetingId)}&status=all`, { cache: "no-store" });
+      if (!res.ok) {
+        setAgendaError(await readError(res, "Couldn't load the tasks. Try again."));
+        return;
+      }
+      setAgendaItems(((await res.json()) as { items: AgendaItem[] }).items);
+    } catch {
+      setAgendaError("Couldn't reach the server. Check the connection and try again.");
+    } finally {
+      setAgendaLoading(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -344,6 +369,21 @@ export function ActionItems({
           )}
         </PanelHeader>
         <div className="p-5">
+          {saved && saved.length > 0 && (
+            <div className="mb-4 space-y-2">
+              <AgendaButton
+                onClick={() => void openAgenda()}
+                loading={agendaLoading}
+                disabled={!!loadError}
+                className="w-full sm:w-auto"
+              />
+              {agendaError && (
+                <p className="text-meta text-danger" role="alert">
+                  {agendaError}
+                </p>
+              )}
+            </div>
+          )}
           {saved === null ? (
             <p className="text-ui text-muted-foreground">Loading…</p>
           ) : loadError ? (
@@ -381,6 +421,12 @@ export function ActionItems({
           )}
         </div>
       </Panel>
+      <FollowUpAgendaSheet
+        open={agendaItems !== null}
+        onClose={() => setAgendaItems(null)}
+        items={agendaItems ?? []}
+        meetingTitle={meetingTitle ?? null}
+      />
     </div>
   );
 }
