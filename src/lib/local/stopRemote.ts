@@ -1,5 +1,5 @@
 import { MeetingRecorder, isNativeApp } from "@/lib/nativeRecorder";
-import { getMeta, markStoppedRemotely } from "./repo";
+import { clearNativeCapture, getMeta, markStoppedRemotely } from "./repo";
 
 /** "finish-here": the audio is still on this phone, so the transcript has to be finished here (Record screen), not marked DONE. */
 export type StopResult = "ok" | "auth" | "error" | "finish-here";
@@ -14,9 +14,16 @@ export async function stopRecordingRemotely(userId: string | null, id: string): 
     // A recording made offline on this phone: ending it on the server would drop the audio that has not
     // been transcribed yet (and needs no internet). Stop the capture and let the Record screen finish it.
     const row = userId ? await getMeta(userId, id) : null;
-    if (row?.nativeCapture === 1) {
-      if (isNativeApp()) await MeetingRecorder.stop({ force: false }).catch(() => {});
-      return "finish-here";
+    if (row?.nativeCapture === 1 && userId && isNativeApp()) {
+      const list = await MeetingRecorder.listCaptures().catch(() => null);
+      if (list?.captures.some((c) => c.meetingId === id)) {
+        // Only stop the service when it is recording THIS meeting (it may be recording another one).
+        const st = await MeetingRecorder.getState({ from: 1_000_000_000 }).catch(() => null);
+        if (st?.active && st.mode === "local" && st.meetingId === id) await MeetingRecorder.stop({ force: false }).catch(() => {});
+        return "finish-here";
+      }
+      // The audio is gone from this phone (the start never got far): nothing to finish, end it normally.
+      if (list) await clearNativeCapture(userId, id);
     }
     const res = await fetch(`/api/meetings/${encodeURIComponent(id)}`, {
       method: "PATCH",

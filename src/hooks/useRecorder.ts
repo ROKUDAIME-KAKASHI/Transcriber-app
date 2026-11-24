@@ -14,7 +14,7 @@ import type { ModelName } from "@/lib/speech/models";
 import { VoiceChunker } from "@/lib/speech/voiceChunker";
 import { cleanPhrase } from "@/lib/speech/cleanText";
 import {
-  createLocal, getEmbeddings, getMeta, getParts, purge, putEmbeddings, putParts, setSpeakerNames, touchRecording,
+  createLocal, getEmbeddings, getMeta, getParts, purge, putEmbeddings, putParts, releaseStaleNativeClaims, setSpeakerNames, touchRecording,
 } from "@/lib/local/repo";
 import { MeetingRecorder, isNativeApp, nativeCapabilities, type NativeReadAudioResult } from "@/lib/nativeRecorder";
 import {
@@ -1541,7 +1541,10 @@ export function useRecorder(opts: {
     if (startingRef.current || wantRecordingRef.current || finalizingRef.current) return;
     if (!(await nativeCapabilities()).localCapture) return;
     const list = await MeetingRecorder.listCaptures().catch(() => null);
-    if (!list || list.captures.length === 0) return;
+    if (!list) return;
+    // Rows that claim audio the phone no longer has would show "Needs finishing" forever.
+    await releaseStaleNativeClaims(uid, new Set(list.captures.map((c) => c.meetingId)), 10 * 60_000).catch(() => 0);
+    if (list.captures.length === 0) return;
     const rows = new Map<string, NativeRowInfo>();
     for (const c of list.captures) {
       const m = await getMeta(uid, c.meetingId);
@@ -1592,7 +1595,13 @@ export function useRecorder(opts: {
         statusMsg: finishingText(), saveState: "saving", finishing: true,
       });
       try {
-        MeetingRecorder.stop({ force: false }).catch(() => {});
+        // Only tell the service to stop when it is recording THIS meeting (a finished capture being
+        // completed here must not stop some other recording).
+        void MeetingRecorder.getState({ from: 1_000_000_000 })
+          .then((st) => {
+            if (st.active && st.mode === "local" && st.meetingId === id) return MeetingRecorder.stop({ force: false });
+          })
+          .catch(() => {});
         await pumpRef.current; // ends at the last sample the service wrote (or when reading keeps failing)
         if (nativeDrainedRef.current) {
           chunkerRef.current?.flush(); // the phrase that was mid-way when the recording ended

@@ -39,11 +39,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: "Invalid request" }, { status: 400 });
   const { lines, named, model } = parsed.data;
 
+  // One line per phrase: newlines inside a phrase could otherwise forge extra "Speaker N:" lines.
   const transcript = lines
-    .map((l) => `${typeof l.t === "number" ? `[${formatDuration(Math.floor(l.t))}] ` : ""}Speaker ${l.s + 1}: ${l.text}`)
+    .map((l) => `${typeof l.t === "number" ? `[${formatDuration(Math.floor(l.t))}] ` : ""}Speaker ${l.s + 1}: ${l.text.replace(/\s+/g, " ").trim()}`)
     .join("\n");
   const namedNote = named && Object.keys(named).length
-    ? `\nAlready named (skip): ${Object.entries(named).map(([k, v]) => `Speaker ${Number(k) + 1} = ${v}`).join(", ")}\n`
+    ? `\nAlready named (skip): ${Object.entries(named).map(([k, v]) => `Speaker ${Number(k) + 1} = ${v.replace(/\s+/g, " ").trim()}`).join(", ")}\n`
     : "";
 
   try {

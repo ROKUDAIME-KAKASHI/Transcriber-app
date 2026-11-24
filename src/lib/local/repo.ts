@@ -155,6 +155,28 @@ export function markStoppedRemotely(userId: string, id: string): Promise<boolean
   return updateRow(userId, id, (r) => (r.deleted === 1 ? null : { ...r, status: "DONE", lastWriteAt: undefined }));
 }
 
+/** Drops the "audio is still on the phone" claim of a meeting whose audio no longer exists. */
+export function clearNativeCapture(userId: string, id: string): Promise<boolean> {
+  return updateRow(userId, id, (r) => (r.deleted === 1 || r.nativeCapture !== 1 ? null : { ...r, nativeCapture: 0 }));
+}
+
+/**
+ * Rows that claim native audio (nativeCapture 1) while the phone has no folder for them and nothing
+ * touched them for a while (e.g. the app was killed during the model download of a start): release
+ * the claim so recoverOrphans can finish them instead of "Needs finishing" forever.
+ */
+export async function releaseStaleNativeClaims(userId: string, haveAudio: ReadonlySet<string>, idleMs: number): Promise<number> {
+  const rows = await listMeetings(userId);
+  let n = 0;
+  for (const r of rows) {
+    if (r.nativeCapture !== 1 || haveAudio.has(r.id)) continue;
+    const last = r.lastWriteAt ?? Date.parse(r.createdAt);
+    if (!Number.isFinite(last) || Date.now() - last < idleMs) continue;
+    if (await clearNativeCapture(userId, r.id)) n++;
+  }
+  return n;
+}
+
 async function updateRow(
   userId: string,
   id: string,

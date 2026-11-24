@@ -318,13 +318,16 @@ final class LocalCapture {
      * Throws IOException("GONE") when that audio was already released.
      */
     Chunk read(long from, long max) throws IOException {
+        // Decide "is the capture over" BEFORE reading the head: finish() publishes the final head and only
+        // then flips the state, so an "over" seen first guarantees the head read next is the last one.
+        // (The other order could report ended against a stale head and drop the last second of audio.)
+        String st = state();
+        boolean over = !"recording".equals(st) || !isWriting();
         long h = head;
         long first = firstAvailable();
         Chunk c = new Chunk();
         c.from = Math.max(0, from);
         c.head = h;
-        String st = state();
-        boolean over = !"recording".equals(st) || !isWriting();
         if (c.from < first) throw new IOException("GONE");
         long limit = Math.max(0, Math.min(max, MAX_READ_SAMPLES));
         if (c.from >= h || limit == 0) {
@@ -352,6 +355,7 @@ final class LocalCapture {
     long release(long before) {
         long freed = 0;
         synchronized (lock) {
+            before = Math.min(before, head); // never claim audio that does not exist yet
             if (before > committed) committed = before;
             File[] files = dir.listFiles();
             if (files != null) {
