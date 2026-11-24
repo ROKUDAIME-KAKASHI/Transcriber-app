@@ -209,7 +209,17 @@ function icsStamp(d: Date): string {
 }
 
 function icsEscape(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,");
+  return s
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\r\n|\r|\n/g, "\\n")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,");
+}
+
+/** A CN parameter value: control characters and quotes removed, double-quoted so ':' ';' ',' are safe. */
+function icsParam(s: string): string {
+  return `"${s.replace(/[\u0000-\u001f\u007f"]/g, " ").trim()}"`;
 }
 
 /** Fold a content line to 75 octets (counting UTF-8 bytes, never splitting a character). */
@@ -268,8 +278,8 @@ export function buildIcs(i: IcsInput): string {
   if (i.description) lines.push(`DESCRIPTION:${icsEscape(i.description)}`);
   if (i.url) lines.push(`URL:${i.url}`);
   lines.push(
-    `ORGANIZER;CN=${icsEscape(i.organizerName).replace(/"/g, "")}:mailto:${i.organizerEmail}`,
-    `ATTENDEE;CN=${icsEscape(i.attendeeName).replace(/"/g, "")};ROLE=REQ-PARTICIPANT:mailto:${i.attendeeEmail}`,
+    `ORGANIZER;CN=${icsParam(i.organizerName)}:mailto:${i.organizerEmail}`,
+    `ATTENDEE;CN=${icsParam(i.attendeeName)};ROLE=REQ-PARTICIPANT:mailto:${i.attendeeEmail}`,
     `STATUS:${i.cancelled ? "CANCELLED" : "CONFIRMED"}`,
     "END:VEVENT",
     "END:VCALENDAR"

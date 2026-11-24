@@ -4,6 +4,8 @@ import { AudioLines } from "lucide-react";
 export const metadata: Metadata = {
   title: "Book a time | Transcriber",
   robots: { index: false, follow: false },
+  // Confirmation links carry a secret token in the URL; never leak it through the Referer header.
+  referrer: "no-referrer",
 };
 
 export default function BookLayout({ children }: { children: React.ReactNode }) {

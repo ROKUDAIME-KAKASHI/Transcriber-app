@@ -132,9 +132,15 @@ describe("calendar output", () => {
     assert.match(ics, /DTEND:20261130T103000Z\r\n/);
     assert.ok(ics.includes("SUMMARY:30 min meeting\\, with Asha" + "\r\n"));
     assert.ok(ics.includes("DESCRIPTION:Line one\\nLine\\; two"));
-    assert.match(ics, /ORGANIZER;CN=asha:mailto:/);
-    assert.match(ics, /ATTENDEE;CN=Ravi;/);
+    assert.match(ics, /ORGANIZER;CN="asha":mailto:/);
+    assert.match(ics, /ATTENDEE;CN="Ravi";/);
     assert.ok(ics.endsWith("END:VCALENDAR\r\n"));
+  });
+  test("CR / CRLF in guest text cannot add calendar lines", () => {
+    const ics = buildIcs({ ...input, attendeeName: "Eve\rATTENDEE:mailto:x@y", description: "a\rBEGIN:VEVENT\r\nb" });
+    const lines = ics.split("\r\n");
+    assert.equal(lines.filter((l) => l.startsWith("BEGIN:VEVENT")).length, 1);
+    assert.equal(lines.filter((l) => l.startsWith("ATTENDEE")).length, 1);
   });
   test("long lines fold at 75 bytes", () => {
     const ics = buildIcs({ ...input, description: "x".repeat(300) });

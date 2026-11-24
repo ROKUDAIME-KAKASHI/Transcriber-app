@@ -11,7 +11,11 @@ import { MAX_AGENDA_CHARS } from "@/lib/followUpAgenda";
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  name: z.string().trim().min(1).max(100),
+  name: z
+    .string()
+    .max(300)
+    .transform((v) => v.replace(/[\u0000-\u001f\u007f]+/g, " ").trim())
+    .pipe(z.string().min(1).max(100)),
   email: z.string().trim().toLowerCase().max(200).pipe(z.email()),
   note: z.string().trim().max(1000).optional(),
   startAt: z.string().max(40),

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
       meetingId = m?.id ?? null;
     }
     const [row, info] = await Promise.all([
-      prisma.agendaDraft.create({ data: { userId, text: body.data.text, followUpFromMeetingId: meetingId }, select: { id: true } }),
+      prisma.agendaDraft.create({ data: { id: randomBytes(18).toString("base64url"), userId, text: body.data.text, followUpFromMeetingId: meetingId }, select: { id: true } }),
       prisma.user.findUnique({
         where: { id: userId },
         select: { bookingSlug: true, eventTypes: { where: { active: true }, orderBy: { createdAt: "asc" }, take: 1, select: { slug: true } } },
