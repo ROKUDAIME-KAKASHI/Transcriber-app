@@ -14,7 +14,11 @@ export const authOptions: AuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) throw new Error("Missing credentials");
         const email = credentials.email.toLowerCase().trim();
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await prisma.user.findUnique({
+          where: { email },
+          // Explicit select: the User table may not have the scheduling columns until `prisma db push` has run.
+          select: { id: true, email: true, password: true },
+        });
         if (!user) throw new Error("No account found with this email.");
         const ok = await bcrypt.compare(credentials.password, user.password);
         if (!ok) throw new Error("Incorrect password.");

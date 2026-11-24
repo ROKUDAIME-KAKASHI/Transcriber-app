@@ -15,6 +15,14 @@ model User {
   createdAt DateTime  @default(now())
   meetings  Meeting[]
   actionItems ActionItem[]
+  /// Public booking handle, e.g. "asha" -> /book/asha
+  bookingSlug String?   @unique
+  /// IANA time zone the weekly availability is expressed in
+  timeZone    String?
+  availability Availability[]
+  eventTypes  EventType[]
+  bookings    Booking[]
+  agendaDrafts AgendaDraft[]
 }
 
 model Meeting {
@@ -67,4 +75,71 @@ model ActionItem {
 
   @@index([userId, status])
   @@index([meetingId])
+}
+
+/// One weekly availability range, in the host's time zone. Minutes from midnight.
+model Availability {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 0 = Sunday ... 6 = Saturday
+  weekday  Int
+  startMin Int
+  endMin   Int
+
+  @@index([userId])
+}
+
+model EventType {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug         String
+  title        String
+  durationMin  Int
+  bufferMin    Int       @default(0)
+  minNoticeMin Int       @default(120)
+  maxDaysAhead Int       @default(30)
+  active       Boolean   @default(true)
+  description  String?
+  createdAt    DateTime  @default(now())
+  bookings     Booking[]
+
+  @@unique([userId, slug])
+}
+
+model Booking {
+  id                   String    @id @default(cuid())
+  eventTypeId          String
+  eventType            EventType @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+  hostUserId           String
+  host                 User      @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+  guestName            String
+  guestEmail           String
+  guestNote            String?
+  startAt              DateTime
+  endAt                DateTime
+  /// CONFIRMED | CANCELLED
+  status               String    @default("CONFIRMED")
+  /// Secret the guest needs to view, download or cancel the booking
+  cancelToken          String    @unique
+  agenda               String?   @db.Text
+  followUpFromMeetingId String?
+  /// Set when the host starts recording this meeting
+  meetingId            String?
+  createdAt            DateTime  @default(now())
+
+  @@index([hostUserId, startAt])
+}
+
+/// A follow-up agenda saved so a booking link can carry it (?agenda=<id>).
+model AgendaDraft {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text                  String   @db.Text
+  followUpFromMeetingId String?
+  createdAt             DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
