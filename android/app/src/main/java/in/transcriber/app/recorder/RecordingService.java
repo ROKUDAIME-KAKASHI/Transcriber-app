@@ -74,6 +74,10 @@ public class RecordingService extends Service {
     public static final String EXTRA_MEETING_ID = "meetingId";
     public static final String EXTRA_LANGUAGE = "language";
     public static final String EXTRA_BASE_URL = "baseUrl";
+    /** "cloud" (default, Deepgram) or "local" (record to files on the phone, no network). */
+    public static final String EXTRA_MODE = "mode";
+    public static final String EXTRA_ENGINE = "engine";
+    public static final String MODE_LOCAL = "local";
 
     static final int SAMPLE_RATE = 16000;
     static final int BYTES_PER_SECOND = SAMPLE_RATE * 2;
@@ -113,6 +117,8 @@ public class RecordingService extends Service {
     static volatile float level;
     /** Samples recorded so far, pauses excluded: the meeting clock. */
     static volatile long recordedSamples;
+    /** The current/last session is a local (offline) capture. Old pages never send a mode: missing means cloud. */
+    static volatile boolean localMode;
 
     static final class Part {
         final int speaker;
@@ -169,6 +175,13 @@ public class RecordingService extends Service {
     private int savedParts;
     private boolean dirty;
 
+    // Local mode (offline capture to files). All null/false in cloud mode.
+    private boolean local;
+    private LocalCapture localCapture;
+    private ScheduledFuture<?> localTickTask;
+    private long lastSpaceCheck;
+    private volatile boolean lowStorage;
+
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -187,11 +200,13 @@ public class RecordingService extends Service {
             if (running) return START_NOT_STICKY;
             String id = intent.getStringExtra(EXTRA_MEETING_ID);
             String base = intent.getStringExtra(EXTRA_BASE_URL);
-            if (id == null || base == null) {
+            boolean wantLocal = MODE_LOCAL.equals(intent.getStringExtra(EXTRA_MODE));
+            if (id == null || (base == null && !wantLocal) || (wantLocal && !LocalCapture.validId(id))) {
                 stopSelf();
                 return START_NOT_STICKY;
             }
-            begin(id, intent.getStringExtra(EXTRA_LANGUAGE), base);
+            local = wantLocal;
+            begin(id, intent.getStringExtra(EXTRA_LANGUAGE), base, intent.getStringExtra(EXTRA_ENGINE));
         } else if (ACTION_PAUSE.equals(action)) {
             setPaused(true);
         } else if (ACTION_RESUME.equals(action)) {
@@ -210,14 +225,14 @@ public class RecordingService extends Service {
     }
 
     // ---- Start --------------------------------------------------------------------------------
-    private void begin(String id, @Nullable String lang, String base) {
-        baseUrl = base.replaceAll("/+$", "");
+    private void begin(String id, @Nullable String lang, @Nullable String base, @Nullable String engine) {
+        baseUrl = base == null ? null : base.replaceAll("/+$", "");
         language = lang == null ? "en" : lang;
         currentMeetingId = id;
         synchronized (LOCK) {
             parts.clear();
             meetingId = id;
-            status = "Connecting to Deepgram…";
+            status = local ? "Recording on this phone (works offline)…" : "Connecting to Deepgram…";
             saveState = "idle";
             interim = "";
             active = true;
@@ -234,6 +249,7 @@ public class RecordingService extends Service {
         }
         level = 0;
         recordedSamples = 0;
+        localMode = local;
         bytesPolled = 0;
         reconnectAttempt = 0;
         completed = false;
@@ -252,6 +268,11 @@ public class RecordingService extends Service {
                 saveState = "error";
             }
             stopSelf();
+            return;
+        }
+
+        if (local) {
+            beginLocal(id, engine);
             return;
         }
 
@@ -285,12 +306,74 @@ public class RecordingService extends Service {
         }, AUTOSAVE_MS, AUTOSAVE_MS, TimeUnit.MILLISECONDS);
     }
 
+    /** Local mode: the microphone foreground service and CPU wake lock, but no network at all. */
+    private void beginLocal(String id, @Nullable String engine) {
+        long free = LocalCapture.freeBytes(this);
+        if (free < LocalCapture.REFUSE_BELOW_BYTES) {
+            failLocalStart("Not enough free storage on this phone to record (" + (free / (1024 * 1024)) + " MB left, need 150 MB). Free some space and try again.");
+            return;
+        }
+        try {
+            localCapture = LocalCapture.open(this, id, engine, language);
+        } catch (IOException e) {
+            Log.e(TAG, "Could not open local capture", e);
+            failLocalStart("Couldn't create space for the recording on this phone.");
+            return;
+        }
+        recordedSamples = localCapture.head();
+        ctl = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "recorder-ctl"));
+        acquireLocks(); // partial wake lock only: no Wi-Fi lock without a connection to keep
+        lastSpaceCheck = SystemClock.elapsedRealtime();
+        running = true;
+        capturing = true;
+        checkSpace();
+        captureThread = new Thread(this::captureLoop, "recorder-capture");
+        captureThread.setPriority(Thread.MAX_PRIORITY);
+        captureThread.start();
+        localTickTask = ctl.scheduleWithFixedDelay(this::localTick, 5000, 5000, TimeUnit.MILLISECONDS);
+        refreshStatus();
+    }
+
+    private void failLocalStart(String message) {
+        synchronized (LOCK) {
+            active = false;
+            finished = true;
+            status = message;
+            saveState = "error";
+        }
+        local = false; // nothing was started
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
+        stopSelf();
+    }
+
+    /** Every 5 s in local mode: status line, and the free-space watchdog every 30 s. */
+    private void localTick() {
+        if (!running || completed) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastSpaceCheck >= 30_000) {
+            lastSpaceCheck = now;
+            checkSpace();
+        }
+        refreshStatus();
+    }
+
+    private void checkSpace() {
+        long free = LocalCapture.freeBytes(this);
+        lowStorage = free < LocalCapture.WARN_BELOW_BYTES;
+        if (free < LocalCapture.STOP_BELOW_BYTES && localCapture != null && !finishRequested) {
+            Log.w(TAG, "Out of storage (" + free + " B free): stopping capture");
+            localCapture.setStoppedReason("storage");
+            ctl.execute(() -> beginStop(false));
+        }
+    }
+
     private void acquireLocks() {
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         // Keeps the CPU running with the screen off. Released when the meeting ends (24 h cap).
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Transcriber:recording");
         wakeLock.setReferenceCounted(false);
         wakeLock.acquire(24L * 3600 * 1000);
+        if (local) return; // offline capture has no connection to keep alive
         WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if (wm != null) {
             int mode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -342,6 +425,7 @@ public class RecordingService extends Service {
         short[] buf = new short[SAMPLE_RATE / 10]; // 100 ms
         AudioRecord rec = null;
         long quietSince = -1;
+        boolean wasPaused = false;
         while (capturing) {
             if (rec == null) {
                 try {
@@ -372,10 +456,13 @@ public class RecordingService extends Service {
                 continue;
             }
             if (paused) {
+                if (!wasPaused && local && localCapture != null) localCapture.markBreak();
+                wasPaused = true;
                 level = 0;
                 quietSince = -1;
                 continue;
             }
+            wasPaused = false;
             double sum = 0;
             byte[] bytes = new byte[n * 2];
             for (int i = 0; i < n; i++) {
@@ -396,7 +483,20 @@ public class RecordingService extends Service {
             synchronized (LOCK) {
                 noSound = quiet;
             }
-            backlog.add(bytes);
+            if (local) {
+                try {
+                    localCapture.append(bytes);
+                } catch (IOException e) {
+                    // Disk full or unwritable: end the capture cleanly, what was written is kept.
+                    Log.e(TAG, "Local write failed", e);
+                    capturing = false;
+                    localCapture.setStoppedReason("storage");
+                    ctl.execute(() -> beginStop(false));
+                    break;
+                }
+            } else {
+                backlog.add(bytes);
+            }
             recordedSamples += n;
         }
         if (rec != null) {
@@ -753,6 +853,10 @@ public class RecordingService extends Service {
     private void beginStop(boolean force) {
         Log.i(TAG, "beginStop force=" + force);
         if (!running || completed) return;
+        if (local) {
+            completeStopLocal();
+            return;
+        }
         if (force) backlog.clear();
         capturing = false;
         finishRequested = true;
@@ -832,6 +936,64 @@ public class RecordingService extends Service {
         shutdown();
     }
 
+    /** Local stop: no network, nothing to send. Close the files; the page transcribes whatever is left. */
+    private void completeStopLocal() {
+        if (completed) return;
+        Log.i(TAG, "completeStopLocal seconds=" + (recordedSamples / SAMPLE_RATE));
+        completed = true;
+        finishRequested = true;
+        capturing = false;
+        synchronized (LOCK) {
+            finishing = true;
+            paused = false;
+            interim = "";
+        }
+        if (localTickTask != null) localTickTask.cancel(false);
+        try {
+            if (captureThread != null) captureThread.join(3000);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        running = false;
+        String reason = localCapture == null ? null : localCapture.stoppedReason();
+        if (localCapture != null) localCapture.finish("stopped", reason);
+        long waiting = localCapture == null ? 0 : localCapture.head() - localCapture.committed();
+        synchronized (LOCK) {
+            active = false;
+            finishing = false;
+            finished = true;
+            paused = false;
+            saveState = "idle";
+            status = "storage".equals(reason)
+                    ? "Recording stopped: the phone is almost out of storage. Open Transcriber to finish the transcript."
+                    : "Recording stopped. Open Transcriber to finish the transcript.";
+        }
+        if (waiting > 0) postFinishedNotification();
+        shutdown();
+    }
+
+    /** The foreground notification goes away with the service: leave a normal one pointing back to the app. */
+    private void postFinishedNotification() {
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            buildNotification(); // makes sure the channel exists
+            Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                    .setContentTitle("Meeting stopped")
+                    .setContentText("Open Transcriber to finish the transcript.")
+                    .setContentIntent(pi)
+                    .setAutoCancel(true)
+                    .setSilent(true)
+                    .build();
+            nm.notify(NOTIFICATION_ID + 1, n);
+        } catch (Exception e) {
+            Log.w(TAG, "Could not post the finished notification", e);
+        }
+    }
+
     private void shutdown() {
         releaseLocks();
         if (networkCallback != null) {
@@ -859,11 +1021,14 @@ public class RecordingService extends Service {
             capturing = false;
             Conn c = current;
             if (c != null) c.ws.cancel();
+            if (local && localCapture != null) localCapture.finish("interrupted", "interrupted");
             synchronized (LOCK) {
                 active = false;
                 finishing = false;
                 finished = true;
-                status = "Recording was stopped by Android. The transcript up to the last autosave is saved.";
+                status = local
+                        ? "Recording was stopped by Android. The audio recorded so far is kept on the phone."
+                        : "Recording was stopped by Android. The transcript up to the last autosave is saved.";
             }
             releaseLocks();
             if (ctl != null) ctl.shutdownNow();
@@ -881,6 +1046,10 @@ public class RecordingService extends Service {
 
     /** Works out the status line from the current situation. */
     private void refreshStatus() {
+        if (local) {
+            refreshLocalStatus();
+            return;
+        }
         double waiting = backlog == null ? 0 : backlog.seconds();
         Conn c = current;
         boolean connected = c != null && c.opened && !c.closed;
@@ -901,6 +1070,27 @@ public class RecordingService extends Service {
                 s = "Back online — catching up (" + describe(waiting) + " to go)…";
             } else {
                 s = "Recording (cloud, speaker labels)…";
+            }
+            status = s;
+        }
+        updateNotification();
+    }
+
+    private void refreshLocalStatus() {
+        long behind = localCapture == null ? 0 : localCapture.head() - localCapture.committed();
+        double behindSec = behind / (double) SAMPLE_RATE;
+        String s;
+        synchronized (LOCK) {
+            if (finishing) {
+                s = "Finishing…";
+            } else if (paused) {
+                s = "Paused";
+            } else if (lowStorage) {
+                s = "Phone storage is running low: less than an hour of recording space left.";
+            } else if (behindSec > 60) {
+                s = "Recording on this phone. " + describe(behindSec) + " waiting to be transcribed — open the app.";
+            } else {
+                s = "Recording on this phone (works offline)…";
             }
             status = s;
         }
