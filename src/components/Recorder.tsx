@@ -25,6 +25,7 @@ import { Waveform } from "./Waveform";
 import { RecordingControls, useFloatingBarFlag } from "./RecordingControls";
 import { useToast } from "./Toast";
 import { calmMode, CALM_BOOST_MS } from "@/lib/calmMode";
+import { peekTitlePrefill, setTitlePrefill } from "@/lib/titlePrefill";
 import { useMotionPref } from "@/lib/motionPref";
 import * as haptics from "@/lib/haptics";
 
@@ -303,6 +304,22 @@ export function Recorder() {
   // The app's native recorder doesn't need a secure page (only the browser's microphone does).
   const blocked = insecure && !nativeMode;
 
+  // /?title=... (from Schedule's "Record this meeting") names the next meeting. Keep it, then tidy the address bar.
+  const [prefillTitle, setPrefillTitle] = useState<string | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.has("title")) {
+      setTitlePrefill(q.get("title"));
+      q.delete("title");
+      const rest = q.toString();
+      window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
+    }
+    setPrefillTitle(peekTitlePrefill());
+  }, []);
+  useEffect(() => {
+    if (!rec.isRecording && !rec.isStarting) setPrefillTitle(peekTitlePrefill());
+  }, [rec.isRecording, rec.isStarting]);
+
   const hasTranscript = rec.transcriptParts.length > 0;
   const hasLive = !!rec.interimText || !!rec.liveStatus;
   const busy = rec.isRecording;
@@ -388,6 +405,11 @@ export function Recorder() {
               {stateLabel}
             </span>
           </div>
+          {prefillTitle && !busy && !starting && (
+            <p className="mt-2 max-w-full truncate text-meta text-muted-foreground" title={prefillTitle}>
+              Recording as: <span className="font-semibold text-foreground">{prefillTitle}</span>
+            </p>
+          )}
           <div
             className={cx(
               "mt-2 font-mono text-display font-normal tabular-nums tracking-[-0.02em]",

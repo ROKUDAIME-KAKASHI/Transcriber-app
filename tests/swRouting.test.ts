@@ -11,7 +11,7 @@ const req = (over: Record<string, unknown> = {}, headers: Record<string, string>
 const r = (path: string, request = req()) => routing.route(new URL(path, O), request, O);
 
 describe("shellFor", () => {
-  for (const p of ["/", "/meetings", "/meeting", "/tasks", "/login", "/offline"]) {
+  for (const p of ["/", "/meetings", "/meeting", "/tasks", "/schedule", "/login", "/offline"]) {
     test(`shell ${p}`, () => assert.deepEqual(routing.shellFor(p), { shell: p }));
   }
   test("trailing slash", () => assert.deepEqual(routing.shellFor("/meetings/"), { shell: "/meetings" }));
@@ -27,6 +27,10 @@ describe("route", () => {
   test("cross-origin", () => assert.equal(routing.route(new URL("https://huggingface.co/a"), req(), O).kind, "pass"));
   for (const p of ["/api/x", "/api/auth/session", "/api/health"]) test(p, () => assert.equal(r(p).kind, "pass"));
   for (const p of ["/admin", "/admin/", "/admin/x"]) test(`admin ${p} passes`, () => assert.equal(r(p).kind, "pass"));
+  for (const p of ["/book/asha", "/book/asha/30min", "/book/confirmed/abc", "/book"]) {
+    test(`booking page ${p} always passes to the network`, () => assert.equal(r(p).kind, "pass"));
+  }
+  test("schedule is an app shell", () => assert.deepEqual(r("/schedule"), { kind: "nav", shell: "/schedule" }));
   test("rsc header", () => assert.equal(r("/meetings", req({}, { rsc: "1" })).kind, "pass"));
   test("prefetch header", () => assert.equal(r("/meetings", req({}, { "next-router-prefetch": "1" })).kind, "pass"));
   test("segment prefetch header", () => assert.equal(r("/meetings", req({}, { "next-router-segment-prefetch": "/x" })).kind, "pass"));

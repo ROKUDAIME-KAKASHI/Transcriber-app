@@ -28,6 +28,7 @@ import { flush, markRecording, onRemoteStop, poke, type FlushResult } from "@/li
 import { isStoppedReply } from "@/lib/recordingState";
 import { useLocalUser } from "@/components/SyncProvider";
 import { useMeetingSync } from "@/hooks/useSync";
+import { takeTitle } from "@/lib/titlePrefill";
 import {
   DEEPGRAM_SAMPLE_RATE, deepgramUrl, fetchDeepgramToken, floatToPcm16, speakerRuns,
   type DeepgramMessage, type RecordEngine,
@@ -1404,7 +1405,7 @@ export function useRecorder(opts: {
     const newId = newMeetingId();
     startIdRef.current = newId;
     const uid = localUserRef.current.userId as string;
-    const meetingTitle = `Meeting – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
+    const meetingTitle = takeTitle(`Meeting – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`);
     const localCreated = createLocal(uid, {
       id: newId, title: meetingTitle, language, engine, deviceName: detectDeviceName(), origin: "local", nativeCapture: true,
     });
@@ -1865,7 +1866,8 @@ export function useRecorder(opts: {
     startIdRef.current = newId;
     const meetingLanguage = opts.engine === "moonshine" ? "en" : opts.language;
     // Titled with the device's local time (the server may run in UTC, which gave 6:58 am for 12:28 pm).
-    const meetingTitle = `${useSample ? "Sample recording" : "Meeting"} – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
+    const defaultTitle = `${useSample ? "Sample recording" : "Meeting"} – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
+    const meetingTitle = useSample ? defaultTitle : takeTitle(defaultTitle);
     const lu = localUserRef.current;
     let localCreated: Promise<boolean> | null = null;
     if (lu.userId && lu.available) {

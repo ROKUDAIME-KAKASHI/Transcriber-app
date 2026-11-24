@@ -7,6 +7,7 @@ import type { AudioSource, RecorderState } from "./useRecorder";
 import { useLocalUser } from "@/components/SyncProvider";
 import { applySyncResult, createLocal, mirrorNative, purge } from "@/lib/local/repo";
 import { newMeetingId } from "@/lib/local/ids";
+import { takeTitle } from "@/lib/titlePrefill";
 import { markRecording, onRemoteStop } from "@/lib/local/sync";
 
 /** The service autosaves to the server itself; JS only copies its parts to the device at most this often. */
@@ -170,7 +171,7 @@ export function useNativeRecorder(opts: { language: string }) {
     meetingRef.current = null;
     setState({ ...initial, isStarting: true, statusMsg: "Creating meeting…" });
     const id = newMeetingId();
-    const title = `Meeting – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
+    const title = takeTitle(`Meeting – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`);
     const lu = localUserRef.current;
     const uid = lu.userId && lu.available ? lu.userId : null;
     try {

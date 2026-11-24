@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { selectPrecache, makeVersion } = require("./manifest.js");
 
 const MAX_CRITICAL_BYTES = 6 * 1024 * 1024;
-const SHELLS = ["/", "/meetings", "/meeting", "/tasks", "/login", "/offline", "/manifest.webmanifest"];
+const SHELLS = ["/", "/meetings", "/meeting", "/tasks", "/schedule", "/login", "/offline", "/manifest.webmanifest"];
 
 function walk(dir, base = dir, out = []) {
   if (!fs.existsSync(dir)) return out;

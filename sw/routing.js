@@ -1,7 +1,7 @@
 // Pure SW routing. No imports: inlined verbatim into public/sw.js and also loaded by node tests.
 var MEETING_ID_RE_SOURCE = "^[a-z0-9_-]{16,40}$";
 var MEETING_ID_RE_LOCAL = new RegExp(MEETING_ID_RE_SOURCE);
-var SHELLS = ["/", "/meetings", "/meeting", "/tasks", "/login", "/offline"];
+var SHELLS = ["/", "/meetings", "/meeting", "/tasks", "/schedule", "/login", "/offline"];
 
 function shellFor(pathname) {
   var p = pathname.length > 1 && pathname.charAt(pathname.length - 1) === "/" ? pathname.slice(0, -1) : pathname;
@@ -24,6 +24,8 @@ function route(url, request, origin) {
   if (path === "/api" || path.indexOf("/api/") === 0) return { kind: "pass" };
   if (path.indexOf("/downloads/") === 0) return { kind: "pass" };
   if (path === "/admin" || path.indexOf("/admin/") === 0) return { kind: "pass" };
+  // Public booking pages are always live: a cached copy would show stale slots.
+  if (path === "/book" || path.indexOf("/book/") === 0) return { kind: "pass" };
   if (isRscRequest(url, request)) return { kind: "pass" };
   if (path.indexOf("/_next/static/") === 0 || path.indexOf("/ort/") === 0) return { kind: "asset" };
   if (request.mode === "navigate") {
