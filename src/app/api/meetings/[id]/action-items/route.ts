@@ -4,7 +4,7 @@ import { SaveBody } from "@/lib/actionItems";
 import { actionItemsMissing, isActionItemsMissing } from "@/lib/actionItemsDb";
 
 const SELECT = {
-  id: true, task: true, owner: true, deadlineText: true, sourceQuote: true, status: true, createdAt: true,
+  id: true, task: true, owner: true, deadlineText: true, dueDate: true, note: true, sourceQuote: true, status: true, createdAt: true,
 } as const;
 
 async function ownsMeeting(id: string, userId: string) {

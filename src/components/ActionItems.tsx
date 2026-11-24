@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ListChecks, Plus, Trash2, X } from "lucide-react";
 import { useFeatureGate } from "@/lib/featureGate";
 import type { SpeakerNames, TranscriptPart } from "@/lib/transcript";
+import Link from "next/link";
+import { STATUS_LABEL, type TaskStatus } from "@/lib/taskTracker";
 import { useToast } from "./Toast";
 import { Badge, Button, GateReason, Panel, PanelHeader, cx, inputCls } from "./ui";
 
@@ -13,6 +15,7 @@ interface SavedItem {
   owner: string | null;
   deadlineText: string | null;
   sourceQuote: string;
+  status?: TaskStatus;
 }
 
 interface Row {
@@ -24,6 +27,8 @@ interface Row {
   quote: string;
   verified: boolean;
 }
+
+const STATUS_TONE = { NOT_STARTED: "neutral", IN_PROGRESS: "accent", BLOCKED: "danger", DONE: "success" } as const;
 
 async function readError(res: Response, fallback: string): Promise<string> {
   const data = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -331,7 +336,13 @@ export function ActionItems({
       )}
 
       <Panel aria-label="Saved tasks">
-        <PanelHeader title="Saved tasks" meta={saved && saved.length ? String(saved.length) : undefined} />
+        <PanelHeader title="Saved tasks" meta={saved && saved.length ? String(saved.length) : undefined}>
+          {saved && saved.length > 0 && (
+            <Link href={`/tasks?meetingId=${encodeURIComponent(meetingId)}&status=all`} className="text-meta font-semibold text-accent underline-offset-2 hover:underline">
+              View in Tasks
+            </Link>
+          )}
+        </PanelHeader>
         <div className="p-5">
           {saved === null ? (
             <p className="text-ui text-muted-foreground">Loading…</p>
@@ -349,6 +360,7 @@ export function ActionItems({
                     <p className="break-words text-ui font-semibold">{i.task}</p>
                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted-foreground">
                       <Badge tone={i.owner ? "accent" : "neutral"}>{i.owner ?? "Unassigned"}</Badge>
+                      <Badge tone={STATUS_TONE[i.status ?? "NOT_STARTED"]}>{STATUS_LABEL[i.status ?? "NOT_STARTED"]}</Badge>
                       <span>{i.deadlineText ?? "No deadline"}</span>
                     </p>
                     {i.sourceQuote && (

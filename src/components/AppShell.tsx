@@ -8,7 +8,7 @@ import { useAuth } from "./AuthProvider";
 import { ConnectivityPill } from "./ConnectivityPill";
 import { useConnectivity } from "@/lib/connectivity";
 import { markSignedOut } from "@/components/SyncProvider";
-import { Mic, LayoutList, LogOut, AudioLines } from "lucide-react";
+import { Mic, LayoutList, ListChecks, LogOut, AudioLines } from "lucide-react";
 import { cx } from "./ui";
 import { tap } from "@/lib/haptics";
 import { prefersReducedMotion } from "@/lib/motionPref";
@@ -19,6 +19,7 @@ import { AppUpdateBanner } from "./AppUpdateBanner";
 const NAV = [
   { href: "/", label: "Record", icon: Mic },
   { href: "/meetings", label: "Meetings", icon: LayoutList },
+  { href: "/tasks", label: "Tasks", icon: ListChecks },
 ];
 
 const isActive = (pathname: string, href: string) =>
@@ -164,7 +165,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="glass fixed inset-x-4 bottom-[calc(12px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-20 mx-auto h-16 max-w-md rounded-full shadow-float lg:hidden"
         aria-label="Main"
       >
-        <div className="grid h-full grid-cols-2 items-center px-1.5">
+        <div className="grid h-full grid-cols-3 items-center px-1.5">
           {NAV.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
