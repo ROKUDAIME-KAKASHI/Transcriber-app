@@ -21,7 +21,7 @@ import {
   RateMeter, committedCursor, frameBlock, isCatchingUp, pcm16Base64ToFloat32, readSizeFor, NATIVE_SAMPLE_RATE,
 } from "@/lib/speech/nativeFeed";
 import {
-  finishingLine, nativeStatusLine, pickCapture, resumeFrom, type CaptureInfoLite, type NativeRowInfo,
+  finishingLine, nativeStatusLine, pickCapture, recoveryNote, resumeFrom, storageNotice, type CaptureInfoLite, type NativeRowInfo,
 } from "@/lib/speech/nativeSession";
 import { newMeetingId } from "@/lib/local/ids";
 import { flush, markRecording, onRemoteStop, poke, type FlushResult } from "@/lib/local/sync";
@@ -88,6 +88,8 @@ export interface RecorderState {
   speakerStatus: SpeakerStatus;
   /** Offline capture: Stop was tapped and the phone is still turning the recorded audio into text. */
   finishing?: boolean;
+  /** Offline capture: something the user should know about the phone (low or no storage). */
+  notice?: { tone: "warning" | "danger"; text: string } | null;
 }
 
 /**
@@ -279,6 +281,8 @@ export function useRecorder(opts: {
   const nativePauseTapRef = useRef<{ at: number; value: boolean } | null>(null);
   /** The final write that clears nativeCapture succeeded (so the audio may be deleted). */
   const nativeFinishedRef = useRef(false);
+  /** Shown in front of the "Finishing transcription" line (e.g. why a recovered recording stopped). */
+  const finishNoteRef = useRef<string | null>(null);
   /** The server said this meeting was stopped elsewhere: finish the same way as the Stop button. */
   const handleRemoteStop = () => {
     if (!wantRecordingRef.current) return; // already stopping (our own Stop also ends in DONE)
@@ -1159,6 +1163,8 @@ export function useRecorder(opts: {
     });
 
   const nativeBehind = () => Math.max(0, headRef.current - readPosRef.current);
+  const finishingText = () =>
+    (finishNoteRef.current ? `${finishNoteRef.current} ` : "") + finishingLine(nativeBehind(), rateRef.current.rate());
 
   /** Stops the timers of a native session (never flushes the chunker: the open phrase is re-read from the cursor). */
   const cleanupNativeTimers = () => {
@@ -1253,7 +1259,7 @@ export function useRecorder(opts: {
     const id = meetingIdRef.current;
     if (!nativeRef.current || !id || nativeTickBusyRef.current) return;
     if (stoppingRef.current) {
-      patch({ statusMsg: finishingLine(nativeBehind(), rateRef.current.rate()) });
+      patch({ statusMsg: finishingText() });
       return;
     }
     nativeTickBusyRef.current = true;
@@ -1268,8 +1274,10 @@ export function useRecorder(opts: {
         const paused = tap && performance.now() - tap.at < 1500 ? tap.value : !!st.paused;
         secondsRef.current = Math.floor(st.seconds ?? secondsRef.current);
         const running = st.active && !paused;
+        const notice = storageNotice({ freeBytes: st.freeBytes, stoppedReason: st.stoppedReason });
         setState((s) => ({
           ...s,
+          notice: s.notice?.text === notice?.text ? s.notice : notice,
           recordingSeconds: secondsRef.current,
           isPaused: paused,
           micLevel: running ? st.level : 0,
@@ -1389,7 +1397,9 @@ export function useRecorder(opts: {
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
       recordingSeconds: 0, isPaused: false, isStarting: true, isRecording: false,
       statusMsg: "Loading speech model…", saveState: "idle", meetingId: null, syncNote: null, stoppedRemotely: false,
+      finishing: false, notice: null,
     });
+    finishNoteRef.current = null;
 
     const newId = newMeetingId();
     startIdRef.current = newId;
@@ -1445,8 +1455,10 @@ export function useRecorder(opts: {
    * The Record screen came back while the service holds a capture (renderer reload, app reopened, or the
    * screen was left and re-entered): re-attach. Never calls start(): that would continue the folder and add a break.
    */
-  const attachExisting = async (info: CaptureInfoLite, uid: string) => {
+  const attachExisting = async (info: CaptureInfoLite, uid: string): Promise<boolean> => {
     const id = info.meetingId;
+    /** The service is not capturing any more (stopped, or killed by Android): only the transcript is left to finish. */
+    const finalize = !info.active;
     const token = ++startTokenRef.current;
     startingRef.current = true;
     nativeRef.current = true;
@@ -1473,8 +1485,10 @@ export function useRecorder(opts: {
       patch({
         meetingId: id, transcriptParts: got.parts, recordingSeconds: meta.durationSec, isStarting: true, isRecording: false,
         isPaused: false, saveState: "local", syncNote: null, stoppedRemotely: false, speakerNames: meta.speakerNames,
-        statusMsg: "Reconnecting to the recording…",
+        statusMsg: finalize ? recoveryNote(info) : "Reconnecting to the recording…",
+        finishing: false, notice: storageNotice({ stoppedReason: info.stoppedReason }),
       });
+      finishNoteRef.current = finalize ? recoveryNote(info) : null;
       speakerNamesRef.current = meta.speakerNames;
       await prepareOnDevice(engine, info.language || "en", token);
       // Speaker identification: replay the saved voices in order, so new phrases join the same speakers.
@@ -1492,12 +1506,14 @@ export function useRecorder(opts: {
       }
       if (startTokenRef.current !== token) throw new StartCancelled();
       headRef.current = info.head;
-      wantRecordingRef.current = true;
-      await acquireWakeLock();
+      wantRecordingRef.current = !finalize;
+      if (!finalize) await acquireWakeLock();
       attachNative(resumeFrom({ nativeCapture: meta.nativeCapture, nativeCursor: meta.nativeCursor, status: meta.status }, info), id);
-      patch({ isStarting: false, isRecording: true, statusMsg: nativeStatusLine({ paused: false, behindSamples: nativeBehind() }) });
+      if (finalize) patch({ isStarting: false, isRecording: false });
+      else patch({ isStarting: false, isRecording: true, statusMsg: nativeStatusLine({ paused: false, behindSamples: nativeBehind() }) });
+      return true;
     } catch (e) {
-      if (e instanceof StartCancelled || startTokenRef.current !== token) return;
+      if (e instanceof StartCancelled || startTokenRef.current !== token) return false;
       wantRecordingRef.current = false;
       pumpAliveRef.current = false;
       cleanupNativeTimers();
@@ -1507,6 +1523,7 @@ export function useRecorder(opts: {
         isStarting: false, isRecording: false,
         statusMsg: `Couldn't reconnect to the recording: ${(e as Error)?.message || "unknown error"}. The audio is kept on the phone.`,
       });
+      return false;
     } finally {
       if (startTokenRef.current === token) startingRef.current = false;
     }
@@ -1531,8 +1548,20 @@ export function useRecorder(opts: {
       if (m) rows.set(c.meetingId, { nativeCapture: m.nativeCapture, nativeCursor: m.nativeCursor, status: m.status });
     }
     if (startingRef.current || wantRecordingRef.current || finalizingRef.current) return;
-    const { live } = pickCapture(list.captures, rows);
-    if (live) await attachExisting(live, uid);
+    const { live, unfinished, orphans } = pickCapture(list.captures, rows);
+    // Left over from a crash between "meeting finished" and "audio deleted": the text is safe, delete the audio.
+    for (const o of orphans) MeetingRecorder.discardCapture({ meetingId: o.meetingId }).catch(() => {});
+    if (live) {
+      await attachExisting(live, uid);
+      return;
+    }
+    // Stopped from the notification, by Android, or out of storage while the page was not there:
+    // transcribe what is on disk and finish the meeting, one capture after another.
+    for (const c of unfinished) {
+      if (!(await attachExisting(c, uid))) break;
+      await stopNative();
+      if (!nativeDrainedRef.current) break; // could not read it all: it stays on the phone for next time
+    }
   };
 
   /** Pause/resume tap on a native session: shown at once, the service confirms through nativeTick. */
@@ -1560,7 +1589,7 @@ export function useRecorder(opts: {
       wantRecordingRef.current = false;
       patch({
         isRecording: false, isPaused: false, interimText: "", micLevel: 0, noSound: false,
-        statusMsg: finishingLine(nativeBehind(), rateRef.current.rate()), saveState: "saving", finishing: true,
+        statusMsg: finishingText(), saveState: "saving", finishing: true,
       });
       try {
         MeetingRecorder.stop({ force: false }).catch(() => {});
@@ -1807,7 +1836,7 @@ export function useRecorder(opts: {
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
       recordingSeconds: 0, isPaused: false, isStarting: true, isRecording: false,
       statusMsg: useSample ? "Loading sample audio…" : "Requesting microphone…", saveState: "idle", meetingId: null,
-      syncNote: null, stoppedRemotely: false,
+      syncNote: null, stoppedRemotely: false, finishing: false, notice: null,
     });
 
     // The audio context is created before any await so it counts as part of the tap

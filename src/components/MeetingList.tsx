@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
 import { listMeetings, listPending } from "@/lib/local/repo";
 import { stopRecordingRemotely } from "@/lib/local/stopRemote";
@@ -29,9 +30,12 @@ export interface MeetingRow {
   origin?: MeetingOrigin;
   lastWriteAt?: number;
   serverUpdatedAt?: string | null;
+  /** Recorded offline on this phone and not finished: the transcript is completed on the Record screen. */
+  nativeCapture?: boolean;
 }
 
 function StatusChip({ m, stale }: { m: MeetingRow; stale: boolean }) {
+  if (m.status === "RECORDING" && m.nativeCapture && stale) return <Badge tone="warning">Needs finishing</Badge>;
   if (m.status === "RECORDING" && stale) return <Badge tone="warning">Not responding</Badge>;
   if (m.status === "RECORDING") {
     return (
@@ -95,12 +99,14 @@ export function MeetingList() {
         origin: l.origin,
         lastWriteAt: l.lastWriteAt,
         serverUpdatedAt: l.serverUpdatedAt,
+        nativeCapture: l.nativeCapture === 1,
       });
     }
     return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }, [local]);
 
   const toast = useToast();
+  const router = useRouter();
   // Re-check "Not responding" as time passes.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -113,7 +119,10 @@ export function MeetingList() {
     setStopping(m.id);
     const r = await stopRecordingRemotely(userId, m.id);
     setStopping(null);
-    if (r === "ok") toast("Recording stopped");
+    if (r === "finish-here") {
+      toast("Finishing the transcript on this phone");
+      router.push("/");
+    } else if (r === "ok") toast("Recording stopped");
     else toast(r === "auth" ? "Signed out. Sign in again to stop it." : "Couldn't stop it. Check the connection and try again.", "danger");
   };
 
@@ -287,7 +296,9 @@ export function MeetingList() {
                     {canStop && (
                       <div className="mt-2 flex items-center justify-end gap-3">
                         {stale && (
-                          <span className="text-meta text-muted-foreground">No update for a while. It may be stuck.</span>
+                          <span className="text-meta text-muted-foreground">
+                            {m.nativeCapture ? "Recorded on this phone. Stop it to finish the transcript." : "No update for a while. It may be stuck."}
+                          </span>
                         )}
                         <Button variant="danger" onClick={() => stopRecording(m)} disabled={stopping === m.id}>
                           {stopping === m.id ? "Stopping…" : "Stop recording"}

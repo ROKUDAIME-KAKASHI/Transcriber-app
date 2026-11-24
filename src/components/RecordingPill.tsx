@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { LiveDot } from "./ui";
 import { Waveform } from "./Waveform";
 import { RecordingControls, useFloatingBarFlag } from "./RecordingControls";
@@ -25,6 +26,7 @@ export function RecordingPill({ state }: { state: BackgroundRecording | null }) 
 
 function Pill({ state }: { state: BackgroundRecording }) {
   const { reduced } = useMotionPref();
+  const router = useRouter();
   const [stopping, setStopping] = useState(false);
   // Optimistic pause flag until the 1 s poll catches up (avoids a double-tap flip-flop).
   const [pendingPaused, setPendingPaused] = useState<boolean | null>(null);
@@ -44,7 +46,13 @@ function Pill({ state }: { state: BackgroundRecording }) {
     if (stopping) return;
     setStopping(true);
     haptics.stop();
-    MeetingRecorder.stop({ force: false }).catch(() => setStopping(false));
+    // An offline (on-device) capture is finished by the Record screen, which turns the audio into text:
+    // go there once the service has been told to stop.
+    MeetingRecorder.stop({ force: false })
+      .then(() => {
+        if (state.mode === "local") router.push("/");
+      })
+      .catch(() => setStopping(false));
   };
 
   return (

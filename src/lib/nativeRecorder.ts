@@ -113,6 +113,16 @@ export function isNativeApp(): boolean {
   return typeof window !== "undefined" && Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("MeetingRecorder");
 }
 
+/** Deletes the audio the app kept for a meeting (best effort; a no-op on the website and old APKs). */
+export async function discardNativeAudio(meetingId: string): Promise<void> {
+  if (!isNativeApp()) return;
+  try {
+    await MeetingRecorder.discardCapture({ meetingId });
+  } catch {
+    /* not there, still being recorded, or an old APK: nothing to do */
+  }
+}
+
 let capsPromise: Promise<NativeCapabilities> | null = null;
 
 /**

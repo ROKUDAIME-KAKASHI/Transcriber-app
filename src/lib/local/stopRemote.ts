@@ -1,6 +1,8 @@
-import { markStoppedRemotely } from "./repo";
+import { MeetingRecorder, isNativeApp } from "@/lib/nativeRecorder";
+import { getMeta, markStoppedRemotely } from "./repo";
 
-export type StopResult = "ok" | "auth" | "error";
+/** "finish-here": the audio is still on this phone, so the transcript has to be finished here (Record screen), not marked DONE. */
+export type StopResult = "ok" | "auth" | "error" | "finish-here";
 
 /**
  * Ends a recording that is stuck or running on another device: the server marks it DONE (what was
@@ -9,6 +11,13 @@ export type StopResult = "ok" | "auth" | "error";
  */
 export async function stopRecordingRemotely(userId: string | null, id: string): Promise<StopResult> {
   try {
+    // A recording made offline on this phone: ending it on the server would drop the audio that has not
+    // been transcribed yet (and needs no internet). Stop the capture and let the Record screen finish it.
+    const row = userId ? await getMeta(userId, id) : null;
+    if (row?.nativeCapture === 1) {
+      if (isNativeApp()) await MeetingRecorder.stop({ force: false }).catch(() => {});
+      return "finish-here";
+    }
     const res = await fetch(`/api/meetings/${encodeURIComponent(id)}`, {
       method: "PATCH",
       cache: "no-store",

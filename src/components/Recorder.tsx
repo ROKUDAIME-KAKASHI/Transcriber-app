@@ -508,6 +508,17 @@ export function Recorder() {
               <NoSoundNotice />
             </div>
           )}
+          {rec.notice && (
+            <div className="mt-2 w-full text-left" role="status">
+              <Notice
+                tone={rec.notice.tone}
+                icon={<HardDrive className={cx("h-4 w-4", rec.notice.tone === "danger" ? "text-danger" : "text-warning")} />}
+                title="Phone storage"
+              >
+                {rec.notice.text}
+              </Notice>
+            </div>
+          )}
         </div>
 
         <div className="space-y-5 border-t border-border/70 px-4 py-4">

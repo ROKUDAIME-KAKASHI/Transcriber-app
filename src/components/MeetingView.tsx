@@ -26,6 +26,7 @@ import { isNative } from "@/lib/native";
 import { cacheServerMeeting, setServerDocument, setSpeakerNames, setTitle as setLocalTitle, tombstone } from "@/lib/local/repo";
 import { flush, isRecordingId, poke } from "@/lib/local/sync";
 import { stopRecordingRemotely } from "@/lib/local/stopRemote";
+import { discardNativeAudio } from "@/lib/nativeRecorder";
 import { isStaleRecording, stopConfirmText } from "@/lib/recordingState";
 import { useLocalUser } from "./SyncProvider";
 import { ShareMenu } from "./ShareMenu";
@@ -295,6 +296,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     setConfirmDelete(false);
     setError(null);
     if (userId && (await tombstone(userId, meeting.id))) {
+      void discardNativeAudio(meeting.id); // audio an offline recording may still hold on this phone
       poke(meeting.id);
       router.push("/meetings");
       router.refresh();
@@ -573,7 +575,10 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
                 setStopping(true);
                 const r = await stopRecordingRemotely(userId, meeting.id);
                 setStopping(false);
-                if (r === "ok") {
+                if (r === "finish-here") {
+                  toast("Finishing the transcript on this phone");
+                  router.push("/");
+                } else if (r === "ok") {
                   setStoppedHere(true);
                   toast("Recording stopped");
                   router.refresh();

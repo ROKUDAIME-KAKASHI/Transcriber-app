@@ -5,7 +5,9 @@ import {
   finishingLine,
   nativeStatusLine,
   pickCapture,
+  recoveryNote,
   resumeFrom,
+  storageNotice,
   type CaptureInfoLite,
 } from "../src/lib/speech/nativeSession.ts";
 
@@ -37,6 +39,22 @@ test("pickCapture re-attaches to the live capture of this user's flagged meeting
   assert.deepEqual(unfinished, []); // m2 is finished, "other" has no row here and is never touched
 });
 
+test("pickCapture marks finished meetings' leftover folders as orphans, never other users' folders", () => {
+  const rows = new Map([
+    ["done", { nativeCapture: 0 as const, status: "DONE" }],
+    ["busy", { nativeCapture: 1 as const, status: "RECORDING" }],
+  ]);
+  const { orphans } = pickCapture(
+    [
+      cap({ meetingId: "done", active: false, state: "stopped" }),
+      cap({ meetingId: "busy", active: false, state: "stopped" }),
+      cap({ meetingId: "someone-else", active: false, state: "stopped" }),
+    ],
+    rows,
+  );
+  assert.deepEqual(orphans.map((c) => c.meetingId), ["done"]);
+});
+
 test("pickCapture lists stopped/interrupted flagged captures oldest first", () => {
   const rows = new Map([
     ["a", { nativeCapture: 1 as const, status: "RECORDING" }],
@@ -54,4 +72,24 @@ test("resumeFrom never reads behind what the phone already released", () => {
   assert.equal(resumeFrom({ nativeCursor: 500, status: "RECORDING" }, { committed: 0 }), 500);
   assert.equal(resumeFrom({ nativeCursor: 500, status: "RECORDING" }, { committed: 900 }), 900);
   assert.equal(resumeFrom(undefined, { committed: 0 }), 0);
+});
+
+test("recovery note names where Android or the storage limit ended the recording", () => {
+  assert.equal(
+    recoveryNote({ state: "interrupted", head: 16000 * (42 * 60 + 10) }),
+    "Recording was stopped by Android at 42:10. Transcribing what was recorded.",
+  );
+  assert.match(recoveryNote({ state: "stopped", stoppedReason: "storage", head: 16000 * 3725 }), /at 1:02:05 because the phone ran out of storage/);
+  assert.match(recoveryNote({ state: "stopped", head: 0 }), /^Recording had stopped/);
+});
+
+test("storage notice: quiet with plenty of space, warns under an hour, explains a storage stop", () => {
+  assert.equal(storageNotice({ freeBytes: 500_000_000 }), null);
+  assert.equal(storageNotice({}), null);
+  const low = storageNotice({ freeBytes: 64_000_000 }); // 2000 s = 33 min
+  assert.equal(low?.tone, "warning");
+  assert.match(low?.text ?? "", /about 33 min of recording space left/);
+  const stopped = storageNotice({ freeBytes: 1_000_000, stoppedReason: "storage" });
+  assert.equal(stopped?.tone, "danger");
+  assert.match(stopped?.text ?? "", /almost out of storage/);
 });

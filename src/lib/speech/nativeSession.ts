@@ -50,11 +50,59 @@ export interface CaptureInfoLite {
 export function pickCapture(
   captures: readonly CaptureInfoLite[],
   rows: ReadonlyMap<string, NativeRowInfo>,
-): { live: CaptureInfoLite | null; unfinished: CaptureInfoLite[] } {
+): { live: CaptureInfoLite | null; unfinished: CaptureInfoLite[]; orphans: CaptureInfoLite[] } {
   const mine = captures.filter((c) => rows.get(c.meetingId)?.nativeCapture === 1);
   const live = mine.find((c) => c.active) ?? null;
   const unfinished = mine.filter((c) => !c.active).sort((a, b) => a.startedAt - b.startedAt);
-  return { live, unfinished };
+  // Left behind by a crash between the write that finished the meeting and the delete: the meeting is DONE
+  // here and no longer claims the audio. (A folder with no row at all is never touched.)
+  const orphans = captures.filter((c) => {
+    const row = rows.get(c.meetingId);
+    return !c.active && !!row && row.nativeCapture !== 1 && row.status === "DONE";
+  });
+  return { live, unfinished, orphans };
+}
+
+function mmss(samples: number): string {
+  const total = Math.max(0, Math.floor(samples / 16000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${two(m)}:${two(s)}`;
+}
+
+/** What to tell the user when a capture left on the phone is being finished (the app was reopened). */
+export function recoveryNote(c: Pick<CaptureInfoLite, "state" | "stoppedReason" | "head">): string {
+  if (c.stoppedReason === "storage") {
+    return `Recording stopped at ${mmss(c.head)} because the phone ran out of storage. Transcribing what was recorded.`;
+  }
+  if (c.state === "interrupted" || c.stoppedReason === "interrupted") {
+    return `Recording was stopped by Android at ${mmss(c.head)}. Transcribing what was recorded.`;
+  }
+  return "Recording had stopped. Transcribing what was recorded.";
+}
+
+const BYTES_PER_HOUR = 16000 * 2 * 3600;
+
+/** A heads-up about phone storage while recording, or after the service stopped because of it. */
+export function storageNotice(a: {
+  freeBytes?: number | null;
+  stoppedReason?: string | null;
+}): { tone: "warning" | "danger"; text: string } | null {
+  if (a.stoppedReason === "storage") {
+    return {
+      tone: "danger",
+      text: "Recording stopped because the phone is almost out of storage. What was recorded is being transcribed. Free up some space before you record again.",
+    };
+  }
+  const free = a.freeBytes;
+  if (typeof free !== "number" || free < 0 || free >= BYTES_PER_HOUR) return null;
+  const minutes = Math.max(1, Math.floor(free / 32000 / 60));
+  return {
+    tone: "warning",
+    text: `The phone is running low on storage: about ${minutes} min of recording space left. Free up some space to keep recording.`,
+  };
 }
 
 /** The sample to start reading from: the page's own stored cursor (never behind what native released). */
