@@ -81,7 +81,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       <div className="grid min-h-dvh place-items-center px-4">
         <Panel as="div" className="w-full max-w-sm p-6 text-center">
           <WifiOff size={24} className="mx-auto text-muted-foreground" aria-hidden />
-          <h1 className="mt-3 text-lg font-semibold">Sign in needs internet once</h1>
+          <h1 className="mt-3 text-2xl font-semibold">Sign in needs internet once</h1>
           <p className="mt-1.5 text-ui text-muted-foreground">
             Connect to the internet, then sign in. After that the app works offline.
           </p>

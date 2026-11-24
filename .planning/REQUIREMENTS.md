@@ -48,6 +48,18 @@
 
 - [x] **REL-01**: A new signed release APK with the new native plugins is built and verified on the Xiaomi phone (export, share, offline open, offline record)
 
+### Polish (Phase 6)
+
+- [x] **POL-01**: Floating recording pill has working pause/resume and stop (native and in-page recorders), body tap goes to Record, visible on laptop too
+- [x] **POL-02**: Light-mode contrast fixes: Switch off track, radio ring, idle timer (≥3:1)
+- [x] **POL-03**: Token hygiene: type scale, radii and 4 px spacing grid on shared primitives; toast offset above the tab bar
+
+### Speaker names (Phase 7)
+
+- [ ] **NAME-01**: On-device detection of self-introductions (English + common Hindi/Hinglish) suggests names for speaker labels
+- [ ] **NAME-02**: Online AI name suggestions with evidence, using the existing AI provider chain
+- [ ] **NAME-03**: Suggestions are accepted/dismissed by the user; accepted names go through the existing rename path
+
 ## v2 Requirements
 
 ### Offline recording with screen locked
@@ -101,6 +113,9 @@
 | UI-04 | Phase 5 | Complete |
 | UI-05 | Phase 5 | Complete |
 | REL-01 | Phase 5 | Complete |
+| POL-01..03 | Phase 6 | Complete |
+| NAME-01..03 | Phase 7 | Pending |
+| OFF-V2-01 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 25 total

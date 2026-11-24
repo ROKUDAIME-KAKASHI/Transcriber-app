@@ -21,6 +21,7 @@ import { TranscriptView } from "./TranscriptView";
 import { Badge, Button, FieldLabel, LiveDot, GateReason, Notice, Panel, PanelHeader, Segmented, Switch, cx, selectCls } from "./ui";
 import { Orb } from "./Orb";
 import { Waveform } from "./Waveform";
+import { RecordingControls, useFloatingBarFlag } from "./RecordingControls";
 import { useToast } from "./Toast";
 import { calmMode, CALM_BOOST_MS } from "@/lib/calmMode";
 import { useMotionPref } from "@/lib/motionPref";
@@ -312,6 +313,7 @@ export function Recorder() {
     now: Date.now(),
   });
   const showBar = busy && !heroVisible;
+  useFloatingBarFlag(showBar);
   const selectedEngine = ENGINES.find((e) => e.value === effective);
   const onHeroClick = (e: React.MouseEvent) => {
     if (mode !== "calm") return;
@@ -340,7 +342,7 @@ export function Recorder() {
           // Phones: the transcript is below the fold after Stop, so offer the meeting up here.
           <Link
             href={`/meeting?id=${rec.meetingId}`}
-            className="flex items-center gap-3 rounded-t-panel border-b border-border px-5 py-3.5 text-ui hover:bg-muted/50 lg:hidden"
+            className="flex items-center gap-3 rounded-t-panel border-b border-border px-4 py-3 text-ui hover:bg-muted/50 lg:hidden"
           >
             <FileText className="h-4 w-4 shrink-0 text-success" />
             <span className="flex-1">
@@ -355,7 +357,7 @@ export function Recorder() {
           className="flex flex-col items-center px-6 py-8 text-center max-lg:min-h-[min(560px,70dvh)] max-lg:justify-center"
           onClick={onHeroClick}
         >
-          <div className="flex items-center justify-center gap-2 text-[13px] font-semibold">
+          <div className="flex items-center justify-center gap-2 text-meta font-semibold">
             {busy && <LiveDot paused={rec.isPaused} solid={mode === "calm" || mode === "reduced"} />}
             {starting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             <span
@@ -441,7 +443,7 @@ export function Recorder() {
               <Waveform level={rec.isPaused ? 0 : rec.micLevel} reduced={mode !== "live"} />
             ) : (
               !starting && (
-                <p className="self-center text-[13px] text-muted-foreground">
+                <p className="self-center text-meta text-muted-foreground">
                   {onDevice && inApp ? "Tap to record · Works without internet on this phone" : "Tap to record"}
                 </p>
               )
@@ -449,7 +451,7 @@ export function Recorder() {
           </div>
 
           {mode === "calm" && (
-            <p className="mt-2 text-[13px] text-muted-foreground">
+            <p className="mt-2 text-meta text-muted-foreground">
               Calm mode saves battery.{" "}
               <button
                 type="button"
@@ -461,7 +463,7 @@ export function Recorder() {
             </p>
           )}
 
-          <p className="mx-auto mt-2 min-h-[1.25rem] max-w-[30ch] text-[13px] text-muted-foreground" aria-live="polite">
+          <p className="mx-auto mt-2 min-h-[1.25rem] max-w-[30ch] text-meta text-muted-foreground" aria-live="polite">
             {rec.statusMsg === "Ready" ? "" : rec.statusMsg}
           </p>
 
@@ -491,7 +493,7 @@ export function Recorder() {
           )}
         </div>
 
-        <div className="space-y-5 border-t border-border/70 px-5 py-5">
+        <div className="space-y-5 border-t border-border/70 px-4 py-4">
           <div>
             <FieldLabel>Speech engine</FieldLabel>
             <Segmented<RecordEngine>
@@ -514,7 +516,7 @@ export function Recorder() {
               }))}
             />
             {selectedEngine && (
-              <p className="mt-2 text-[13px] text-muted-foreground">
+              <p className="mt-2 text-meta text-muted-foreground">
                 <span className="font-medium text-foreground">{selectedEngine.aside}</span>
                 {" · "}
                 {inApp ? APP_ENGINE_NOTES[selectedEngine.value] : selectedEngine.description}
@@ -633,7 +635,7 @@ export function Recorder() {
               </div>
 
               {canCaptureSystem && (
-                <label className="flex cursor-pointer items-start gap-3 rounded-chip border border-border px-3.5 py-3 hover:bg-muted has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+                <label className="flex cursor-pointer items-start gap-3 rounded-chip border border-border px-4 py-3 hover:bg-muted has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
                   <MonitorSpeaker className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="flex-1">
                     <span className="block text-ui font-medium">Also capture tab audio</span>
@@ -760,23 +762,15 @@ export function Recorder() {
               {formatDuration(rec.recordingSeconds)}
             </span>
             <Waveform bars={10} height={20} level={rec.isPaused ? 0 : rec.micLevel} reduced={mode !== "live"} />
-            <button
-              onClick={rec.isPaused ? rec.resume : rec.pause}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-card/70 active:scale-95"
-              aria-label={rec.isPaused ? "Resume recording" : "Pause recording"}
-            >
-              {rec.isPaused ? <Play className="h-4 w-4 fill-current" /> : <Pause className="h-4 w-4 fill-current" />}
-            </button>
-            <button
-              onClick={() => {
+            <RecordingControls
+              paused={rec.isPaused}
+              onPause={rec.pause}
+              onResume={rec.resume}
+              onStop={() => {
                 haptics.stop();
                 rec.stop();
               }}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-record-fill text-white active:scale-95"
-              aria-label="Stop recording"
-            >
-              <Square className="h-4 w-4 fill-current" />
-            </button>
+            />
           </div>
         </div>
       )}

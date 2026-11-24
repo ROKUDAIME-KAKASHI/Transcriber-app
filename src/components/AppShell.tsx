@@ -122,7 +122,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               onClick={doSignOut}
               aria-disabled={offline}
-              className={cx("grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground", offline && "opacity-50")}
+              className={cx("grid h-9 w-9 shrink-0 place-items-center rounded-btn text-muted-foreground hover:bg-muted hover:text-foreground", offline && "opacity-50")}
               aria-label="Sign out"
               title={signOutTitle}
             >
@@ -133,7 +133,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Top bar (phones, tablets) */}
-      <header className="sticky top-0 z-20 border-b border-border/70 bg-background/80 pt-[var(--safe-area-inset-top,env(safe-area-inset-top))] lg:hidden">
+      <header className="sticky top-0 z-20 border-b border-border/70 bg-background/90 pt-[var(--safe-area-inset-top,env(safe-area-inset-top))] lg:hidden">
         <div className="flex h-14 items-center justify-between gap-4 px-4">
           <Logo />
           <div className="ml-auto flex items-center gap-1">
@@ -141,7 +141,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             onClick={doSignOut}
               aria-disabled={offline}
-            className={cx("-mr-2 grid h-11 w-11 place-items-center rounded-lg text-muted-foreground hover:text-foreground", offline && "opacity-50")}
+            className={cx("-mr-2 grid h-11 w-11 place-items-center rounded-btn text-muted-foreground hover:text-foreground", offline && "opacity-50")}
             aria-label="Sign out"
             title={offline ? signOutTitle : email ? `Sign out (${email})` : "Sign out"}
           >

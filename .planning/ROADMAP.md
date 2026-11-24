@@ -19,7 +19,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Offline App Shell & Gating** - The app opens, stays signed in and records on-device with no internet; online-only features are clearly gated
  (completed 2026-11-21)
 - [x] **Phase 4: On-Device Speaker Separation** - Moonshine/Whisper transcripts say who said what, renamable, used by AI minutes
-- [x] **Phase 5: Aurora Ink Redesign & Release** - Alive, modern, simple UI with motion; signed APK built and verified on the Xiaomi phone (completed 2026-11-23)
+- [x] **Phase 5: Aurora Ink Redesign & Release** - Alive, modern, simple UI with motion; signed APK built and verified on the Xiaomi phone (completed 2026-11-23)
+- [x] **Phase 6: UI Polish Leftovers** - Recording pill gets pause/stop, contrast/type/radius/spacing fixes from the Phase 5 UI review (completed 2026-11-24)
+- [ ] **Phase 7: Automatic Speaker Names** - Speakers who introduce themselves ("Hi, I'm Priya") get their names suggested and applied in one tap
+- [ ] **Phase 8: Offline Recording With Screen Locked** - On-device (free, offline) recording keeps going with the phone locked in the Android app
 
 ## Phase Details
 
@@ -132,6 +135,39 @@ Plans:
 - [x] 05-07-PLAN.md — Phase gate (typecheck/test/build/check-build/audits/smoke) + 05-HUMAN-UAT.md; APK build is a post-review orchestrator step (wave 3)
 **UI hint**: yes
 
+### Phase 6: UI Polish Leftovers
+**Goal**: The leftover issues from the Phase 5 UI review are fixed, and the floating recording pill can pause and stop
+**Mode:** mvp
+**Depends on**: Phase 5
+**Requirements**: POL-01, POL-02, POL-03
+**Success Criteria** (what must be TRUE):
+  1. The floating recording pill (shown on other screens while recording) has pause/resume and stop buttons that work for both the native (Cloud, APK) and the in-page recorders; tapping its body still goes to Record; it also shows on laptop width
+  2. Switch off-track, radio ring and idle timer pass 3:1 contrast in light mode
+  3. No off-scale type (`text-[13px]`, `text-[2rem]`, stray `text-lg/xl`), no `rounded-lg/xl` stragglers, no half-step spacing on the shared primitives; toast sits just above the tab bar unless a pill/bar is shown
+**UI hint**: yes
+
+### Phase 7: Automatic Speaker Names
+**Goal**: People who say their name during the meeting get it attached to their speaker label without manual renaming
+**Mode:** mvp
+**Depends on**: Phase 4
+**Requirements**: NAME-01, NAME-02, NAME-03
+**Success Criteria** (what must be TRUE):
+  1. On-device (no internet) detection finds self-introductions in the transcript ("I'm Priya", "my name is Rahul", "this is Anil from sales", common Hindi forms like "mera naam ... hai") and suggests "Speaker 2 → Priya"
+  2. Online, the AI (same provider chain as AI minutes) can suggest names from context (introductions, people addressing each other), returning only names with evidence quotes
+  3. Suggestions are shown on the meeting page (and after stopping a recording) as chips the user accepts or dismisses; nothing is renamed without a tap; accepted names flow through the existing rename (transcript, exports, AI minutes, sync)
+**UI hint**: yes
+
+### Phase 8: Offline Recording With Screen Locked
+**Goal**: In the Android app, a free on-device recording (Moonshine/Whisper) keeps capturing with the screen locked and nothing is lost
+**Mode:** mvp
+**Depends on**: Phase 3, Phase 4
+**Requirements**: OFF-V2-01
+**Success Criteria** (what must be TRUE):
+  1. In the APK, starting an on-device recording runs the native foreground service capture; audio keeps being captured with the screen locked for a long meeting (1h+), with no internet
+  2. Captured audio is transcribed on the device (with speaker labels) — live when the WebView is running, and any backlog is caught up when the screen comes back on — with no gaps or duplicates
+  3. Stopping from the notification, the app, or the Meetings panel finalizes the meeting; the backlog audio is deleted from the phone once transcribed; old APKs and the website keep working as before
+**UI hint**: no
+
 ## Progress
 
 **Execution Order:**
@@ -144,6 +180,9 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | 3. Offline App Shell & Gating | 8/8 | Complete   | 2026-11-21 |
 | 4. On-Device Speaker Separation | 8/8 | Code complete (device UAT pending) | 2026-11-23 |
 | 5. Aurora Ink Redesign & Release | 7/7 | Complete   | 2026-11-23 |
+| 6. UI Polish Leftovers | 0/? | Not started | - |
+| 7. Automatic Speaker Names | 0/? | Not started | - |
+| 8. Offline Recording With Screen Locked | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-11-20*

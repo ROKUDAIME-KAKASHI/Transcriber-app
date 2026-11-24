@@ -72,7 +72,7 @@ export const Waveform = memo(function Waveform({
   }
 
   return (
-    <div {...aria} className={cx("flex items-center gap-[2px]", className)} style={{ height }}>
+    <div {...aria} className={cx("flex items-center gap-[3px]", className)} style={{ height }}>
       {Array.from({ length: bars }, (_, i) => (
         <span
           key={i}

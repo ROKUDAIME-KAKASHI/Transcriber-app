@@ -83,7 +83,7 @@ export default function LoginPage() {
           Transcriber
         </div>
         <div className="max-w-md">
-          <h2 className="text-[2rem] font-semibold leading-tight tracking-tight">
+          <h2 className="text-2xl font-semibold leading-tight tracking-tight">
             Record the meeting. Get the transcript and the minutes.
           </h2>
           <ul className="mt-10 space-y-6">

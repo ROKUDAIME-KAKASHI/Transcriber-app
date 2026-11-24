@@ -60,7 +60,7 @@ function Message({ title, body, children }: { title: string; body: string; child
 const backLink = (
   <Link
     href="/meetings"
-    className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 text-ui font-medium hover:bg-muted"
+    className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-btn border border-border bg-card px-4 text-ui font-medium hover:bg-muted"
   >
     Back to meetings
   </Link>

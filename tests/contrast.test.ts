@@ -97,3 +97,17 @@ for (const [name, t] of themes) {
 test("dark: record fill is distinguishable from background", () => {
   check(dark, "record-fill", "background", 3, "dark");
 });
+
+/** Composite a token at `alpha` over a backdrop token (Tailwind `bg-muted-foreground/75` etc). */
+function blend(fg: string, bg: string, alpha: number): string {
+  const f = parseInt(fg.slice(1), 16);
+  const b = parseInt(bg.slice(1), 16);
+  const ch = (shift: number) => Math.round(((f >> shift) & 255) * alpha + ((b >> shift) & 255) * (1 - alpha));
+  return "#" + [16, 8, 0].map((s) => ch(s).toString(16).padStart(2, "0")).join("");
+}
+
+for (const [name, t] of themes) {
+  test(`${name}: switch off-track and radio ring (muted-foreground/75) are >= 3:1 on card`, () => {
+    check(t, blend(t["muted-foreground"], t.card, 0.75), "card", 3, name);
+  });
+}

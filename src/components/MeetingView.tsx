@@ -510,7 +510,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
                   }
                 }}
                 aria-label="Meeting title"
-                className={cx(inputCls, "text-xl font-semibold sm:text-xl")}
+                className={cx(inputCls, "text-2xl font-semibold sm:text-2xl")}
               />
               <Button onClick={saveTitle} aria-label="Save title" icon={<Check className="h-4 w-4" />} />
               <Button
@@ -523,7 +523,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
               />
             </div>
           ) : (
-            <button onClick={() => setEditingTitle(true)} className="group -mx-1 rounded-lg px-1 text-left" title="Rename">
+            <button onClick={() => setEditingTitle(true)} className="group -mx-1 rounded-chip px-1 text-left" title="Rename">
               <h1 className="break-words text-2xl font-semibold tracking-tight">
                 {title}
                 <Pencil className="ml-2 inline h-4 w-4 align-middle text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 max-lg:opacity-60" />
@@ -697,7 +697,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
           doc ? (
             <>
               <Panel className="px-5 py-6 sm:px-8 sm:py-8">
-                <article className="prose prose-stone max-w-[72ch] text-reading sm:text-base dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-h1:mb-3 prose-h1:mt-10 prose-h1:text-lg first:prose-h1:mt-0 prose-h2:text-base prose-p:leading-[1.6] prose-li:my-1 prose-table:text-meta prose-th:bg-muted/60 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 [&_table]:block [&_table]:overflow-x-auto">
+                <article className="prose prose-stone max-w-[72ch] text-reading sm:text-base dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-h1:mb-3 prose-h1:mt-10 prose-h1:text-2xl first:prose-h1:mt-0 prose-h2:text-base prose-p:leading-[1.6] prose-li:my-1 prose-table:text-meta prose-th:bg-muted/60 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 [&_table]:block [&_table]:overflow-x-auto">
                   <Markdown remarkPlugins={[remarkGfm]}>{doc}</Markdown>
                 </article>
               </Panel>

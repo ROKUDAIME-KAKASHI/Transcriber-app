@@ -62,7 +62,7 @@ export function Panel({
 
 export function PanelHeader({ title, meta, children }: { title: ReactNode; meta?: ReactNode; children?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-3.5 min-h-14">
+    <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3 min-h-14">
       <div className="flex min-w-0 items-center gap-2.5">
         <h2 className="truncate text-ui font-semibold">{title}</h2>
         {children}
@@ -82,7 +82,7 @@ export function FieldLabel({ children, htmlFor }: { children: ReactNode; htmlFor
 }
 
 export const inputCls =
-  "w-full min-h-12 lg:min-h-11 rounded-chip border border-transparent bg-muted px-3.5 text-base sm:text-ui outline-none transition-[box-shadow,background-color] duration-[var(--dur-2)] placeholder:text-muted-foreground focus:ring-2 focus:ring-accent disabled:opacity-60";
+  "w-full min-h-12 lg:min-h-11 rounded-chip border border-transparent bg-muted px-4 text-base sm:text-ui outline-none transition-[box-shadow,background-color] duration-[var(--dur-2)] placeholder:text-muted-foreground focus:ring-2 focus:ring-accent disabled:opacity-60";
 export const selectCls = cx("select", inputCls);
 
 /* ---------- Segmented control ---------- */
@@ -206,7 +206,7 @@ export function OptionList<T extends string>({
               if (!o.disabled) onChange(o.value);
             }}
             className={cx(
-              "flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors disabled:opacity-60",
+              "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors disabled:opacity-60",
               o.disabled && "cursor-not-allowed opacity-50",
               on ? "bg-accent-soft" : o.disabled ? "bg-card" : "bg-card hover:bg-muted/60"
             )}
@@ -215,7 +215,7 @@ export function OptionList<T extends string>({
               aria-hidden
               className={cx(
                 "mt-[3px] grid h-4 w-4 shrink-0 place-items-center rounded-full border-[1.5px]",
-                on ? "border-accent" : "border-muted-foreground/70"
+                on ? "border-accent" : "border-muted-foreground/75"
               )}
             >
               {on && <span className="h-2 w-2 rounded-full bg-accent" />}
@@ -302,7 +302,7 @@ export function Notice({
     <div
       role={tone === "danger" ? "alert" : undefined}
       className={cx(
-        "flex gap-3 rounded-chip border px-3.5 py-3 text-ui",
+        "flex gap-3 rounded-chip border px-4 py-3 text-ui",
         tone === "neutral" && "border-border/70 bg-muted/50",
         tone === "danger" && "border-danger/30 bg-danger-soft",
         tone === "success" && "border-success/30 bg-success-soft",
@@ -381,7 +381,7 @@ export function Switch({
         }}
         className={cx(
           "relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-[var(--dur-2)]",
-          checked ? "bg-accent" : "bg-muted-foreground/45"
+          checked ? "bg-accent" : "bg-muted-foreground/75"
         )}
       >
         <span
