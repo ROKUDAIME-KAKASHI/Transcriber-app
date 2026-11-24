@@ -965,8 +965,8 @@ public class RecordingService extends Service {
             paused = false;
             saveState = "idle";
             status = "storage".equals(reason)
-                    ? "Recording stopped: the phone is almost out of storage. Open Transcriber to finish the transcript."
-                    : "Recording stopped. Open Transcriber to finish the transcript.";
+                    ? "Recording stopped: the phone is almost out of storage. Open Minutely to finish the transcript."
+                    : "Recording stopped. Open Minutely to finish the transcript.";
         }
         if (waiting > 0) postFinishedNotification();
         shutdown();
@@ -983,7 +983,7 @@ public class RecordingService extends Service {
             Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                     .setContentTitle("Meeting stopped")
-                    .setContentText("Open Transcriber to finish the transcript.")
+                    .setContentText("Open Minutely to finish the transcript.")
                     .setContentIntent(pi)
                     .setAutoCancel(true)
                     .setSilent(true)

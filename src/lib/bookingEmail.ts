@@ -66,7 +66,7 @@ export async function sendBookingEmails(b: BookingMail) {
     send({
       to: b.hostEmail,
       subject: `New booking: ${b.guestName}, ${formatInZone(b.startAt, b.hostTimeZone)}`,
-      text: `${b.guestName} (${b.guestEmail}) booked ${b.title}.\n\nWhen: ${formatInZone(b.startAt, b.hostTimeZone)} (${b.hostTimeZone})\n${b.guestNote ? `Note: ${b.guestNote}\n` : ""}${b.agenda ? `\nAgenda:\n${b.agenda}\n` : ""}\nManage it in Transcriber under Schedule.\n`,
+      text: `${b.guestName} (${b.guestEmail}) booked ${b.title}.\n\nWhen: ${formatInZone(b.startAt, b.hostTimeZone)} (${b.hostTimeZone})\n${b.guestNote ? `Note: ${b.guestNote}\n` : ""}${b.agenda ? `\nAgenda:\n${b.agenda}\n` : ""}\nManage it in Minutely under Schedule.\n`,
       ics, icsName: "meeting.ics",
     }),
   ]);

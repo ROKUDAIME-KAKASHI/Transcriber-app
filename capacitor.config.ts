@@ -14,7 +14,7 @@ const serverUrl = process.env.CAP_SERVER_URL || "http://192.168.100.152:3001";
 
 const config: CapacitorConfig = {
   appId: "in.transcriber.app",
-  appName: "Transcriber",
+  appName: "Minutely",
   webDir: "mobile/www",
   server: {
     url: serverUrl,

@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { absoluteUrl, describeInstalled, isAndroidUserAgent, isOlderBuild, newerRelease, parseApkRelease } from "../src/lib/appVersion.ts";
 
-const R = { versionCode: 2, versionName: "1.1", url: "/downloads/Transcriber.apk", notes: "n" };
+const R = { versionCode: 2, versionName: "1.1", url: "/downloads/Minutely.apk", notes: "n" };
 
 describe("appVersion", () => {
   test("isOlderBuild", () => {

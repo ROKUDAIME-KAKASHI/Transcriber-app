@@ -41,12 +41,21 @@ const nextConfig: NextConfig = {
           { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
         ],
       },
+      // The installable APK: force a download with the right type, never serve a stale build.
+      // Old links to Transcriber.apk keep working (same file under both names).
       {
-        // The installable APK: force a download with the right type, never serve a stale build.
-        source: "/downloads/:file*.apk",
+        source: "/downloads/Minutely.apk",
         headers: [
           { key: "Content-Type", value: "application/vnd.android.package-archive" },
-          { key: "Content-Disposition", value: 'attachment; filename="Transcriber.apk"' },
+          { key: "Content-Disposition", value: 'attachment; filename="Minutely.apk"' },
+          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+        ],
+      },
+      {
+        source: "/downloads/Transcriber.apk",
+        headers: [
+          { key: "Content-Type", value: "application/vnd.android.package-archive" },
+          { key: "Content-Disposition", value: 'attachment; filename="Minutely.apk"' },
           { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
         ],
       },

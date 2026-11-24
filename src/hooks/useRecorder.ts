@@ -1442,7 +1442,7 @@ export function useRecorder(opts: {
         isRecording: false, isStarting: false,
         statusMsg:
           err?.code === "DENIED"
-            ? "Microphone access was denied. Allow it in Settings › Apps › Transcriber › Permissions."
+            ? "Microphone access was denied. Allow it in Settings › Apps › Minutely › Permissions."
             : err?.message?.startsWith("Failed to fetch") || err?.message === "Load failed"
               ? "Network problem. Check the connection and try again."
               : `Recording error: ${err?.message || "Unknown error"}`,

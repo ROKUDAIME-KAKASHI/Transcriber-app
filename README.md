@@ -1,4 +1,6 @@
-# Transcriber
+# Minutely
+
+Minutely (formerly Transcriber): meeting minutes, tasks and follow-ups.
 
 A standalone, installable (PWA) version of the Life OS meeting transcriber.
 Anyone can create an account, record a meeting from any phone or computer, and see

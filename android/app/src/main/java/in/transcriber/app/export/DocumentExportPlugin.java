@@ -205,7 +205,7 @@ public class DocumentExportPlugin extends Plugin {
     private void startPrint(final Job job, WebView view) {
         if (job.settled.get()) return;
         try {
-            final PrintDocumentAdapter adapter = view.createPrintDocumentAdapter("Transcriber export");
+            final PrintDocumentAdapter adapter = view.createPrintDocumentAdapter("Minutely export");
             job.adapter = adapter;
             final PrintAttributes attrs = new PrintAttributes.Builder()
                     .setMediaSize(PrintAttributes.MediaSize.ISO_A4)

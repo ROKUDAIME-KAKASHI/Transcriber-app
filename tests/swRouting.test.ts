@@ -52,5 +52,5 @@ test("MEETING_ID_RE parity", () => {
 });
 
 describe("downloads", () => {
-  test("APK navigation passes through to the network", () => assert.deepEqual(r("/downloads/Transcriber.apk"), { kind: "pass" }));
+  test("APK navigation passes through to the network", () => assert.deepEqual(r("/downloads/Minutely.apk"), { kind: "pass" }));
 });

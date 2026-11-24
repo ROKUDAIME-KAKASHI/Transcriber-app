@@ -265,7 +265,7 @@ export function buildIcs(i: IcsInput): string {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Transcriber//Scheduling//EN",
+    "PRODID:-//Minutely//Scheduling//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",

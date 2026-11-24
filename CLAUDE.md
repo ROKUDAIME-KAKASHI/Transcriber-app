@@ -1,9 +1,9 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**Transcriber**
+**Minutely** (formerly Transcriber)
 
-A meeting transcriber for phones and laptops. A Next.js 16 web app (Neon Postgres, NextAuth, deployed on Vercel at https://transcriber-app-ten.vercel.app) wrapped in a Capacitor 8 Android app whose native foreground service keeps recording with the screen locked. It transcribes on-device for free (Moonshine, Whisper via Transformers.js in a Web Worker) or in the cloud with speaker labels (Deepgram Nova-3), then writes AI Minutes of Meeting / Reports (AICredits GLM Flash or Claude Haiku, fallback Gemini). Used by the owner and people they share the APK with.
+Minutely is a meeting transcriber for phones and laptops. A Next.js 16 web app (Neon Postgres, NextAuth, deployed on Vercel at https://transcriber-app-ten.vercel.app) wrapped in a Capacitor 8 Android app whose native foreground service keeps recording with the screen locked. It transcribes on-device for free (Moonshine, Whisper via Transformers.js in a Web Worker) or in the cloud with speaker labels (Deepgram Nova-3), then writes AI Minutes of Meeting / Reports (AICredits GLM Flash or Claude Haiku, fallback Gemini). Used by the owner and people they share the APK with.
 
 **Core Value:** Record a whole meeting on a phone, anywhere — with or without internet — and come away with a transcript that says who said what, which can be turned into minutes and shared in one tap.
 

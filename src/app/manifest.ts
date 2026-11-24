@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Transcriber",
-    short_name: "Transcriber",
-    description: "Record meetings on any device, get live speaker-labelled transcripts and AI minutes.",
+    name: "Minutely",
+    short_name: "Minutely",
+    description: "Meeting minutes, tasks and follow-ups. Record on any device, get speaker-labelled transcripts and AI minutes.",
     start_url: "/",
     scope: "/",
     display: "standalone",

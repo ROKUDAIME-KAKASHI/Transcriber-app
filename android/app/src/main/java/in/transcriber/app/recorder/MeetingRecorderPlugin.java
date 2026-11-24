@@ -65,7 +65,7 @@ public class MeetingRecorderPlugin extends Plugin {
     @PermissionCallback
     private void permissionsDone(PluginCall call) {
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
-            call.reject("Microphone access was denied. Allow it in Settings › Apps › Transcriber › Permissions.", "DENIED");
+            call.reject("Microphone access was denied. Allow it in Settings › Apps › Minutely › Permissions.", "DENIED");
             return;
         }
         // Notifications are optional: without them recording still runs, the notice is just hidden.

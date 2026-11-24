@@ -62,7 +62,7 @@ function AccountSection({ offline }: { offline: boolean }) {
         </div>
         {confirming ? (
           <div className="rounded-chip bg-muted p-3">
-            <p className="text-ui font-semibold">Sign out of Transcriber?</p>
+            <p className="text-ui font-semibold">Sign out of Minutely?</p>
             <p className="mt-0.5 text-meta text-muted-foreground">Meetings saved on this device stay here.</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="danger-solid" onClick={signOut}>
@@ -360,7 +360,7 @@ export function ProfilePage() {
       <PreferencesSection />
       <StorageSection />
       <p className="px-1 text-meta text-muted-foreground">
-        Transcriber web {webVersion} · Android app {LATEST_APK.versionName} (build {LATEST_APK.versionCode})
+        Minutely web {webVersion} · Android app {LATEST_APK.versionName} (build {LATEST_APK.versionCode})
       </p>
     </div>
   );

@@ -80,7 +80,7 @@ export default function LoginPage() {
           <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
             <AudioLines className="h-4 w-4" />
           </span>
-          Transcriber
+          Minutely
         </div>
         <div className="max-w-md">
           <h2 className="text-2xl font-semibold leading-tight tracking-tight">
@@ -110,7 +110,7 @@ export default function LoginPage() {
             <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
               <AudioLines className="h-4 w-4" />
             </span>
-            Transcriber
+            Minutely
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">{mode === "signin" ? "Sign in" : "Create your account"}</h1>
           <p className="mt-1.5 text-ui text-muted-foreground">

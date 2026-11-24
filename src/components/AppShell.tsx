@@ -35,7 +35,7 @@ function Logo() {
       <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
         <AudioLines className="h-4 w-4" />
       </span>
-      Transcriber
+      Minutely
     </Link>
   );
 }

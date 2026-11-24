@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AudioLines } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Book a time | Transcriber",
+  title: "Book a time | Minutely",
   robots: { index: false, follow: false },
   // Confirmation links carry a secret token in the URL; never leak it through the Referer header.
   referrer: "no-referrer",
@@ -17,13 +17,13 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
             <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
               <AudioLines className="h-4 w-4" aria-hidden />
             </span>
-            Transcriber
+            Minutely
           </span>
         </div>
       </header>
       <main className="mx-auto w-full max-w-4xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">{children}</main>
       <footer className="mx-auto w-full max-w-4xl px-4 pb-10 text-meta text-muted-foreground sm:px-6">
-        Scheduling by Transcriber
+        Scheduling by Minutely
       </footer>
     </div>
   );

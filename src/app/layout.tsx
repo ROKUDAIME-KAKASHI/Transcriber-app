@@ -11,10 +11,10 @@ const MOTION_SCRIPT =
   'try{if(localStorage.getItem("transcriber.motion")==="reduced")document.documentElement.dataset.motion="reduced"}catch(e){}';
 
 export const metadata: Metadata = {
-  title: "Transcriber",
-  description: "Record meetings on any device, get live speaker-labelled transcripts and AI minutes.",
-  applicationName: "Transcriber",
-  appleWebApp: { capable: true, title: "Transcriber", statusBarStyle: "default" },
+  title: "Minutely",
+  description: "Meeting minutes, tasks and follow-ups. Record on any device, get speaker-labelled transcripts and AI minutes.",
+  applicationName: "Minutely",
+  appleWebApp: { capable: true, title: "Minutely", statusBarStyle: "default" },
   icons: {
     icon: [{ url: "/api/icons/192?v=2", sizes: "192x192", type: "image/png" }],
     apple: [{ url: "/api/icons/180?v=2", sizes: "180x180", type: "image/png" }],

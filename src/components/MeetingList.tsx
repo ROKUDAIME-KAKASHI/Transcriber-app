@@ -169,7 +169,7 @@ export function MeetingList() {
         <Panel as="div" role="status" className="px-6 py-12 text-center">
           <p className="text-ui font-semibold">This browser can't store meetings offline</p>
           <p className="mx-auto mt-1 max-w-[44ch] text-meta text-muted-foreground">
-            Local storage is blocked here (private mode?). Open Transcriber in a normal window to see and sync your meetings.
+            Local storage is blocked here (private mode?). Open Minutely in a normal window to see and sync your meetings.
           </p>
         </Panel>
       </>
