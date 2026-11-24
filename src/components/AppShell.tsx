@@ -14,6 +14,7 @@ import { tap } from "@/lib/haptics";
 import { prefersReducedMotion } from "@/lib/motionPref";
 import { useBackgroundRecording } from "@/hooks/useBackgroundRecording";
 import { RecordingPill } from "./RecordingPill";
+import { AppUpdateBanner } from "./AppUpdateBanner";
 
 const NAV = [
   { href: "/", label: "Record", icon: Mic },
@@ -152,7 +153,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="lg:pl-60">
-        <div ref={contentRef} className="mx-auto w-full max-w-6xl px-4 pb-28 pt-5 sm:px-6 sm:pt-6 lg:px-10 lg:py-10">{children}</div>
+        <div ref={contentRef} className="mx-auto w-full max-w-6xl px-4 pb-28 pt-5 sm:px-6 sm:pt-6 lg:px-10 lg:py-10">
+          <AppUpdateBanner />
+          {children}
+        </div>
       </main>
 
       {/* Bottom tab bar (phones, tablets): floating glass */}

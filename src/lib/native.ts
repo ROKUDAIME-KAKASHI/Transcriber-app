@@ -31,6 +31,8 @@ export async function getHaptics() {
 export interface DocumentExportPlugin {
   htmlToPdf(o: { html: string; fileName: string }): Promise<{ uri: string }>;
   printHtml(o: { html: string; jobName: string }): Promise<{ started: boolean }>;
+  /** Added in APK versionCode 2; older installs reject with "not implemented". */
+  openExternal(o: { url: string }): Promise<void>;
 }
 // Rejection codes: "BUSY" | "CANCELLED" | "LAYOUT_FAILED" | "WRITE_FAILED" | "IO" | "TIMEOUT" | "SHIM_FAILED" | "BAD_ARGS"
 export const DocumentExport = registerPlugin<DocumentExportPlugin>("DocumentExport");

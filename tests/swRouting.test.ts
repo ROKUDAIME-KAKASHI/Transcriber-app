@@ -45,3 +45,7 @@ test("MEETING_ID_RE parity", () => {
   const re = new RegExp(lit.slice(1, lit.lastIndexOf("/")), lit.slice(lit.lastIndexOf("/") + 1));
   assert.equal(new RegExp(routing.MEETING_ID_RE_SOURCE).source, re.source);
 });
+
+describe("downloads", () => {
+  test("APK navigation passes through to the network", () => assert.deepEqual(r("/downloads/Transcriber.apk"), { kind: "pass" }));
+});

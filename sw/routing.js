@@ -22,6 +22,7 @@ function route(url, request, origin) {
   if (url.origin !== origin) return { kind: "pass" };
   var path = url.pathname;
   if (path === "/api" || path.indexOf("/api/") === 0) return { kind: "pass" };
+  if (path.indexOf("/downloads/") === 0) return { kind: "pass" };
   if (isRscRequest(url, request)) return { kind: "pass" };
   if (path.indexOf("/_next/static/") === 0 || path.indexOf("/ort/") === 0) return { kind: "asset" };
   if (request.mode === "navigate") {

@@ -1,6 +1,7 @@
 package in.transcriber.app.export;
 
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.CancellationSignal;
@@ -350,6 +351,27 @@ public class DocumentExportPlugin extends Plugin {
         } catch (Throwable t) {
             printBusy.set(false);
             call.reject("Could not open print dialog", "IO");
+        }
+    }
+
+    /** Opens an http(s) URL in the system browser (used to download the APK update). */
+    @PluginMethod
+    public void openExternal(final PluginCall call) {
+        final String url = call.getString("url");
+        Uri uri = url == null ? null : Uri.parse(url);
+        String scheme = uri == null ? null : uri.getScheme();
+        if (scheme == null || !(scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http"))) {
+            call.reject("An http(s) url is required", "BAD_ARGS");
+            return;
+        }
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW, uri);
+            i.addCategory(Intent.CATEGORY_BROWSABLE);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (Throwable t) {
+            call.reject("No app can open this link", "IO");
         }
     }
 
