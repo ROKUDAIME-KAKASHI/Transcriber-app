@@ -64,7 +64,7 @@
 
 ### Offline recording with screen locked
 
-- **OFF-V2-01**: On-device (offline) recording continues with the phone locked in the Android app (native capture into a file, transcribed by the page / native ONNX)
+- [x] **OFF-V2-01**: On-device (offline) recording continues with the phone locked in the Android app (native capture into a file, transcribed by the page / native ONNX)
 
 ### Speakers
 
@@ -115,7 +115,7 @@
 | REL-01 | Phase 5 | Complete |
 | POL-01..03 | Phase 6 | Complete |
 | NAME-01..03 | Phase 7 | Complete |
-| OFF-V2-01 | Phase 8 | Pending |
+| OFF-V2-01 | Phase 8 | Complete (device UAT pending) |
 
 **Coverage:**
 - v1 requirements: 25 total

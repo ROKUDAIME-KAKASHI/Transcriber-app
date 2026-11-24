@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Aurora Ink Redesign & Release** - Alive, modern, simple UI with motion; signed APK built and verified on the Xiaomi phone (completed 2026-11-23)
 - [x] **Phase 6: UI Polish Leftovers** - Recording pill gets pause/stop, contrast/type/radius/spacing fixes from the Phase 5 UI review (completed 2026-11-24)
 - [x] **Phase 7: Automatic Speaker Names** - Speakers who introduce themselves ("Hi, I'm Priya") get their names suggested and applied in one tap
-- [ ] **Phase 8: Offline Recording With Screen Locked** - On-device (free, offline) recording keeps going with the phone locked in the Android app
+- [x] **Phase 8: Offline Recording With Screen Locked** - On-device (free, offline) recording keeps going with the phone locked in the Android app (code complete 2026-11-24, device UAT pending)
 
 ## Phase Details
 
@@ -173,6 +173,11 @@ Plans:
   2. Captured audio is transcribed on the device (with speaker labels) — live when the WebView is running, and any backlog is caught up when the screen comes back on — with no gaps or duplicates
   3. Stopping from the notification, the app, or the Meetings panel finalizes the meeting; the backlog audio is deleted from the phone once transcribed; old APKs and the website keep working as before
 **UI hint**: no
+**Plans**: 4 plans
+- [x] 08-01-PLAN.md — Native local capture (LocalCapture, RecordingService mode "local", plugin read/release/list/discard) (wave 1)
+- [x] 08-02-PLAN.md — Feed-mode VoiceChunker, nativeFeed helpers, embedding batch flag, nativeCapabilities (wave 1)
+- [x] 08-03-PLAN.md — useRecorder native session (pump, catch-up, committed cursor, detach/resume), Dexie fields, Record copy (wave 2)
+- [x] 08-04-PLAN.md — Recovery of left-behind captures, offline stop paths, storage notices, 08-HUMAN-UAT.md (wave 3)
 
 ## Progress
 
@@ -188,7 +193,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | 5. Aurora Ink Redesign & Release | 7/7 | Complete   | 2026-11-23 |
 | 6. UI Polish Leftovers | 0/? | Not started | - |
 | 7. Automatic Speaker Names | 3/3 | Code complete (device UAT pending) | 2026-11-24 |
-| 8. Offline Recording With Screen Locked | 0/? | Not started | - |
+| 8. Offline Recording With Screen Locked | 4/4 | Code complete (device UAT pending) | 2026-11-24 |
 
 ---
 *Roadmap created: 2026-11-20*
