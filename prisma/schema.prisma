@@ -14,6 +14,7 @@ model User {
   password  String
   createdAt DateTime  @default(now())
   meetings  Meeting[]
+  actionItems ActionItem[]
 }
 
 model Meeting {
@@ -40,6 +41,30 @@ model Meeting {
   titleUpdatedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  actionItems ActionItem[]
 
   @@index([userId, createdAt])
+}
+
+model ActionItem {
+  id           String    @id @default(cuid())
+  meetingId    String
+  meeting      Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task         String
+  owner        String?
+  /// Deadline wording exactly as spoken
+  deadlineText String?
+  /// Parsed deadline (unused until the tracker)
+  dueDate      DateTime?
+  sourceQuote  String
+  /// NOT_STARTED | IN_PROGRESS | BLOCKED | DONE
+  status       String    @default("NOT_STARTED")
+  note         String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@index([meetingId])
 }

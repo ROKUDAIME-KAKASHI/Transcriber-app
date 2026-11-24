@@ -32,6 +32,7 @@ import { useLocalUser } from "./SyncProvider";
 import { ShareMenu } from "./ShareMenu";
 import type { ExportKind, ExportMeeting } from "@/lib/export/types";
 import { TranscriptView } from "./TranscriptView";
+import { ActionItems } from "./ActionItems";
 import { useFeatureGate } from "@/lib/featureGate";
 import { Badge, Button, FieldLabel, GateReason, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
 
@@ -62,7 +63,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const [template, setTemplate] = useState(meeting.template ?? "MOM");
   const [docTemplate, setDocTemplate] = useState(meeting.template ?? "MOM");
   const [doc, setDoc] = useState(meeting.document);
-  const [tab, setTab] = useState<"document" | "transcript">(meeting.document ? "document" : "transcript");
+  const [tab, setTab] = useState<"document" | "transcript" | "tasks">(meeting.document ? "document" : "transcript");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -711,8 +712,9 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
         options={[
           { value: "document", label: docName, id: "meeting-tab-document", controls: "meeting-tabpanel" },
           { value: "transcript", label: "Transcript", id: "meeting-tab-transcript", controls: "meeting-tabpanel" },
+          { value: "tasks", label: "Action items", id: "meeting-tab-tasks", controls: "meeting-tabpanel" },
         ]}
-        className="mb-4 max-w-[320px]"
+        className="mb-4 max-w-[480px]"
       />
 
       <div key={tab} id="meeting-tabpanel" role="tabpanel" aria-labelledby={`meeting-tab-${tab}`} className="text-in space-y-4">
@@ -743,6 +745,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
               {aiForm}
             </Panel>
           )
+        ) : tab === "tasks" ? (
+          <ActionItems meetingId={meeting.id} parts={meeting.transcript} names={names} hasTranscript={hasTranscript} />
         ) : (
           <Panel className="px-5 py-6 sm:px-8 sm:py-8">
             {hasTranscript ? (
