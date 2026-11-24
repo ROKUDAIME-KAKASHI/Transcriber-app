@@ -26,6 +26,7 @@ describe("route", () => {
   test("non-GET", () => assert.equal(r("/", req({ method: "POST" })).kind, "pass"));
   test("cross-origin", () => assert.equal(routing.route(new URL("https://huggingface.co/a"), req(), O).kind, "pass"));
   for (const p of ["/api/x", "/api/auth/session", "/api/health"]) test(p, () => assert.equal(r(p).kind, "pass"));
+  for (const p of ["/admin", "/admin/", "/admin/x"]) test(`admin ${p} passes`, () => assert.equal(r(p).kind, "pass"));
   test("rsc header", () => assert.equal(r("/meetings", req({}, { rsc: "1" })).kind, "pass"));
   test("prefetch header", () => assert.equal(r("/meetings", req({}, { "next-router-prefetch": "1" })).kind, "pass"));
   test("segment prefetch header", () => assert.equal(r("/meetings", req({}, { "next-router-segment-prefetch": "/x" })).kind, "pass"));
