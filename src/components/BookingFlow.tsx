@@ -2,19 +2,27 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ChevronLeft, ChevronRight, Clock, Globe, ListChecks } from "lucide-react";
-import { dayKey, formatInZone, wallClockOf, zonedToUtc } from "@/lib/scheduling";
+import { ListChecks } from "lucide-react";
+import { MAX_RANGE_DAYS, dayKey, formatInZone, wallClockOf, zonedToUtc } from "@/lib/scheduling";
 import { Button, FieldLabel, Panel, cx, inputCls, selectCls } from "./ui";
+
+interface PublicEventInfo {
+  slug: string;
+  title: string;
+  durationMin: number;
+  description: string | null;
+  maxDaysAhead: number;
+}
 
 interface Props {
   handle: string;
-  event: { slug: string; title: string; durationMin: number; description: string | null; maxDaysAhead: number };
+  events: PublicEventInfo[];
+  initialSlug: string;
   hostTimeZone: string;
   agenda: { id: string; text: string } | null;
 }
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const STEP_DAYS = 14;
 
 function zoneList(current: string): string[] {
   let list: string[] = [];
@@ -29,10 +37,14 @@ function zoneList(current: string): string[] {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export function BookingFlow({ handle, event, hostTimeZone, agenda }: Props) {
+export function BookingFlow({ handle, events, initialSlug, hostTimeZone, agenda }: Props) {
   const router = useRouter();
+  const [eventSlug, setEventSlug] = useState(events.some((e) => e.slug === initialSlug) ? initialSlug : events[0].slug);
+  const event = events.find((e) => e.slug === eventSlug) ?? events[0];
   const [tz, setTz] = useState(hostTimeZone);
-  const [cursor, setCursor] = useState<{ y: number; m: number } | null>(null); // m: 0-11
+  const [editingTz, setEditingTz] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [pages, setPages] = useState(1);
   const [slots, setSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -56,22 +68,32 @@ export function BookingFlow({ handle, event, hostTimeZone, agenda }: Props) {
       /* keep the host zone */
     }
     setTz(z);
-    const w = wallClockOf(Date.now(), z);
-    setCursor({ y: w.y, m: w.m - 1 });
+    setReady(true);
   }, [hostTimeZone]);
 
   const zones = useMemo(() => zoneList(tz), [tz]);
-  const today = cursor ? dayKey(new Date(), tz) : "";
+  const horizon = Math.min(STEP_DAYS * pages, MAX_RANGE_DAYS - 1, event.maxDaysAhead + 1);
+  const canLookFurther = STEP_DAYS * pages < Math.min(MAX_RANGE_DAYS - 1, event.maxDaysAhead + 1);
 
-  // Free times for the visible month, fetched whenever the month or zone changes.
+  // Calendar days (YYYY-MM-DD in the guest's zone) from today.
+  const days = useMemo(() => {
+    if (!ready) return [] as string[];
+    const w = wallClockOf(Date.now(), tz);
+    return Array.from({ length: horizon }, (_, i) => {
+      const d = new Date(Date.UTC(w.y, w.m - 1, w.d + i));
+      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+    });
+  }, [ready, tz, horizon]);
+
   useEffect(() => {
-    if (!cursor) return;
+    if (!days.length) return;
     const ctrl = new AbortController();
-    const first = zonedToUtc({ y: cursor.y, m: cursor.m + 1, d: 1, h: 0, min: 0 }, tz) ?? Date.UTC(cursor.y, cursor.m, 1);
-    const next = zonedToUtc({ y: cursor.m === 11 ? cursor.y + 1 : cursor.y, m: ((cursor.m + 1) % 12) + 1, d: 1, h: 0, min: 0 }, tz) ?? Date.UTC(cursor.y, cursor.m + 1, 1);
+    const [y, m, d] = days[0].split("-").map(Number);
+    const first = zonedToUtc({ y, m, d, h: 0, min: 0 }, tz) ?? Date.UTC(y, m - 1, d);
+    const to = Math.min(first + horizon * 86_400_000, first + MAX_RANGE_DAYS * 86_400_000 - 1);
     setLoading(true);
     setLoadError(null);
-    fetch(`/api/book/${handle}/${event.slug}/slots?from=${encodeURIComponent(new Date(first).toISOString())}&to=${encodeURIComponent(new Date(next).toISOString())}`, {
+    fetch(`/api/book/${handle}/${event.slug}/slots?from=${encodeURIComponent(new Date(first).toISOString())}&to=${encodeURIComponent(new Date(to).toISOString())}`, {
       cache: "no-store",
       signal: ctrl.signal,
     })
@@ -89,7 +111,7 @@ export function BookingFlow({ handle, event, hostTimeZone, agenda }: Props) {
         if (!ctrl.signal.aborted) setLoading(false);
       });
     return () => ctrl.abort();
-  }, [cursor, tz, handle, event.slug, refresh]);
+  }, [days, horizon, tz, handle, event.slug, refresh]);
 
   const byDay = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -100,41 +122,25 @@ export function BookingFlow({ handle, event, hostTimeZone, agenda }: Props) {
     return m;
   }, [slots, tz]);
 
-  // Pick the first free day when a month loads and nothing valid is selected.
+  // Pick the first free day when times load and nothing valid is selected.
   useEffect(() => {
     if (loading) return;
     if (!day || !byDay.has(day)) {
-      const first = [...byDay.keys()].sort()[0] ?? null;
+      const first = days.find((k) => byDay.has(k)) ?? null;
       setDay(first);
       setSlot(null);
     }
-  }, [loading, byDay, day]);
-
-  const cells = useMemo(() => {
-    if (!cursor) return [];
-    const lead = (new Date(Date.UTC(cursor.y, cursor.m, 1)).getUTCDay() + 6) % 7; // Monday first
-    const count = new Date(Date.UTC(cursor.y, cursor.m + 1, 0)).getUTCDate();
-    return [...Array(lead).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)] as (number | null)[];
-  }, [cursor]);
-
-  const monthLabel = cursor
-    ? new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(cursor.y, cursor.m, 1)))
-    : "";
-  const todayParts = today ? today.split("-").map(Number) : null;
-  const atCurrentMonth = !!cursor && !!todayParts && cursor.y === todayParts[0] && cursor.m + 1 === todayParts[1];
-  const lastMonthAllowed = (() => {
-    const w = wallClockOf(Date.now() + event.maxDaysAhead * 86_400_000, tz);
-    return { y: w.y, m: w.m - 1 };
-  })();
-  const atLastMonth = !!cursor && (cursor.y > lastMonthAllowed.y || (cursor.y === lastMonthAllowed.y && cursor.m >= lastMonthAllowed.m));
-  const step = (delta: number) =>
-    setCursor((c) => {
-      if (!c) return c;
-      const idx = c.y * 12 + c.m + delta;
-      return { y: Math.floor(idx / 12), m: ((idx % 12) + 12) % 12 };
-    });
+  }, [loading, byDay, day, days]);
 
   const daySlots = day ? (byDay.get(day) ?? []) : [];
+  const dayLabel = (key: string) => {
+    const dt = new Date(`${key}T00:00:00Z`);
+    return {
+      wd: new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(dt),
+      d: dt.getUTCDate(),
+      mo: new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" }).format(dt),
+    };
+  };
   const dayHeading = day
     ? new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))
     : "";
@@ -143,6 +149,15 @@ export function BookingFlow({ handle, event, hostTimeZone, agenda }: Props) {
     setSlot(s);
     setFormError(null);
     requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  };
+
+  const pickEvent = (slug: string) => {
+    if (slug === eventSlug) return;
+    setEventSlug(slug);
+    setPages(1);
+    setDay(null);
+    setSlot(null);
+    setSlots([]);
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -174,16 +189,30 @@ export function BookingFlow({ handle, event, hostTimeZone, agenda }: Props) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-xl space-y-5">
       <div>
-        <p className="text-meta font-semibold text-muted-foreground">{handle}</p>
-        <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">{event.title}</h1>
-        <p className="mt-1 flex items-center gap-1.5 text-ui text-muted-foreground">
-          <Clock className="h-4 w-4" aria-hidden />
-          {event.durationMin} minutes
-        </p>
-        {event.description && <p className="mt-2 max-w-prose whitespace-pre-line text-ui text-muted-foreground">{event.description}</p>}
+        <h1 className="text-2xl font-semibold tracking-tight">Book a time with {handle}</h1>
+        {event.description && <p className="mt-1 whitespace-pre-line text-ui text-muted-foreground">{event.description}</p>}
       </div>
+
+      {events.length > 1 && (
+        <div role="group" aria-label="Meeting length" className="flex flex-wrap gap-2">
+          {events.map((e) => (
+            <button
+              key={e.slug}
+              type="button"
+              aria-pressed={e.slug === eventSlug}
+              onClick={() => pickEvent(e.slug)}
+              className={cx(
+                "inline-flex min-h-12 items-center rounded-chip border px-4 text-ui font-semibold transition-colors lg:min-h-10",
+                e.slug === eventSlug ? "border-accent bg-accent text-accent-foreground" : "border-border/70 bg-card hover:bg-muted"
+              )}
+            >
+              {e.durationMin} min
+            </button>
+          ))}
+        </div>
+      )}
 
       {agenda && (
         <Panel className="p-4">
@@ -191,159 +220,141 @@ export function BookingFlow({ handle, event, hostTimeZone, agenda }: Props) {
             <ListChecks className="h-4 w-4 text-accent" aria-hidden />
             Agenda for this meeting
           </h2>
-          <p className="mt-2 max-h-48 overflow-y-auto whitespace-pre-line text-ui text-muted-foreground">{agenda.text}</p>
+          <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-line text-ui text-muted-foreground">{agenda.text}</p>
         </Panel>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-        <Panel className="p-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-ui font-semibold" aria-live="polite">
-              {monthLabel}
-            </h2>
-            <div className="flex gap-1">
-              <Button variant="ghost" className="!min-h-11 !min-w-11 px-0" aria-label="Previous month" disabled={!cursor || atCurrentMonth} onClick={() => step(-1)}>
-                <ChevronLeft className="h-4 w-4" aria-hidden />
-              </Button>
-              <Button variant="ghost" className="!min-h-11 !min-w-11 px-0" aria-label="Next month" disabled={!cursor || atLastMonth} onClick={() => step(1)}>
-                <ChevronRight className="h-4 w-4" aria-hidden />
-              </Button>
-            </div>
+      <Panel className="space-y-4 p-4">
+        <div role="group" aria-label="Pick a day" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" aria-busy={loading}>
+          {days.map((k) => {
+            const free = byDay.has(k);
+            const sel = k === day;
+            const l = dayLabel(k);
+            return (
+              <button
+                key={k}
+                type="button"
+                disabled={!free}
+                aria-pressed={sel}
+                aria-label={`${l.wd} ${l.d} ${l.mo}${free ? "" : ", no times"}`}
+                onClick={() => {
+                  setDay(k);
+                  setSlot(null);
+                }}
+                className={cx(
+                  "flex min-h-16 w-14 shrink-0 flex-col items-center justify-center rounded-chip border text-meta transition-colors",
+                  sel ? "border-accent bg-accent text-accent-foreground" : free ? "border-border/70 bg-card hover:bg-muted" : "border-transparent text-muted-foreground opacity-50",
+                  loading && "opacity-60"
+                )}
+              >
+                <span>{l.wd}</span>
+                <span className="text-ui font-semibold tabular-nums">{l.d}</span>
+                <span>{l.mo}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {loadError ? (
+          <div className="space-y-3">
+            <p className="text-ui text-danger" role="alert">
+              {loadError}
+            </p>
+            <Button onClick={() => setRefresh((n) => n + 1)}>Try again</Button>
           </div>
-          <div className="mt-2 grid grid-cols-7 gap-1 text-center text-meta text-muted-foreground" aria-hidden>
-            {WEEKDAYS.map((w) => (
-              <span key={w}>{w}</span>
+        ) : loading && slots.length === 0 ? (
+          <div role="status" aria-busy="true" className="grid grid-cols-3 gap-2">
+            <span className="sr-only">Loading times</span>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-12 animate-pulse rounded-chip bg-muted" />
             ))}
           </div>
-          <div className={cx("mt-1 grid grid-cols-7 gap-1 transition-opacity", loading && "opacity-50")} aria-busy={loading}>
-            {cells.map((d, i) => {
-              if (d === null) return <span key={`b${i}`} />;
-              const key = `${cursor!.y}-${pad(cursor!.m + 1)}-${pad(d)}`;
-              const free = byDay.has(key);
-              const selected = key === day;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={!free}
-                  aria-pressed={selected}
-                  aria-label={`${d} ${monthLabel}${free ? "" : ", no times"}`}
-                  onClick={() => {
-                    setDay(key);
-                    setSlot(null);
-                  }}
-                  className={cx(
-                    "grid h-11 place-items-center rounded-chip text-ui tabular-nums transition-colors",
-                    selected ? "bg-accent font-semibold text-accent-foreground" : free ? "bg-accent-soft font-semibold text-foreground hover:bg-accent-soft/70" : "text-muted-foreground opacity-60",
-                    key === today && !selected && "ring-1 ring-border"
-                  )}
-                >
-                  {d}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-4 border-t border-border/70 pt-3">
-            <label htmlFor="guest-tz" className="mb-1.5 flex items-center gap-1.5 text-meta font-semibold">
-              <Globe className="h-4 w-4" aria-hidden />
-              Your time zone
-            </label>
-            <select id="guest-tz" value={tz} onChange={(e) => setTz(e.target.value)} className={selectCls}>
-              {zones.map((z) => (
-                <option key={z} value={z}>
-                  {z.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
-          </div>
-        </Panel>
-
-        <div className="space-y-6">
-          <Panel className="p-4">
-            <h2 className="text-ui font-semibold">{dayHeading || "Pick a day"}</h2>
-            {loadError ? (
-              <div className="mt-3 space-y-3">
-                <p className="text-ui text-danger" role="alert">
-                  {loadError}
-                </p>
-                <Button onClick={() => setRefresh((n) => n + 1)}>Try again</Button>
-              </div>
-            ) : loading && slots.length === 0 ? (
-              <div role="status" aria-busy="true" className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <span className="sr-only">Loading times</span>
-                {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="h-12 animate-pulse rounded-chip bg-muted" />
-                ))}
-              </div>
-            ) : daySlots.length === 0 ? (
-              <p className="mt-2 text-ui text-muted-foreground">
-                {byDay.size === 0 ? "No free times this month. Try another month." : "Pick a highlighted day to see times."}
-              </p>
-            ) : (
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label={`Free times on ${dayHeading}`}>
-                {daySlots.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    aria-pressed={s === slot}
-                    onClick={() => pickSlot(s)}
-                    className={cx(
-                      "min-h-12 rounded-btn border px-3 text-ui font-semibold tabular-nums transition-[background-color,transform] duration-[var(--dur-1)] active:scale-[0.97]",
-                      s === slot ? "border-accent bg-accent text-accent-foreground" : "border-border/70 bg-card hover:bg-muted"
-                    )}
-                  >
-                    {formatInZone(s, tz, false)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          {slot && (
-            <form ref={formRef} onSubmit={submit} className="space-y-4 rounded-panel border border-border/70 bg-card p-4 shadow-card">
-              <div>
-                <h2 className="text-ui font-semibold">Your details</h2>
-                <p className="mt-0.5 text-meta text-muted-foreground">
-                  {formatInZone(slot, tz)} ({tz.replace(/_/g, " ")})
-                </p>
-              </div>
-              <div>
-                <FieldLabel htmlFor="guest-name">Name</FieldLabel>
-                <input id="guest-name" required maxLength={100} autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <FieldLabel htmlFor="guest-email">Email</FieldLabel>
-                <input id="guest-email" type="email" required maxLength={200} autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <FieldLabel htmlFor="guest-note">Note (optional)</FieldLabel>
-                <textarea id="guest-note" maxLength={1000} rows={3} value={note} onChange={(e) => setNote(e.target.value)} className={cx(inputCls, "py-3 leading-6")} />
-              </div>
-              {/* Honeypot: people never see or fill this. */}
-              <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
-                <label>
-                  Website
-                  <input tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
-                </label>
-              </div>
-              {formError && (
-                <p className="text-meta text-danger" role="alert">
-                  {formError}
-                </p>
-              )}
-              <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full sm:w-auto">
-                Confirm booking
+        ) : daySlots.length === 0 ? (
+          <div className="space-y-2">
+            <p className="text-ui text-muted-foreground">No free times in the next {horizon} days.</p>
+            {canLookFurther && (
+              <Button variant="secondary" onClick={() => setPages((p) => p + 1)}>
+                Look further ahead
               </Button>
-            </form>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-2" role="group" aria-label={`Free times on ${dayHeading}`}>
+            {daySlots.map((s) => (
+              <button
+                key={s}
+                type="button"
+                aria-pressed={s === slot}
+                onClick={() => pickSlot(s)}
+                className={cx(
+                  "min-h-12 rounded-btn border px-2 text-ui font-semibold tabular-nums transition-[background-color,transform] duration-[var(--dur-1)] active:scale-[0.97]",
+                  s === slot ? "border-accent bg-accent text-accent-foreground" : "border-border/70 bg-card hover:bg-muted"
+                )}
+              >
+                {formatInZone(s, tz, false)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div>
+          <p className="text-meta text-muted-foreground">
+            Times in {tz.replace(/_/g, " ")} ·{" "}
+            <button type="button" className="font-semibold text-accent" onClick={() => setEditingTz((v) => !v)} aria-expanded={editingTz}>
+              Change
+            </button>
+          </p>
+          {editingTz && (
+            <div className="mt-2">
+              <label htmlFor="guest-tz" className="sr-only">
+                Your time zone
+              </label>
+              <select id="guest-tz" value={tz} onChange={(e) => setTz(e.target.value)} className={selectCls}>
+                {zones.map((z) => (
+                  <option key={z} value={z}>
+                    {z.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
-      </div>
+      </Panel>
 
-      <p className="text-meta text-muted-foreground">
-        <Link href={`/book/${handle}`} className="font-semibold text-accent">
-          See other meeting types
-        </Link>
-      </p>
+      {slot && (
+        <form ref={formRef} onSubmit={submit} className="space-y-4 rounded-panel border border-border/70 bg-card p-4 shadow-card">
+          <p className="text-ui font-semibold">
+            {formatInZone(slot, tz)} · {event.durationMin} min
+          </p>
+          <div>
+            <FieldLabel htmlFor="guest-name">Name</FieldLabel>
+            <input id="guest-name" required maxLength={100} autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="guest-email">Email</FieldLabel>
+            <input id="guest-email" type="email" required maxLength={200} autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="guest-note">Note (optional)</FieldLabel>
+            <textarea id="guest-note" maxLength={1000} rows={2} value={note} onChange={(e) => setNote(e.target.value)} className={cx(inputCls, "py-3 leading-6")} />
+          </div>
+          {/* Honeypot: people never see or fill this. */}
+          <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+            <label>
+              Website
+              <input tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
+            </label>
+          </div>
+          {formError && (
+            <p className="text-meta text-danger" role="alert">
+              {formError}
+            </p>
+          )}
+          <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full">
+            Book
+          </Button>
+        </form>
+      )}
     </div>
   );
 }

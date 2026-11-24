@@ -159,7 +159,7 @@ function BookingSection({ offline }: { offline: boolean }) {
                 Share
               </Button>
               <Link href="/schedule" className="inline-flex min-h-12 items-center rounded-btn px-4 text-ui font-semibold text-accent hover:bg-muted lg:min-h-10">
-                Edit schedule
+                Edit
               </Link>
             </div>
           </>

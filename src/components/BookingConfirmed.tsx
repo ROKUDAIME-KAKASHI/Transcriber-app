@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarCheck, CalendarX, Download, ExternalLink } from "lucide-react";
+import { CalendarX, Check, Download, ExternalLink } from "lucide-react";
 import { formatInZone, googleCalendarUrl } from "@/lib/scheduling";
 import { Button, Panel } from "./ui";
 
@@ -68,62 +68,50 @@ export function BookingConfirmed(p: Props) {
     }
   };
 
+  const btn =
+    "inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-btn border border-border/70 bg-card px-4 text-ui font-semibold shadow-card hover:bg-muted lg:min-h-10";
+
   return (
-    <div className="mx-auto max-w-xl space-y-5">
-      <div className="flex items-start gap-3">
-        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${cancelled ? "bg-danger-soft text-danger" : "bg-success-soft text-success"}`}>
-          {cancelled ? <CalendarX className="h-5 w-5" aria-hidden /> : <CalendarCheck className="h-5 w-5" aria-hidden />}
+    <div className="mx-auto max-w-xl space-y-6 text-center">
+      <div className="space-y-3">
+        <span
+          className={`mx-auto grid h-16 w-16 place-items-center rounded-full ${cancelled ? "bg-danger-soft text-danger" : "bg-success-soft text-success"}`}
+        >
+          {cancelled ? <CalendarX className="h-8 w-8" aria-hidden /> : <Check className="h-8 w-8" aria-hidden />}
         </span>
+        <h1 className="text-2xl font-semibold tracking-tight">{cancelled ? "Booking cancelled" : "You're booked"}</h1>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{cancelled ? "Booking cancelled" : "You're booked"}</h1>
-          <p className="mt-0.5 text-ui text-muted-foreground">
-            {cancelled ? "This meeting is off your calendar." : `Thanks, ${p.guestName}. Save the details below.`}
+          <p className={`text-ui font-semibold ${cancelled ? "line-through" : ""}`}>{full}</p>
+          <p className="mt-0.5 text-meta text-muted-foreground">
+            {p.title} with {p.handle} · {tz.replace(/_/g, " ")}
           </p>
         </div>
       </div>
 
-      <Panel as="div" className="space-y-3 p-4">
-        <div>
-          <p className="text-meta font-semibold text-muted-foreground">What</p>
-          <p className="text-ui font-semibold">
-            {p.title} with {p.handle}
-          </p>
-        </div>
-        <div>
-          <p className="text-meta font-semibold text-muted-foreground">When</p>
-          <p className={`text-ui ${cancelled ? "line-through" : ""}`}>{full}</p>
-          <p className="text-meta text-muted-foreground">{tz.replace(/_/g, " ")}</p>
-        </div>
-        {p.note && (
-          <div>
-            <p className="text-meta font-semibold text-muted-foreground">Your note</p>
-            <p className="whitespace-pre-line text-ui">{p.note}</p>
-          </div>
-        )}
-        {p.agenda && (
-          <div>
-            <p className="text-meta font-semibold text-muted-foreground">Agenda</p>
-            <p className="whitespace-pre-line text-ui">{p.agenda}</p>
-          </div>
-        )}
-      </Panel>
+      {(p.note || p.agenda) && (
+        <Panel as="div" className="space-y-3 p-4 text-left">
+          {p.note && (
+            <div>
+              <p className="text-meta font-semibold text-muted-foreground">Your note</p>
+              <p className="whitespace-pre-line text-ui">{p.note}</p>
+            </div>
+          )}
+          {p.agenda && (
+            <div>
+              <p className="text-meta font-semibold text-muted-foreground">Agenda</p>
+              <p className="whitespace-pre-line text-ui">{p.agenda}</p>
+            </div>
+          )}
+        </Panel>
+      )}
 
       {!cancelled && (
         <div className="flex flex-col gap-2 sm:flex-row">
-          <a
-            href={`/api/book/ics/${p.id}?t=${encodeURIComponent(p.token)}`}
-            download="meeting.ics"
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-btn border border-border/70 bg-card px-4 text-ui font-semibold shadow-card hover:bg-muted lg:min-h-10"
-          >
+          <a href={`/api/book/ics/${p.id}?t=${encodeURIComponent(p.token)}`} download="meeting.ics" className={btn}>
             <Download className="h-4 w-4" aria-hidden />
             Add to calendar
           </a>
-          <a
-            href={google}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-btn border border-border/70 bg-card px-4 text-ui font-semibold shadow-card hover:bg-muted lg:min-h-10"
-          >
+          <a href={google} target="_blank" rel="noopener noreferrer" className={btn}>
             <ExternalLink className="h-4 w-4" aria-hidden />
             Google Calendar
           </a>
@@ -143,7 +131,7 @@ export function BookingConfirmed(p: Props) {
           </Link>
         )
       ) : confirming ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2">
           <span className="text-ui">Cancel this meeting?</span>
           <Button variant="danger-solid" loading={busy} onClick={() => void cancel()}>
             Yes, cancel it
@@ -153,9 +141,9 @@ export function BookingConfirmed(p: Props) {
           </Button>
         </div>
       ) : (
-        <Button variant="danger" onClick={() => setConfirming(true)}>
+        <button type="button" className="min-h-11 px-3 text-meta font-semibold text-danger" onClick={() => setConfirming(true)}>
           Cancel booking
-        </Button>
+        </button>
       )}
     </div>
   );
