@@ -9,7 +9,7 @@
  *  - while a phrase is still being spoken, `peek()` returns the audio so far, which the
  *    recorder re-transcribes every fraction of a second to show words live.
  */
-import { Resampler } from "./resampler";
+import { Resampler } from "./resampler.ts";
 
 // A phrase ends at a pause. Short fragments ("So, um") are poor input on their own: the model
 // lacks context and tends to mishear or drop them, so a phrase under SHORT_PHRASE_MS waits for a
@@ -108,29 +108,78 @@ export class VoiceChunker {
   private peekedLength = 0;
   private resampler: Resampler;
 
-  constructor(private ctx: AudioContext, private events: VoiceChunkerEvents) {
-    this.resampler = new Resampler(ctx.sampleRate);
+  /** Input sample rate: the AudioContext's, or 16 kHz in feed mode. */
+  private readonly inputRate: number;
+
+  /**
+   * `ctx` is null in feed mode (audio pushed with feed(), e.g. PCM pulled from the Android
+   * recorder's files): no AudioWorklet, same VAD. `startAt` is the absolute 16 kHz sample index of
+   * the first fed sample, so phrase timestamps are the meeting clock (a resumed session continues
+   * where the last one stopped).
+   */
+  private readonly ctx: AudioContext | null;
+  private readonly events: VoiceChunkerEvents;
+
+  constructor(ctx: AudioContext | null, events: VoiceChunkerEvents, opts: { startAt?: number } = {}) {
+    this.ctx = ctx;
+    this.events = events;
+    this.inputRate = ctx ? ctx.sampleRate : 16000;
+    this.resampler = new Resampler(this.inputRate);
+    this.heard = Math.max(0, Math.floor(opts.startAt ?? 0));
+  }
+
+  /** A chunker with no microphone: push 16 kHz mono audio (ideally 640-sample frames) with feed(). */
+  static forFeed(events: VoiceChunkerEvents, startAt = 0): VoiceChunker {
+    return new VoiceChunker(null, events, { startAt });
+  }
+
+  /** Feed mode: one frame of 16 kHz mono audio (floats in -1..1). */
+  feed(samples: Float32Array) {
+    this.onFrame(samples);
+  }
+
+  /**
+   * Feed mode: the audio before `abs` and after it are not contiguous (a pause happened there).
+   * Ends the current phrase, drops the preroll, and moves the clock to `abs`.
+   */
+  breakAt(abs: number) {
+    this.flush();
+    this.preroll = [];
+    this.heard = Math.max(0, Math.floor(abs));
+  }
+
+  /**
+   * Absolute sample index of the earliest audio not yet turned into a finished phrase: the start of
+   * the phrase being spoken (with its preroll), else the first preroll frame, else the clock.
+   * Everything before it has been emitted (or was silence), so it is safe to delete.
+   */
+  openStart(): number {
+    if (this.inSpeech && this.segment.length > 0) return this.segment[0].at;
+    if (this.preroll.length > 0) return this.preroll[0].at;
+    return this.heard;
   }
 
   async start(stream: MediaStream) {
+    const ctx = this.ctx;
+    if (!ctx) throw new Error("feed-mode VoiceChunker has no audio context");
     const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
     try {
-      await this.ctx.audioWorklet.addModule(url);
+      await ctx.audioWorklet.addModule(url);
     } finally {
       URL.revokeObjectURL(url);
     }
     // On iOS a resume() without a fresh tap can stay pending forever, which used to hang "Starting…".
     // Don't wait on it for long: the recorder's watchdog warns if audio never starts flowing.
-    if (this.ctx.state !== "running") {
-      await Promise.race([this.ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
+    if (ctx.state !== "running") {
+      await Promise.race([ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
     }
 
-    this.source = this.ctx.createMediaStreamSource(stream);
+    this.source = ctx.createMediaStreamSource(stream);
     this.node = new AudioWorkletNode(this.ctx, "moonshine-tap");
     // Muted path to the speakers: browsers only pull audio through nodes connected to the output.
-    this.sink = this.ctx.createGain();
+    this.sink = ctx.createGain();
     this.sink.gain.value = 0;
-    this.source.connect(this.node).connect(this.sink).connect(this.ctx.destination);
+    this.source.connect(this.node).connect(this.sink).connect(ctx.destination);
     this.node.port.onmessage = (e: MessageEvent<Float32Array>) => this.onFrame(e.data);
   }
 
@@ -146,7 +195,7 @@ export class VoiceChunker {
   }
 
   private onFrame(raw: Float32Array) {
-    this.frameMs = (raw.length / this.ctx.sampleRate) * 1000;
+    this.frameMs = (raw.length / this.inputRate) * 1000;
     if (this.paused) return;
     const samples = this.resampler.process(raw);
     if (samples.length === 0) return;

@@ -19,9 +19,16 @@ export function cropMiddle(a: Float32Array, maxSec: number, rate: number = SAMPL
   return a.slice(start, start + max);
 }
 
-export function embedDecision(a: { seconds: number; finalsWaiting: number; speakerLoaded: boolean; slow: boolean }): "embed" | EmbedSkip {
+/**
+ * `batch` marks paced catch-up work (audio pulled from the native recorder's files, one phrase at a
+ * time): the worker is expected to be nearly always busy and the caller already limits the queue,
+ * so "backlog" and "slow" must not skip the embedding (otherwise every catch-up phrase loses its
+ * speaker label). "short" and "unavailable" still apply.
+ */
+export function embedDecision(a: { seconds: number; finalsWaiting: number; speakerLoaded: boolean; slow: boolean; batch?: boolean }): "embed" | EmbedSkip {
   if (a.seconds < MIN_EMBED_SEC) return "short";
   if (!a.speakerLoaded) return "unavailable";
+  if (a.batch) return "embed";
   if (a.finalsWaiting >= BACKLOG_SKIP) return "backlog";
   if (a.slow) return "slow";
   return "embed";

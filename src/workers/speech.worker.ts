@@ -12,7 +12,7 @@
  *   { type: "load", model: ModelName, language?: string, slowRtf?: number }
  *   { type: "cache-status", model } -> { type: "cache-status", model, cached }
  *   { type: "prefetch", model, requestId } -> prefetch-progress / prefetched / error (with requestId)
- *   { type: "transcribe", id, audio, kind: "final" | "partial", embed?: boolean }   audio = 16 kHz mono Float32Array
+ *   { type: "transcribe", id, audio, kind: "final" | "partial", embed?: boolean, batch?: boolean }   audio = 16 kHz mono Float32Array
  *   { type: "load-speaker", localOnly? }      load the speaker-embedding model (after ASR is ready)
  *   { type: "speaker-cache-status" } -> { type: "speaker-cache-status", cached }
  *   { type: "prefetch-speaker", requestId }   -> prefetch-progress / prefetched (model: "speaker") / error (with requestId)
@@ -68,7 +68,7 @@ type Transcriber = ((audio: Float32Array, options?: GenerateOptions) => Promise<
   dispose?: () => Promise<void>;
 };
 
-type Job = { id: number; audio: Float32Array; kind: "final" | "partial"; embed?: boolean };
+type Job = { id: number; audio: Float32Array; kind: "final" | "partial"; embed?: boolean; batch?: boolean };
 type EmbedJob = { id: number; audio: Float32Array };
 type SpeakerModel = {
   fe: (audio: Float32Array) => Promise<Record<string, unknown>>;
@@ -302,7 +302,7 @@ function skipEmbed(id: number, skipped: EmbedSkip) {
 /** Decides whether a finished phrase gets an embedding. Crops now so the full buffer can be freed. */
 function queueEmbed(job: Job, seconds: number) {
   const slow = switching || downgraded || busyFraction(busyIntervals, performance.now()) > BUSY_SLOW_FRACTION;
-  const decision = embedDecision({ seconds, finalsWaiting: finals.length, speakerLoaded: !!speakerModel, slow });
+  const decision = embedDecision({ seconds, finalsWaiting: finals.length, speakerLoaded: !!speakerModel, slow, batch: job.batch });
   if (decision !== "embed") {
     skipEmbed(job.id, decision);
     return;
@@ -455,7 +455,7 @@ self.onmessage = (event: MessageEvent<InMessage>) => {
   }
 
   if (msg.type === "transcribe") {
-    const job: Job = { id: msg.id, audio: msg.audio, kind: msg.kind, embed: msg.embed };
+    const job: Job = { id: msg.id, audio: msg.audio, kind: msg.kind, embed: msg.embed, batch: msg.batch };
     if (job.kind === "final") {
       finals.push(job);
     } else {

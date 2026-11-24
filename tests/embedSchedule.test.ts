@@ -21,6 +21,13 @@ test("embedDecision order", () => {
   assert.equal(embedDecision({ ...ok, finalsWaiting: 2, slow: true }), "backlog");
   assert.equal(embedDecision({ ...ok, slow: true }), "slow");
 });
+test("embedDecision batch ignores backlog and slow (catch-up keeps speaker labels)", () => {
+  const ok = { seconds: 3, finalsWaiting: 5, speakerLoaded: true, slow: true, batch: true };
+  assert.equal(embedDecision(ok), "embed");
+  assert.equal(embedDecision({ ...ok, seconds: 0.5 }), "short");
+  assert.equal(embedDecision({ ...ok, speakerLoaded: false }), "unavailable");
+  assert.equal(embedDecision({ ...ok, batch: false }), "backlog");
+});
 test("cropSecFor", () => {
   assert.equal(cropSecFor(null, false), 6);
   assert.equal(cropSecFor(900, false), 6);

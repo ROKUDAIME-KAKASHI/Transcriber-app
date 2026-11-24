@@ -215,13 +215,13 @@ export function loadSpeechModel(
   return ready;
 }
 
-function send(audio: Float32Array, kind: "final" | "partial", embed = false): { id: number; result: Promise<string | null> } {
+function send(audio: Float32Array, kind: "final" | "partial", embed = false, batch = false): { id: number; result: Promise<string | null> } {
   const id = nextId++;
   const result = new Promise<string | null>((resolve, reject) => {
     pending.set(id, { resolve, reject });
     if (embed) outstandingEmbeds.add(id);
     // One transfer: the worker crops the speaker-embedding audio from this same buffer.
-    getWorker().postMessage({ type: "transcribe", id, audio, kind, embed }, [audio.buffer]);
+    getWorker().postMessage({ type: "transcribe", id, audio, kind, embed, batch }, [audio.buffer]);
   });
   return { id, result };
 }
@@ -230,8 +230,8 @@ function send(audio: Float32Array, kind: "final" | "partial", embed = false): { 
  * Like transcribeSegment, but exposes the phrase id so the caller can match the later
  * "embedding" event (see onEmbedding) when opts.embed is true.
  */
-export function transcribeFinal(audio: Float32Array, opts: { embed?: boolean } = {}): { id: number; text: Promise<string> } {
-  const { id, result } = send(audio, "final", !!opts.embed);
+export function transcribeFinal(audio: Float32Array, opts: { embed?: boolean; batch?: boolean } = {}): { id: number; text: Promise<string> } {
+  const { id, result } = send(audio, "final", !!opts.embed, !!opts.batch);
   return { id, text: result.then((t) => t ?? "") };
 }
 

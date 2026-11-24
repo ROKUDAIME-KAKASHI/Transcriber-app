@@ -26,7 +26,10 @@ export class Resampler {
   private hpX = 0;
   private hpY = 0;
 
-  constructor(readonly inputRate: number) {
+  readonly inputRate: number;
+
+  constructor(inputRate: number) {
+    this.inputRate = inputRate;
     this.ratio = inputRate / TARGET_RATE;
     if (this.ratio <= 1) {
       // Already 16 kHz (or lower): no filtering needed.
