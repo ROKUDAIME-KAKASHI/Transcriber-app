@@ -58,6 +58,7 @@ export async function createLocal(userId: string, m: NewLocalMeeting): Promise<b
         deleted: 0,
         syncError: null,
         lastWriteAt: Date.now(),
+        ...(m.nativeCapture ? { nativeCapture: 1 as const, nativeCursor: 0 } : {}),
       });
       await db.transcripts.put({ id: m.id, parts: [] });
     });
@@ -75,6 +76,12 @@ export async function putParts(
   status?: "DONE",
   /** Refined speaker labels: stored in the same transaction as the parts they describe. */
   relabel?: { names: Record<string, string> | null },
+  /**
+   * Native (locked-screen) recordings: `nativeCursor` is stored with the parts it covers, so audio is
+   * never deleted before its text is safe and a restart never repeats or skips a phrase.
+   * `finishNative` clears the nativeCapture flag together with the final DONE write.
+   */
+  native?: { nativeCursor?: number; finishNative?: boolean },
 ): Promise<boolean> {
   try {
     const db = getLocalDb(userId);
@@ -96,6 +103,8 @@ export async function putParts(
         next.status = "DONE";
         dirty.finish = true;
       }
+      if (native?.nativeCursor !== undefined) next.nativeCursor = Math.max(row.nativeCursor ?? 0, native.nativeCursor);
+      if (native?.finishNative) next.nativeCapture = 0;
       if (relabel) {
         next.speakerNames = relabel.names;
         next.relabelPending = 1;
@@ -451,6 +460,8 @@ export async function recoverOrphans(
       let n = 0;
       for (const r of rows) {
         if (r.origin !== "local" || r.deleted === 1) continue;
+        // The Android service may still hold audio for this meeting: the Record screen finishes it.
+        if (r.nativeCapture === 1) continue;
         if (!(Date.parse(r.createdAt) < createdBefore) || isActive(r.id)) continue;
         if (r.lastWriteAt && Date.now() - r.lastWriteAt < 120_000) continue;
         const dirty = { ...r.dirty, finish: true, tail: true };

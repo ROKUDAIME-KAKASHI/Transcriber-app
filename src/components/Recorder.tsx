@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
-import { isNativeApp } from "@/lib/nativeRecorder";
+import { isNativeApp, nativeCapabilities } from "@/lib/nativeRecorder";
 import { setWebRecording } from "@/lib/recordingFlag";
 import { formatDuration } from "@/lib/transcript";
 import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
@@ -57,11 +57,16 @@ const ENGINES: { value: RecordEngine; title: string; description: string; aside:
   },
 ];
 
-/** Engine notes inside the Android app, where only cloud mode runs with the screen off. */
+/** Engine notes inside the Android app. Older installs only keep recording with the screen off in cloud mode. */
 const APP_ENGINE_NOTES: Record<RecordEngine, string> = {
   moonshine: "English only, on this phone. Keep the screen on while recording.",
   whisper: "Indian accents and Hindi, on this phone. Keep the screen on while recording.",
   deepgram: "Labels each speaker. Keeps recording with the screen off. Needs internet.",
+};
+/** The same, once this app version records on-device through the foreground service. */
+const APP_LOCAL_ENGINE_NOTES: Record<"moonshine" | "whisper", string> = {
+  moonshine: "English only, on this phone. Keeps recording with the screen locked, no internet needed.",
+  whisper: "Indian accents and Hindi, on this phone. Keeps recording with the screen locked, no internet needed.",
 };
 
 /** Saves a choice for next time on this device. */
@@ -127,6 +132,16 @@ export function Recorder() {
   // Android app: cloud mode records in a native service that keeps going with the screen off.
   const [inApp, setInApp] = useState(false);
   useEffect(() => setInApp(isNativeApp()), []);
+  // This app version can record on-device in the foreground service (screen locked, offline).
+  const [localCapture, setLocalCapture] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    nativeCapabilities().then((c) => alive && setLocalCapture(c.localCapture)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const nativeLocal = inApp && localCapture && onDevice !== null;
   const nativeMode = inApp && (effective === "deepgram" || nativeRec.isRecording || nativeRec.isStarting);
   const rec = nativeMode ? nativeRec : webRec;
   useEffect(() => {
@@ -296,7 +311,8 @@ export function Recorder() {
   const locked = busy || starting;
   useEffect(() => setSessionLocked(locked), [locked]);
   /** Finished and fully saved: safe to open the meeting page. */
-  const finished = !busy && !starting && !!rec.meetingId && hasTranscript && (rec.saveState === "saved" || rec.saveState === "local");
+  const finished =
+    !busy && !starting && !rec.finishing && !!rec.meetingId && hasTranscript && (rec.saveState === "saved" || rec.saveState === "local");
   // Memoised: recounting thousands of phrases on every mic-level update made long meetings sluggish.
   const words = useMemo(
     () => rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0),
@@ -520,7 +536,11 @@ export function Recorder() {
               <p className="mt-2 text-meta text-muted-foreground">
                 <span className="font-medium text-foreground">{selectedEngine.aside}</span>
                 {" · "}
-                {inApp ? APP_ENGINE_NOTES[selectedEngine.value] : selectedEngine.description}
+                {inApp
+                  ? nativeLocal && onDevice
+                    ? APP_LOCAL_ENGINE_NOTES[onDevice]
+                    : APP_ENGINE_NOTES[selectedEngine.value]
+                  : selectedEngine.description}
                 {ready[effective] && <> <span className="text-success">Ready offline</span></>}
               </p>
             )}
@@ -558,7 +578,7 @@ export function Recorder() {
             </div>
           )}
 
-          {nativeMode && battery.restricted && (
+          {(nativeMode || nativeLocal) && battery.restricted && (
             <Notice icon={<BatteryWarning className="h-4 w-4 text-warning" />} tone="warning" title="Let long meetings run">
               <span className="block">
                 Android may stop the app during a long recording to save battery. Set battery use to Unrestricted.
@@ -609,14 +629,14 @@ export function Recorder() {
                 </div>
                 <div>
                   <FieldLabel htmlFor="rec-mic">Microphone</FieldLabel>
-                  {nativeMode && (
+                  {(nativeMode || nativeLocal) && (
                     <select disabled className={selectCls}>
                       <option>Phone microphone</option>
                     </select>
                   )}
                   <select
                     id="rec-mic"
-                    hidden={nativeMode}
+                    hidden={nativeMode || nativeLocal}
                     value={mics.some((m) => m.deviceId === micId) ? micId : ""}
                     onChange={(e) => {
                       setMicId(e.target.value);
@@ -652,7 +672,13 @@ export function Recorder() {
                 </label>
               )}
 
-              {effective !== "deepgram" ? (
+              {nativeLocal ? (
+                <p className="flex items-start gap-2 text-meta text-muted-foreground">
+                  <BatteryCharging className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  Recording keeps going with the screen locked and no internet. The transcript is made on this phone, so it can
+                  trail the recording until you open the app. Plug in the charger for long meetings.
+                </p>
+              ) : effective !== "deepgram" ? (
                 <Notice icon={<BatteryCharging className="h-4 w-4" />} title="Keep the screen on">
                   On-device recording works with no internet, but it stops if the screen locks. Keep this screen open while
                   you record.

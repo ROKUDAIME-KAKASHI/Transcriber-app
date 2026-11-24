@@ -13,7 +13,16 @@ import {
 import type { ModelName } from "@/lib/speech/models";
 import { VoiceChunker } from "@/lib/speech/voiceChunker";
 import { cleanPhrase } from "@/lib/speech/cleanText";
-import { createLocal, getMeta, purge, putEmbeddings, putParts, setSpeakerNames, touchRecording } from "@/lib/local/repo";
+import {
+  createLocal, getEmbeddings, getMeta, getParts, purge, putEmbeddings, putParts, setSpeakerNames, touchRecording,
+} from "@/lib/local/repo";
+import { MeetingRecorder, isNativeApp, nativeCapabilities, type NativeReadAudioResult } from "@/lib/nativeRecorder";
+import {
+  RateMeter, committedCursor, frameBlock, isCatchingUp, pcm16Base64ToFloat32, readSizeFor, NATIVE_SAMPLE_RATE,
+} from "@/lib/speech/nativeFeed";
+import {
+  finishingLine, nativeStatusLine, pickCapture, resumeFrom, type CaptureInfoLite, type NativeRowInfo,
+} from "@/lib/speech/nativeSession";
 import { newMeetingId } from "@/lib/local/ids";
 import { flush, markRecording, onRemoteStop, poke, type FlushResult } from "@/lib/local/sync";
 import { isStoppedReply } from "@/lib/recordingState";
@@ -77,6 +86,8 @@ export interface RecorderState {
   speakerNames: Record<string, string> | null;
   /** On-device speaker identification activity, for the transcript hint. */
   speakerStatus: SpeakerStatus;
+  /** Offline capture: Stop was tapped and the phone is still turning the recorded audio into text. */
+  finishing?: boolean;
 }
 
 /**
@@ -101,6 +112,21 @@ const MAX_FAILED_PHRASES = 3;
 
 /** Thrown when the user cancels while recording is still starting. */
 class StartCancelled extends Error {}
+
+/**
+ * A native (locked-screen) session keeps capturing when the Record screen is left. The screen that is
+ * going away finishes its in-flight phrases and writes a last cursor; the next screen waits for that
+ * before it reads the device store, so two instances never write over each other.
+ */
+let detachBarrier: Promise<void> | null = null;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** One finished phrase's embedding is waited for at most this long when catching up (a stuck worker must not stall Stop). */
+const EMBED_DRAIN_MS = 120_000;
+/** A native start that never reports "running" within this time is treated as failed. */
+const NATIVE_START_GRACE_MS = 10_000;
+/** Cursor is persisted on autosave when it moved at least this far past the stored one (keeps audio released during long silence). */
+const CURSOR_PERSIST_SAMPLES = 10 * NATIVE_SAMPLE_RATE;
 
 /**
  * Microphone settings for speech recognition.
@@ -222,6 +248,37 @@ export function useRecorder(opts: {
   /** The last bubble can still grow (same speaker, no pause since). */
   const openBubbleRef = useRef(false);
   const stopRef = useRef<() => Promise<void>>(async () => {});
+
+  // Native (locked-screen) session: the Android service records to files, this page transcribes them.
+  /** This session's audio comes from the Android service (mode "local"), not from getUserMedia. */
+  const nativeRef = useRef(false);
+  /** Next sample to read from the service (absolute, 16 kHz, pauses excluded). */
+  const readPosRef = useRef(0);
+  /** Samples the service has flushed to disk (last value it reported). */
+  const headRef = useRef(0);
+  const pumpAliveRef = useRef(false);
+  const pumpRef = useRef<Promise<void> | null>(null);
+  /** The service has stopped and every sample was read. */
+  const nativeDrainedRef = useRef(false);
+  /** A read kept failing: do not mark the meeting finished, the audio stays on the phone. */
+  const nativeFailedRef = useRef(false);
+  const stoppingRef = useRef(false);
+  const finalizingRef = useRef(false);
+  const catchingUpRef = useRef(false);
+  const rateRef = useRef(new RateMeter());
+  /** Phrases sent to the worker whose text is not stored yet: job id -> first sample. */
+  const inFlightRef = useRef<Map<number, number>>(new Map());
+  const persistedCursorRef = useRef(0);
+  const releasedRef = useRef(0);
+  const sessionEngineRef = useRef<RecordEngine | null>(null);
+  const nativeStartedAtRef = useRef(0);
+  const sawActiveRef = useRef(false);
+  const nativeTickBusyRef = useRef(false);
+  const resumeTriedRef = useRef(false);
+  /** Last pause/resume tap on a native session, shown until the service confirms it. */
+  const nativePauseTapRef = useRef<{ at: number; value: boolean } | null>(null);
+  /** The final write that clears nativeCapture succeeded (so the audio may be deleted). */
+  const nativeFinishedRef = useRef(false);
   /** The server said this meeting was stopped elsewhere: finish the same way as the Stop button. */
   const handleRemoteStop = () => {
     if (!wantRecordingRef.current) return; // already stopping (our own Stop also ends in DONE)
@@ -312,8 +369,21 @@ export function useRecorder(opts: {
     const uid = localUserRef.current.userId;
     dirtyRef.current = false;
     const relabel = pendingRelabelRef.current ?? undefined;
-    const ok = uid ? await putParts(uid, id, partsRef.current, secondsRef.current, status, relabel) : false;
+    // Native session: the cursor goes into the same transaction as the parts it covers.
+    const finishing = status === "DONE" && nativeDrainedRef.current;
+    const cursor = nativeRef.current ? (finishing ? headRef.current : computeCommitted()) : null;
+    const native = cursor === null ? undefined : { nativeCursor: cursor, finishNative: finishing };
+    const ok = uid ? await putParts(uid, id, partsRef.current, secondsRef.current, status, relabel, native) : false;
     if (ok && relabel && pendingRelabelRef.current === relabel) pendingRelabelRef.current = null;
+    if (ok && cursor !== null) {
+      if (finishing) nativeFinishedRef.current = true;
+      persistedCursorRef.current = Math.max(persistedCursorRef.current, cursor);
+      // Only now that the text is safe may the audio behind it go.
+      if (cursor > releasedRef.current) {
+        releasedRef.current = cursor;
+        MeetingRecorder.releaseAudio({ meetingId: id, before: cursor }).catch(() => {});
+      }
+    }
     if (!uid || !ok) return saveToServer(id, status, closing);
     // No keepalive tail PATCH here: the data is in IndexedDB and the engine uploads it (a stale
     // fire-and-forget PATCH could truncate the server transcript).
@@ -620,6 +690,11 @@ export function useRecorder(opts: {
     const chunker = chunkerRef.current;
     const minInterval = previewIntervalRef.current;
     if (!chunker || !wantRecordingRef.current || minInterval === null) return;
+    // Catching up on audio recorded earlier: every bit of CPU goes to the finished phrases.
+    if (catchingUpRef.current) {
+      previewTimerRef.current = setTimeout(previewTick, 1000);
+      return;
+    }
     let delay = minInterval;
     const snap = pendingSegmentsRef.current.size === 0 ? chunker.peek() : null;
     if (snap) {
@@ -639,6 +714,51 @@ export function useRecorder(opts: {
     if (chunkerRef.current === chunker) previewTimerRef.current = setTimeout(previewTick, delay);
   };
 
+  /** A finished phrase from the chunker (microphone or native audio): transcribe it and add it to the transcript. */
+  const onPhrase = (audio: Float32Array, phraseId: number, startSec: number, firstSample: number) => {
+    lastEmittedPhraseRef.current = phraseId;
+    // Read the length before the call: the buffer is transferred to the worker.
+    const wantEmbed = diarizeOnRef.current && audio.length >= 16000;
+    const phraseSec = audio.length / 16000;
+    const { id: jobId, text: textP } = transcribeFinal(audio, { embed: wantEmbed, batch: nativeRef.current && catchingUpRef.current });
+    // Native session: this phrase holds the committed cursor back until its text is stored.
+    if (nativeRef.current) inFlightRef.current.set(jobId, firstSample);
+    if (wantEmbed) {
+      phraseSecRef.current.set(jobId, phraseSec);
+      awaitingJobsRef.current.add(jobId);
+    }
+    const job = textP
+      .then((text) => {
+        failedPhrasesRef.current = 0;
+        const idx = appendFinal(text, (sessionEngineRef.current ?? opts.engine) === "whisper", startSec); // one chat bubble per phrase
+        if (diarizeOnRef.current) mapJob(jobId, idx);
+      })
+      .catch((err) => {
+        console.error("On-device transcription error:", err);
+        failedPhrasesRef.current += 1;
+        if (failedPhrasesRef.current === MAX_FAILED_PHRASES) {
+          patch({
+            statusMsg:
+              "This device is struggling to run the speech model (phrases are being lost). Stop, then try the Fast or Cloud engine.",
+          });
+        }
+      })
+      .finally(() => {
+        inFlightRef.current.delete(jobId);
+        // A failed transcription never maps: forget its pending embedding.
+        if (diarizeOnRef.current && !jobToPartRef.current.has(jobId)) {
+          awaitingJobsRef.current.delete(jobId);
+          earlyVecRef.current.delete(jobId);
+        }
+        // The live preview for this phrase stays visible until its final text replaces it.
+        previewsRef.current.delete(phraseId);
+        pendingSegmentsRef.current.delete(job);
+        showMoonshineActivity();
+      });
+    pendingSegmentsRef.current.add(job);
+    showMoonshineActivity();
+  };
+
   const startMoonshine = async () => {
     const ctx = moonCtxRef.current;
     const recordStream = recordStreamRef.current;
@@ -654,46 +774,7 @@ export function useRecorder(opts: {
         speakingRef.current = speaking;
         showMoonshineActivity();
       },
-      onSegment: (audio, phraseId, startSec) => {
-        lastEmittedPhraseRef.current = phraseId;
-        // Read the length before the call: the buffer is transferred to the worker.
-        const wantEmbed = diarizeOnRef.current && audio.length >= 16000;
-        const phraseSec = audio.length / 16000;
-        const { id: jobId, text: textP } = transcribeFinal(audio, { embed: wantEmbed });
-        if (wantEmbed) {
-          phraseSecRef.current.set(jobId, phraseSec);
-          awaitingJobsRef.current.add(jobId);
-        }
-        const job = textP
-          .then((text) => {
-            failedPhrasesRef.current = 0;
-            const idx = appendFinal(text, opts.engine === "whisper", startSec); // one chat bubble per phrase
-            if (diarizeOnRef.current) mapJob(jobId, idx);
-          })
-          .catch((err) => {
-            console.error("On-device transcription error:", err);
-            failedPhrasesRef.current += 1;
-            if (failedPhrasesRef.current === MAX_FAILED_PHRASES) {
-              patch({
-                statusMsg:
-                  "This device is struggling to run the speech model (phrases are being lost). Stop, then try the Fast or Cloud engine.",
-              });
-            }
-          })
-          .finally(() => {
-            // A failed transcription never maps: forget its pending embedding.
-            if (diarizeOnRef.current && !jobToPartRef.current.has(jobId)) {
-              awaitingJobsRef.current.delete(jobId);
-              earlyVecRef.current.delete(jobId);
-            }
-            // The live preview for this phrase stays visible until its final text replaces it.
-            previewsRef.current.delete(phraseId);
-            pendingSegmentsRef.current.delete(job);
-            showMoonshineActivity();
-          });
-        pendingSegmentsRef.current.add(job);
-        showMoonshineActivity();
-      },
+      onSegment: (audio, phraseId, startSec, firstSample) => onPhrase(audio, phraseId, startSec, firstSample),
     });
     await chunker.start(recordStream);
     chunkerRef.current = chunker;
@@ -947,6 +1028,10 @@ export function useRecorder(opts: {
 
   /** Breaks, side conversations: stop transcribing without ending the meeting. */
   const pause = () => {
+    if (nativeRef.current) {
+      if (wantRecordingRef.current && !stoppingRef.current) setNativePaused(true);
+      return;
+    }
     if (!wantRecordingRef.current || pausedAtRef.current !== null) return;
     chunkerRef.current?.pause(); // the phrase in progress is finished and kept
     // Deepgram: get the words heard so far now, instead of after the break. KeepAlive holds the socket.
@@ -958,6 +1043,10 @@ export function useRecorder(opts: {
   };
 
   const resume = () => {
+    if (nativeRef.current) {
+      if (wantRecordingRef.current && !stoppingRef.current) setNativePaused(false);
+      return;
+    }
     if (pausedAtRef.current === null) return;
     pausedMsRef.current += Date.now() - pausedAtRef.current;
     pausedAtRef.current = null;
@@ -967,6 +1056,10 @@ export function useRecorder(opts: {
   };
 
   const stop = useCallback(async () => {
+    if (nativeRef.current) {
+      await stopNative();
+      return;
+    }
     wantRecordingRef.current = false;
     secondsRef.current = elapsedSeconds();
     chunkerRef.current?.flush(); // send the phrase that was mid-way when Stop was tapped
@@ -1052,6 +1145,510 @@ export function useRecorder(opts: {
   }, [save]);
   stopRef.current = stop;
 
+  // ---- Native (locked-screen) session -----------------------------------------
+  // The Android service records the microphone to files on the phone (works offline, with the screen
+  // locked); this page reads them back, cuts phrases with the same voice detection, and transcribes them
+  // with the same on-device model. Everything before the "committed cursor" is already in the transcript.
+
+  /** Sample up to which the transcript holds everything (phrases being spoken or transcribed hold it back). */
+  const computeCommitted = (): number =>
+    committedCursor({
+      readPos: readPosRef.current,
+      openStart: chunkerRef.current ? chunkerRef.current.openStart() : null,
+      inFlightStarts: inFlightRef.current.values(),
+    });
+
+  const nativeBehind = () => Math.max(0, headRef.current - readPosRef.current);
+
+  /** Stops the timers of a native session (never flushes the chunker: the open phrase is re-read from the cursor). */
+  const cleanupNativeTimers = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (autosaveRef.current) clearInterval(autosaveRef.current);
+    timerRef.current = null;
+    autosaveRef.current = null;
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = null;
+    wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+  };
+
+  /** Reads what the service recorded and feeds it to the chunker, until told to stop or the recording is over. */
+  const runPump = async (id: string) => {
+    let readFailures = 0;
+    let lastStopNudge = 0;
+    while (pumpAliveRef.current) {
+      const chunker = chunkerRef.current;
+      if (!chunker) break;
+      const catching = isCatchingUp(headRef.current, readPosRef.current);
+      catchingUpRef.current = catching;
+      // Behind: hand the worker one batch at a time (finished phrases, then their speaker embeddings),
+      // driven by promises rather than timers so a hidden page keeps going.
+      if (catching && (pendingSegmentsRef.current.size > 0 || pendingEmbeds() > 0)) {
+        await Promise.all([...pendingSegmentsRef.current]);
+        await drainEmbeddings(EMBED_DRAIN_MS);
+        continue;
+      }
+      let r: NativeReadAudioResult;
+      try {
+        r = await MeetingRecorder.readAudio({ meetingId: id, from: readPosRef.current, maxSamples: readSizeFor(catching) });
+        readFailures = 0;
+      } catch (e) {
+        const code = (e as { code?: string })?.code;
+        if (code === "GONE") {
+          // Audio before `committed` was released: jump over the hole (a break, so nothing is stitched).
+          const list = await MeetingRecorder.listCaptures().catch(() => null);
+          const info = list?.captures.find((c) => c.meetingId === id);
+          if (info && info.committed > readPosRef.current) {
+            readPosRef.current = info.committed;
+            chunker.breakAt(info.committed);
+            continue;
+          }
+        }
+        if (code === "NOT_FOUND" || ++readFailures >= 5) {
+          nativeFailedRef.current = true;
+          break;
+        }
+        await sleep(1000);
+        continue;
+      }
+      headRef.current = Math.max(headRef.current, r.head);
+      if (r.samples === 0) {
+        if (r.ended) {
+          nativeDrainedRef.current = true;
+          break;
+        }
+        if (stoppingRef.current) {
+          // Stop was asked for: wait for the service to close the files (re-ask now and then).
+          const st = await MeetingRecorder.getState({ from: 1_000_000_000 }).catch(() => null);
+          if (st && !(st.active && st.mode === "local" && st.meetingId === id)) {
+            nativeDrainedRef.current = true;
+            break;
+          }
+          if (performance.now() - lastStopNudge > 5000) {
+            lastStopNudge = performance.now();
+            MeetingRecorder.stop({ force: false }).catch(() => {});
+          }
+        }
+        await sleep(400);
+        continue;
+      }
+      for (const fr of frameBlock(pcm16Base64ToFloat32(r.data), r.from, r.breaks)) {
+        if (fr.breakAt !== undefined) chunker.breakAt(fr.breakAt);
+        chunker.feed(fr.samples);
+      }
+      readPosRef.current = r.from + r.samples;
+      if (catching) rateRef.current.add(performance.now(), readPosRef.current);
+      else rateRef.current = new RateMeter();
+      if (r.ended && readPosRef.current >= r.head) {
+        nativeDrainedRef.current = true;
+        break;
+      }
+      if (!catching && r.samples < readSizeFor(false)) await sleep(400); // caught up with the microphone: wait for more
+    }
+    catchingUpRef.current = false;
+  };
+
+  /** Twice a second: the service's own clock, level, pause state, and whether it is still running. */
+  const nativeTick = async () => {
+    const id = meetingIdRef.current;
+    if (!nativeRef.current || !id || nativeTickBusyRef.current) return;
+    if (stoppingRef.current) {
+      patch({ statusMsg: finishingLine(nativeBehind(), rateRef.current.rate()) });
+      return;
+    }
+    nativeTickBusyRef.current = true;
+    try {
+      const st = await MeetingRecorder.getState({ from: 1_000_000_000 });
+      if (!nativeRef.current || meetingIdRef.current !== id || stoppingRef.current) return;
+      const ours = st.mode === "local" && st.meetingId === id;
+      if (ours && st.active) sawActiveRef.current = true;
+      if (ours) {
+        if (typeof st.headSamples === "number") headRef.current = Math.max(headRef.current, st.headSamples);
+        const tap = nativePauseTapRef.current;
+        const paused = tap && performance.now() - tap.at < 1500 ? tap.value : !!st.paused;
+        secondsRef.current = Math.floor(st.seconds ?? secondsRef.current);
+        const running = st.active && !paused;
+        setState((s) => ({
+          ...s,
+          recordingSeconds: secondsRef.current,
+          isPaused: paused,
+          micLevel: running ? st.level : 0,
+          noSound: running && !!st.noSound,
+          statusMsg:
+            failedPhrasesRef.current >= MAX_FAILED_PHRASES
+              ? s.statusMsg
+              : nativeStatusLine({ paused, behindSamples: nativeBehind(), rate: rateRef.current.rate() }),
+        }));
+      }
+      if (ours && st.active) return;
+      // The service is not running (yet, or any more).
+      const waited = performance.now() - nativeStartedAtRef.current;
+      if (!sawActiveRef.current && waited < NATIVE_START_GRACE_MS) return;
+      if (headRef.current <= 0 && !(ours && (st.headSamples ?? 0) > 0)) {
+        // It never recorded anything: say why, and leave nothing behind.
+        failNativeStart(id, ours && st.status ? st.status : "The phone didn't start recording. Try again.");
+        return;
+      }
+      // Stopped from the notification, out of storage, or ended by Android: finish the transcript here too.
+      if (wantRecordingRef.current) void stopRef.current();
+    } catch {
+      /* bridge busy: try again next tick */
+    } finally {
+      nativeTickBusyRef.current = false;
+    }
+  };
+
+  /** A native start that produced no audio: clean up, tell the user. */
+  const failNativeStart = (id: string, message: string) => {
+    wantRecordingRef.current = false;
+    pumpAliveRef.current = false;
+    cleanupNativeTimers();
+    chunkerRef.current = null;
+    MeetingRecorder.stop({ force: true }).catch(() => {});
+    setTimeout(() => MeetingRecorder.discardCapture({ meetingId: id }).catch(() => {}), 2000);
+    nativeRef.current = false;
+    discardEmptyLocal();
+    resetDiarization();
+    patch({ isStarting: false, isRecording: false, isPaused: false, micLevel: 0, noSound: false, statusMsg: message });
+  };
+
+  /** Autosave for a native session: the transcript, plus the cursor even when nothing new was said. */
+  const autosaveNative = () => {
+    if (computeCommitted() - persistedCursorRef.current >= CURSOR_PERSIST_SAMPLES) dirtyRef.current = true;
+    void save();
+    flushEmbedBuffer();
+    const uid = localUserRef.current.userId;
+    const rid = meetingIdRef.current;
+    if (uid && rid) void touchRecording(uid, rid);
+  };
+
+  /** Starts reading the service's audio from `startAt` and transcribing it (fresh start, or a re-attach). */
+  const attachNative = (startAt: number, id: string) => {
+    pumpAliveRef.current = true;
+    stoppingRef.current = false;
+    nativeDrainedRef.current = false;
+    nativeFailedRef.current = false;
+    catchingUpRef.current = false;
+    rateRef.current = new RateMeter();
+    inFlightRef.current.clear();
+    readPosRef.current = startAt;
+    headRef.current = Math.max(headRef.current, startAt);
+    persistedCursorRef.current = startAt;
+    releasedRef.current = startAt;
+    previewsRef.current.clear();
+    lastEmittedPhraseRef.current = 0;
+    speakingRef.current = false;
+    nativeStartedAtRef.current = performance.now();
+    const chunker = VoiceChunker.forFeed(
+      {
+        onSpeechChange: (speaking) => {
+          speakingRef.current = speaking;
+          showMoonshineActivity();
+        },
+        onSegment: (audio, phraseId, startSec, firstSample) => onPhrase(audio, phraseId, startSec, firstSample),
+      },
+      startAt,
+    );
+    chunkerRef.current = chunker;
+    timerRef.current = setInterval(() => void nativeTick(), 500);
+    autosaveRef.current = setInterval(autosaveNative, AUTOSAVE_MS);
+    if (previewIntervalRef.current !== null) previewTimerRef.current = setTimeout(previewTick, previewIntervalRef.current);
+    pumpRef.current = runPump(id);
+  };
+
+  /** Fresh native session: new meeting on the device, the service records, the page transcribes. */
+  const startNative = async () => {
+    const engine = opts.engine as "moonshine" | "whisper"; // the caller only comes here for on-device engines
+    const language = engine === "moonshine" ? "en" : opts.language;
+    const token = ++startTokenRef.current;
+    startingRef.current = true;
+    nativeRef.current = true;
+    sessionEngineRef.current = engine;
+    partsRef.current = [];
+    savedPartsRef.current = 0;
+    secondsRef.current = 0;
+    startedAtRef.current = 0;
+    pausedMsRef.current = 0;
+    pausedAtRef.current = null;
+    dirtyRef.current = false;
+    localModeRef.current = false;
+    serverRowRef.current = false;
+    flushResultRef.current = null;
+    startIdRef.current = null;
+    setLocalMode(false);
+    speakingRef.current = false;
+    pendingSegmentsRef.current.clear();
+    failedPhrasesRef.current = 0;
+    nativePauseTapRef.current = null;
+    sawActiveRef.current = false;
+    readPosRef.current = 0;
+    headRef.current = 0;
+    resetDiarization();
+    patch({
+      speakerNames: null, speakerStatus: null,
+      transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
+      recordingSeconds: 0, isPaused: false, isStarting: true, isRecording: false,
+      statusMsg: "Loading speech model…", saveState: "idle", meetingId: null, syncNote: null, stoppedRemotely: false,
+    });
+
+    const newId = newMeetingId();
+    startIdRef.current = newId;
+    const uid = localUserRef.current.userId as string;
+    const meetingTitle = `Meeting – ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
+    const localCreated = createLocal(uid, {
+      id: newId, title: meetingTitle, language, engine, deviceName: detectDeviceName(), origin: "local", nativeCapture: true,
+    });
+    markRecording(newId, true);
+    try {
+      await prepareOnDevice(engine, language, token);
+      patch({ statusMsg: "Creating meeting…" });
+      if (!(await localCreated)) throw new Error("Couldn't create the meeting on this phone.");
+      if (startTokenRef.current !== token) throw new StartCancelled();
+      localModeRef.current = true;
+      meetingIdRef.current = newId;
+      setLocalMode(true);
+      patch({ meetingId: newId, saveState: "local", syncNote: null, statusMsg: "Starting the recorder…" });
+      poke(newId); // the engine does the idempotent server POST whenever it can
+      wantRecordingRef.current = true;
+      await MeetingRecorder.start({ meetingId: newId, language, mode: "local", engine });
+      if (startTokenRef.current !== token) throw new StartCancelled();
+      await acquireWakeLock();
+      attachNative(0, newId);
+      patch({ isStarting: false, isRecording: true, statusMsg: nativeStatusLine({ paused: false, behindSamples: 0 }) });
+    } catch (e) {
+      if (e instanceof StartCancelled || startTokenRef.current !== token) return;
+      wantRecordingRef.current = false;
+      pumpAliveRef.current = false;
+      cleanupNativeTimers();
+      chunkerRef.current = null;
+      MeetingRecorder.stop({ force: true }).catch(() => {});
+      setTimeout(() => MeetingRecorder.discardCapture({ meetingId: newId }).catch(() => {}), 2000);
+      nativeRef.current = false;
+      discardEmptyLocal();
+      resetDiarization();
+      const err = e as { code?: string; message?: string };
+      patch({
+        isRecording: false, isStarting: false,
+        statusMsg:
+          err?.code === "DENIED"
+            ? "Microphone access was denied. Allow it in Settings › Apps › Transcriber › Permissions."
+            : err?.message?.startsWith("Failed to fetch") || err?.message === "Load failed"
+              ? "Network problem. Check the connection and try again."
+              : `Recording error: ${err?.message || "Unknown error"}`,
+      });
+    } finally {
+      if (startTokenRef.current === token) startingRef.current = false;
+    }
+  };
+
+  /**
+   * The Record screen came back while the service holds a capture (renderer reload, app reopened, or the
+   * screen was left and re-entered): re-attach. Never calls start(): that would continue the folder and add a break.
+   */
+  const attachExisting = async (info: CaptureInfoLite, uid: string) => {
+    const id = info.meetingId;
+    const token = ++startTokenRef.current;
+    startingRef.current = true;
+    nativeRef.current = true;
+    const engine: RecordEngine = info.engine === "whisper" ? "whisper" : "moonshine";
+    sessionEngineRef.current = engine;
+    try {
+      const meta = await getMeta(uid, id);
+      const got = await getParts(uid, id);
+      if (!meta || !got) throw new Error("This recording isn't on this phone any more.");
+      if (startTokenRef.current !== token) throw new StartCancelled();
+      resetDiarization();
+      partsRef.current = got.parts;
+      savedPartsRef.current = meta.savedParts;
+      secondsRef.current = meta.durationSec;
+      dirtyRef.current = false;
+      pendingSegmentsRef.current.clear();
+      failedPhrasesRef.current = 0;
+      nativePauseTapRef.current = null;
+      sawActiveRef.current = info.active;
+      meetingIdRef.current = id;
+      localModeRef.current = true;
+      setLocalMode(true);
+      markRecording(id, true);
+      patch({
+        meetingId: id, transcriptParts: got.parts, recordingSeconds: meta.durationSec, isStarting: true, isRecording: false,
+        isPaused: false, saveState: "local", syncNote: null, stoppedRemotely: false, speakerNames: meta.speakerNames,
+        statusMsg: "Reconnecting to the recording…",
+      });
+      speakerNamesRef.current = meta.speakerNames;
+      await prepareOnDevice(engine, info.language || "en", token);
+      // Speaker identification: replay the saved voices in order, so new phrases join the same speakers.
+      const online = onlineRef.current;
+      if (online) {
+        for (const e of await getEmbeddings(uid, id)) {
+          if (!got.parts[e.part]) continue;
+          try {
+            assignOnline(online, e.vec);
+            vectorsRef.current.set(e.part, e.vec);
+          } catch {
+            /* a bad vector only costs a label */
+          }
+        }
+      }
+      if (startTokenRef.current !== token) throw new StartCancelled();
+      headRef.current = info.head;
+      wantRecordingRef.current = true;
+      await acquireWakeLock();
+      attachNative(resumeFrom({ nativeCapture: meta.nativeCapture, nativeCursor: meta.nativeCursor, status: meta.status }, info), id);
+      patch({ isStarting: false, isRecording: true, statusMsg: nativeStatusLine({ paused: false, behindSamples: nativeBehind() }) });
+    } catch (e) {
+      if (e instanceof StartCancelled || startTokenRef.current !== token) return;
+      wantRecordingRef.current = false;
+      pumpAliveRef.current = false;
+      cleanupNativeTimers();
+      chunkerRef.current = null;
+      nativeRef.current = false;
+      patch({
+        isStarting: false, isRecording: false,
+        statusMsg: `Couldn't reconnect to the recording: ${(e as Error)?.message || "unknown error"}. The audio is kept on the phone.`,
+      });
+    } finally {
+      if (startTokenRef.current === token) startingRef.current = false;
+    }
+  };
+
+  /** On mount: find a capture the service is still running (or left behind) and pick it up. */
+  const resumeNative = async () => {
+    const uid = localUserRef.current.userId;
+    if (!uid) return;
+    try {
+      await detachBarrier;
+    } catch {
+      /* the previous screen's cleanup failing must not block this one */
+    }
+    if (startingRef.current || wantRecordingRef.current || finalizingRef.current) return;
+    if (!(await nativeCapabilities()).localCapture) return;
+    const list = await MeetingRecorder.listCaptures().catch(() => null);
+    if (!list || list.captures.length === 0) return;
+    const rows = new Map<string, NativeRowInfo>();
+    for (const c of list.captures) {
+      const m = await getMeta(uid, c.meetingId);
+      if (m) rows.set(c.meetingId, { nativeCapture: m.nativeCapture, nativeCursor: m.nativeCursor, status: m.status });
+    }
+    if (startingRef.current || wantRecordingRef.current || finalizingRef.current) return;
+    const { live } = pickCapture(list.captures, rows);
+    if (live) await attachExisting(live, uid);
+  };
+
+  /** Pause/resume tap on a native session: shown at once, the service confirms through nativeTick. */
+  const setNativePaused = (value: boolean) => {
+    nativePauseTapRef.current = { at: performance.now(), value };
+    (value ? MeetingRecorder.pause() : MeetingRecorder.resume()).catch(() => {});
+    patch(
+      value
+        ? { isPaused: true, micLevel: 0, noSound: false, statusMsg: nativeStatusLine({ paused: true, behindSamples: 0 }) }
+        : { isPaused: false, statusMsg: nativeStatusLine({ paused: false, behindSamples: nativeBehind(), rate: rateRef.current.rate() }) },
+    );
+  };
+
+  /**
+   * Stop for a native session: the service closes its files, the page reads whatever is left, finishes the
+   * phrases, refines the speakers, then writes DONE together with clearing `nativeCapture`; only then is
+   * the audio deleted from the phone.
+   */
+  const stopNative = async () => {
+    const id = meetingIdRef.current;
+    if (!id || stoppingRef.current) return;
+    const run = (async () => {
+      stoppingRef.current = true;
+      finalizingRef.current = true;
+      wantRecordingRef.current = false;
+      patch({
+        isRecording: false, isPaused: false, interimText: "", micLevel: 0, noSound: false,
+        statusMsg: finishingLine(nativeBehind(), rateRef.current.rate()), saveState: "saving", finishing: true,
+      });
+      try {
+        MeetingRecorder.stop({ force: false }).catch(() => {});
+        await pumpRef.current; // ends at the last sample the service wrote (or when reading keeps failing)
+        if (nativeDrainedRef.current) {
+          chunkerRef.current?.flush(); // the phrase that was mid-way when the recording ended
+          secondsRef.current = Math.max(secondsRef.current, Math.floor(headRef.current / NATIVE_SAMPLE_RATE));
+        }
+        while (pendingSegmentsRef.current.size) await Promise.all([...pendingSegmentsRef.current]);
+        dirtyRef.current = true;
+        try { await save(undefined, true); } catch { /* the final save below retries */ }
+        if (!nativeDrainedRef.current) {
+          // Not everything could be read: keep the audio, finish next time.
+          patch({
+            statusMsg: "Couldn't read all of the recording. It is kept on this phone. Open Record again to finish it.",
+            saveState: "local", liveStatus: null, backlog: 0,
+          });
+          return;
+        }
+        await refineSpeakers(); // no-op unless on-device diarization ran; never throws
+        flushResultRef.current = null;
+        nativeFinishedRef.current = false;
+        await save("DONE");
+        markRecording(id, false);
+        if (nativeFinishedRef.current) {
+          // The write that clears nativeCapture succeeded: the audio is no longer needed.
+          MeetingRecorder.discardCapture({ meetingId: id }).catch(() => {});
+        }
+        const r = flushResultRef.current as FlushResult | null;
+        if (r === "synced") {
+          patch({ statusMsg: "Saved to your account.", saveState: "saved", syncNote: null });
+        } else if (r === "needs-auth") {
+          patch({ statusMsg: "Saved on this device. Sign in again to upload it.", saveState: "local", syncNote: "Sign in to sync" });
+        } else {
+          patch({ statusMsg: "Saved on this device. It will upload when you're online.", saveState: "local", syncNote: "Waiting for internet" });
+        }
+        patch({ interimText: "", liveStatus: null, backlog: 0 });
+      } finally {
+        cleanupNativeTimers();
+        pumpAliveRef.current = false;
+        patch({ finishing: false });
+        if (nativeDrainedRef.current) {
+          chunkerRef.current = null;
+          nativeRef.current = false;
+        }
+        finalizingRef.current = false;
+        stoppingRef.current = false;
+      }
+    })();
+    // A screen that opens meanwhile waits for this to end before it reads the device store.
+    const barrier = run.catch(() => {}).finally(() => {
+      if (detachBarrier === barrier) detachBarrier = null;
+    });
+    detachBarrier = barrier;
+    await run;
+  };
+
+  /**
+   * The Record screen is being left while a native session runs: capture carries on in the service; this
+   * screen finishes the phrases it already cut, writes a last cursor, and lets go. The phrase in progress
+   * is not cut: the cursor stays at its start and the next screen re-reads it.
+   */
+  const detachNative = () => {
+    pumpAliveRef.current = false;
+    cleanupNativeTimers();
+    wantRecordingRef.current = false;
+    const run = (async () => {
+      try {
+        await pumpRef.current;
+        while (pendingSegmentsRef.current.size) await Promise.all([...pendingSegmentsRef.current]);
+        dirtyRef.current = true;
+        await save(undefined, true);
+        flushEmbedBuffer();
+      } catch {
+        /* the next screen re-reads from the stored cursor */
+      } finally {
+        chunkerRef.current = null;
+        try { unsubEmbedRef.current?.(); } catch { /* silent */ }
+        unsubEmbedRef.current = null;
+        nativeRef.current = false;
+      }
+    })();
+    const barrier = run.finally(() => {
+      if (detachBarrier === barrier) detachBarrier = null;
+    });
+    detachBarrier = barrier;
+  };
+
   /** Builds a MediaStream from the sample clip; it's also played out loud so you can follow along. */
   const createSampleStream = async (ctx: AudioContext): Promise<MediaStream> => {
     const res = await fetch(SAMPLE_AUDIO_URL);
@@ -1093,6 +1690,18 @@ export function useRecorder(opts: {
     wantRecordingRef.current = false;
     socketRef.current?.close();
     socketRef.current = null;
+    if (nativeRef.current) {
+      // A native start in progress: if the service already began, stop it and delete what it wrote.
+      const nid = startIdRef.current;
+      pumpAliveRef.current = false;
+      cleanupNativeTimers();
+      chunkerRef.current = null;
+      nativeRef.current = false;
+      if (nid) {
+        MeetingRecorder.stop({ force: true }).catch(() => {});
+        setTimeout(() => MeetingRecorder.discardCapture({ meetingId: nid }).catch(() => {}), 2000);
+      }
+    }
     cleanupMedia();
     discardEmptyLocal();
     resetDiarization();
@@ -1100,10 +1709,63 @@ export function useRecorder(opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Loads the speech model (the first use downloads it) and starts the optional speaker identification.
+   * Throws StartCancelled if the start was cancelled or superseded meanwhile (`token` no longer current).
+   */
+  const prepareOnDevice = async (engine: "moonshine" | "whisper", language: string, token: number) => {
+    // First use downloads the model (tens of MB); after that it loads from the browser cache.
+    patch({ statusMsg: "Loading speech model…" });
+    const { model } = await loadSpeechModel(engine, language, (pct) => patch({ statusMsg: `Downloading speech model… ${pct}%` }), {
+      onModelChange: (m) => {
+        const hadPreviews = previewIntervalRef.current !== null;
+        previewIntervalRef.current = previewIntervalFor(m);
+        // Lighter model allows live previews again: restart them.
+        if (!hadPreviews && previewIntervalRef.current !== null && chunkerRef.current) {
+          previewTimerRef.current = setTimeout(previewTick, previewIntervalRef.current);
+        }
+        if (wantRecordingRef.current) {
+          patch({ statusMsg: "Recording — switched to the faster model for this phone…" });
+        }
+      },
+    });
+    previewIntervalRef.current = previewIntervalFor(model);
+    if (startTokenRef.current !== token) throw new StartCancelled();
+    // Speaker identification is optional and never awaited: a missing model must not delay start.
+    try {
+      onlineRef.current = createOnline();
+      unsubEmbedRef.current = onEmbedding(handleEmbedding);
+      void loadSpeakerModel()
+        .then((ok) => { if (startTokenRef.current === token) diarizeOnRef.current = ok; })
+        .catch(() => {});
+    } catch {
+      /* silent */
+    }
+  };
+
   const start = useCallback(async (source: AudioSource = "mic") => {
     // Ignore taps while already starting or recording (a second tap used to start a second recording).
-    if (startingRef.current || wantRecordingRef.current) return;
+    if (startingRef.current || wantRecordingRef.current || finalizingRef.current) return;
     const useSample = source === "sample";
+
+    // Android app with the offline-capture service: record on-device through it, so capture carries on
+    // with the screen locked. The website and older installed APKs fall through to the microphone path below.
+    if (!useSample && opts.engine !== "deepgram" && isNativeApp()) {
+      startingRef.current = true;
+      let capable = false;
+      try {
+        capable = (await nativeCapabilities()).localCapture;
+      } finally {
+        startingRef.current = false;
+      }
+      const lu = localUserRef.current;
+      if (capable && lu.userId && lu.available) {
+        await startNative();
+        return;
+      }
+    }
+    nativeRef.current = false;
+    sessionEngineRef.current = opts.engine;
 
     // Microphone, audio processing and fast on-device models all need a secure page: https://, or
     // localhost. Phones opening the laptop's http://192.168.x.x address get none of them.
@@ -1214,35 +1876,7 @@ export function useRecorder(opts: {
 
       const engine = opts.engine;
       const language = engine === "moonshine" ? "en" : opts.language;
-      if (engine !== "deepgram") {
-        // First use downloads the model (tens of MB); after that it loads from the browser cache.
-        patch({ statusMsg: "Loading speech model…" });
-        const { model } = await loadSpeechModel(engine, language, (pct) => patch({ statusMsg: `Downloading speech model… ${pct}%` }), {
-          onModelChange: (m) => {
-            const hadPreviews = previewIntervalRef.current !== null;
-            previewIntervalRef.current = previewIntervalFor(m);
-            // Lighter model allows live previews again: restart them.
-            if (!hadPreviews && previewIntervalRef.current !== null && chunkerRef.current) {
-              previewTimerRef.current = setTimeout(previewTick, previewIntervalRef.current);
-            }
-            if (wantRecordingRef.current) {
-              patch({ statusMsg: "Recording — switched to the faster model for this phone…" });
-            }
-          },
-        });
-        previewIntervalRef.current = previewIntervalFor(model);
-        check();
-        // Speaker identification is optional and never awaited: a missing model must not delay start.
-        try {
-          onlineRef.current = createOnline();
-          unsubEmbedRef.current = onEmbedding(handleEmbedding);
-          void loadSpeakerModel()
-            .then((ok) => { if (startTokenRef.current === token) diarizeOnRef.current = ok; })
-            .catch(() => {});
-        } catch {
-          /* silent */
-        }
-      }
+      if (engine !== "deepgram") await prepareOnDevice(engine, language, token);
 
       patch({ statusMsg: "Creating meeting…" });
       const useLocal = localCreated ? await localCreated : false;
@@ -1332,10 +1966,21 @@ export function useRecorder(opts: {
   // timers running with no Stop button. Stop and save instead; cancel a start in progress.
   useEffect(() => {
     return () => {
-      if (wantRecordingRef.current) stopRef.current();
+      if (nativeRef.current && wantRecordingRef.current) detachNative(); // capture carries on in the service
+      else if (nativeRef.current && finalizingRef.current) return; // finishing: let it end (the next screen waits for it)
+      else if (wantRecordingRef.current) stopRef.current();
       else if (startingRef.current) cancelStart();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cancelStart]);
+
+  // Picks up a capture the Android service still holds (screen re-entered, app reopened, page reloaded).
+  useEffect(() => {
+    if (!userId || !available || resumeTriedRef.current || !isNativeApp()) return;
+    resumeTriedRef.current = true;
+    void resumeNative();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, available]);
 
   return { ...state, start, stop, pause, resume, cancelStart, renameSpeaker };
 }

@@ -34,6 +34,10 @@ export interface LocalMeeting {
   relabelPending?: 0 | 1;
   /** Bumped on every local speaker-name/label change; sync clears the dirty flag only if unchanged. */
   speakersRev?: number;
+  /** 1 while the Android app's native service holds audio for this meeting that the page has not finished transcribing. */
+  nativeCapture?: 0 | 1;
+  /** Sample (16 kHz) up to which the native audio is in the transcript; saved in the same transaction as the parts. */
+  nativeCursor?: number;
 }
 
 /** Device-local speaker embedding for one transcript part (D-09: never synced). */
@@ -62,6 +66,8 @@ export interface NewLocalMeeting {
   deviceName: string | null;
   origin: "local" | "native";
   createdAt?: string;
+  /** Recorded by the Android service into audio files (offline capture): see LocalMeeting.nativeCapture. */
+  nativeCapture?: boolean;
 }
 
 export interface ServerMeetingMeta {

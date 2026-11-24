@@ -80,8 +80,12 @@ function normalize(audio: Float32Array): Float32Array {
 }
 
 export interface VoiceChunkerEvents {
-  /** A finished phrase. `phraseId` matches the ids `peek()` returned while it was being spoken. */
-  onSegment: (audio16k: Float32Array, phraseId: number, startSec: number) => void;
+  /**
+   * A finished phrase. `phraseId` matches the ids `peek()` returned while it was being spoken.
+   * `firstSample` is the clock position (16 kHz samples) of the first frame including the preroll, which
+   * native sessions use to hold the committed cursor back while the phrase is being transcribed.
+   */
+  onSegment: (audio16k: Float32Array, phraseId: number, startSec: number, firstSample: number) => void;
   onSpeechChange?: (speaking: boolean) => void;
   /** Mic loudness for a level meter: RMS of the latest frame and the current speech threshold. */
   onLevel?: (rms: number, threshold: number) => void;
@@ -277,7 +281,7 @@ export class VoiceChunker {
     end = Math.min(frames.length, end + Math.round(TRAILING_SILENCE_MS / this.frameMs));
     // Timestamp = where the speech starts, after the pre-roll.
     const firstVoiced = frames.find((f) => f.voiced) ?? frames[0];
-    this.events.onSegment(normalize(concat(frames.slice(0, end))), this.phraseId, firstVoiced.at / 16000);
+    this.events.onSegment(normalize(concat(frames.slice(0, end))), this.phraseId, firstVoiced.at / 16000, frames[0].at);
   }
 
   /** Sends whatever is mid-phrase (used when recording stops). */

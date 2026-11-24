@@ -59,3 +59,12 @@ test("openStart is the open phrase start, else the clock", () => {
   const idle = VoiceChunker.forFeed({ onSegment: () => {} }, 5000);
   assert.equal(idle.openStart(), 5000);
 });
+
+test("onSegment reports the first sample including the preroll (holds the committed cursor back)", () => {
+  const first: number[] = [];
+  const c = VoiceChunker.forFeed({ onSegment: (_a, _id, startSec, firstSample) => first.push(Math.round(startSec * SR) - firstSample) }, 1000);
+  for (const f of frameBlock(cat(quiet(SR * 2), loud(SR * 2), quiet(SR * 2)), 1000)) c.feed(f.samples);
+  assert.equal(first.length, 1);
+  // The phrase begins with up to 300 ms of preroll before the first voiced frame.
+  assert.ok(first[0] >= 0 && first[0] <= 0.35 * SR, `preroll samples ${first[0]}`);
+});

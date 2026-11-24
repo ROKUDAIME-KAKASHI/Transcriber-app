@@ -8,6 +8,8 @@ export interface BackgroundRecording {
   paused: boolean;
   seconds: number;
   level: number;
+  /** "local" = offline capture to files (the page finishes the transcript on the Record screen). */
+  mode: "cloud" | "local";
 }
 
 /**
@@ -37,6 +39,7 @@ export function useBackgroundRecording(enabled: boolean): BackgroundRecording | 
               paused: !!s.paused,
               seconds: Math.floor(s.seconds ?? 0),
               level: s.level ?? 0,
+              mode: s.mode === "local" ? "local" : "cloud",
             };
             setState((prev) => {
               if (!next.active) return prev === null ? prev : null;
@@ -44,6 +47,7 @@ export function useBackgroundRecording(enabled: boolean): BackgroundRecording | 
                 prev &&
                 prev.active === next.active &&
                 prev.paused === next.paused &&
+                prev.mode === next.mode &&
                 prev.seconds === next.seconds &&
                 Math.abs(prev.level - next.level) <= 0.05
               )

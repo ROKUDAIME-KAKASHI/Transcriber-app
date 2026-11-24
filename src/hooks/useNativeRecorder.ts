@@ -68,6 +68,9 @@ export function useNativeRecorder(opts: { language: string }) {
 
   const apply = useCallback((n: NativeRecorderState) => {
     if (!n.meetingId) return;
+    // An offline capture (mode "local") is driven by useRecorder; the cloud UI must not take it over.
+    // Old APKs never send `mode`, which means cloud.
+    if (n.mode === "local") return;
     // A different meeting than the one shown (e.g. reopened the app mid-recording): start over.
     if (n.meetingId !== meetingRef.current) {
       // While starting, only the new meeting counts; otherwise only a running one (not an old finished one).
