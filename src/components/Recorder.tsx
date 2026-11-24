@@ -18,6 +18,7 @@ import { useConnectivity } from "@/lib/connectivity";
 import { startGate } from "@/lib/speech/readiness";
 import { OfflineModelControl, useOfflineReadiness, type OfflineReadiness } from "./OfflineModelControl";
 import { TranscriptView } from "./TranscriptView";
+import { NameSuggestions } from "./NameSuggestions";
 import { Badge, Button, FieldLabel, LiveDot, GateReason, Notice, Panel, PanelHeader, Segmented, Switch, cx, selectCls } from "./ui";
 import { Orb } from "./Orb";
 import { Waveform } from "./Waveform";
@@ -742,6 +743,17 @@ export function Recorder() {
 
         {finished && (
           <div className="border-t border-border/70 p-4 sm:px-6">
+            {!nativeMode && (
+              <div className="mb-3 empty:hidden">
+                <NameSuggestions
+                  meetingId={rec.meetingId}
+                  parts={rec.transcriptParts}
+                  names={rec.speakerNames}
+                  enabled
+                  onRename={webRec.renameSpeaker}
+                />
+              </div>
+            )}
             <Link
               href={`/meeting?id=${rec.meetingId}`}
               className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-accent px-4 text-ui font-medium text-accent-foreground hover:bg-accent/90"

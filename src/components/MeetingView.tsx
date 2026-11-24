@@ -14,6 +14,7 @@ import * as haptics from "@/lib/haptics";
 import { useToast } from "./Toast";
 import { SpeakerChip } from "./SpeakerChip";
 import { RenameSpeakerSheet } from "./RenameSpeakerSheet";
+import { NameSuggestions } from "./NameSuggestions";
 import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/aiModels";
 import { navBack } from "@/lib/navStack";
 import { buildExport } from "@/lib/export";
@@ -109,11 +110,18 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, userId, meeting.id]);
 
-  const renameSpeaker = async (n: number, raw: string): Promise<boolean> => {
-    const next: Record<string, string> = { ...(names ?? {}) };
-    const name = raw.trim().slice(0, 40);
-    if (name) next[String(n)] = name;
-    else delete next[String(n)];
+  // Names are built from a ref, not the `names` state closure, so several quick renames (or "Use all"
+  // on name suggestions) never overwrite each other.
+  const namesRef = useRef(names);
+  const renameSpeakers = async (updates: Record<number, string>): Promise<boolean> => {
+    const prev = namesRef.current;
+    const next: Record<string, string> = { ...(prev ?? {}) };
+    for (const [k, raw] of Object.entries(updates)) {
+      const name = raw.trim().slice(0, 40);
+      if (name) next[k] = name;
+      else delete next[k];
+    }
+    namesRef.current = next;
     try {
       if (userId && (await setSpeakerNames(userId, meeting.id, next))) {
         poke(meeting.id);
@@ -123,14 +131,16 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ speakerNames: next }),
         });
-        if (!res.ok) return false;
+        if (!res.ok) throw new Error("save failed");
       }
     } catch {
+      if (namesRef.current === next) namesRef.current = prev;
       return false;
     }
     setNames(next);
     return true;
   };
+  const renameSpeaker = (n: number, raw: string): Promise<boolean> => renameSpeakers({ [n]: raw });
 
   const saveTitle = async () => {
     setEditingTitle(false);
@@ -612,6 +622,14 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
             ))}
           </div>
         )}
+        <NameSuggestions
+          meetingId={meeting.id}
+          parts={meeting.transcript}
+          names={names}
+          enabled={meeting.status === "DONE"}
+          onRename={renameSpeaker}
+          onRenameMany={renameSpeakers}
+        />
       </header>
 
       {/* ---------- Actions ---------- */}
