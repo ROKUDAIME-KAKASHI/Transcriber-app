@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: On-Device Speaker Separation** - Moonshine/Whisper transcripts say who said what, renamable, used by AI minutes
 - [x] **Phase 5: Aurora Ink Redesign & Release** - Alive, modern, simple UI with motion; signed APK built and verified on the Xiaomi phone (completed 2026-11-23)
 - [x] **Phase 6: UI Polish Leftovers** - Recording pill gets pause/stop, contrast/type/radius/spacing fixes from the Phase 5 UI review (completed 2026-11-24)
-- [ ] **Phase 7: Automatic Speaker Names** - Speakers who introduce themselves ("Hi, I'm Priya") get their names suggested and applied in one tap
+- [x] **Phase 7: Automatic Speaker Names** - Speakers who introduce themselves ("Hi, I'm Priya") get their names suggested and applied in one tap
 - [ ] **Phase 8: Offline Recording With Screen Locked** - On-device (free, offline) recording keeps going with the phone locked in the Android app
 
 ## Phase Details
@@ -155,6 +155,12 @@ Plans:
   1. On-device (no internet) detection finds self-introductions in the transcript ("I'm Priya", "my name is Rahul", "this is Anil from sales", common Hindi forms like "mera naam ... hai") and suggests "Speaker 2 → Priya"
   2. Online, the AI (same provider chain as AI minutes) can suggest names from context (introductions, people addressing each other), returning only names with evidence quotes
   3. Suggestions are shown on the meeting page (and after stopping a recording) as chips the user accepts or dismisses; nothing is renamed without a tap; accepted names flow through the existing rename (transcript, exports, AI minutes, sync)
+**Plans:** 3/3 plans complete
+
+Plans:
+- [x] 07-01-PLAN.md — Pure detection core + tests
+- [x] 07-02-PLAN.md — aiErrors extraction + POST /api/speaker-names
+- [x] 07-03-PLAN.md — Hook, chips UI, MeetingView/Recorder wiring
 **UI hint**: yes
 
 ### Phase 8: Offline Recording With Screen Locked
@@ -181,7 +187,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | 4. On-Device Speaker Separation | 8/8 | Code complete (device UAT pending) | 2026-11-23 |
 | 5. Aurora Ink Redesign & Release | 7/7 | Complete   | 2026-11-23 |
 | 6. UI Polish Leftovers | 0/? | Not started | - |
-| 7. Automatic Speaker Names | 0/? | Not started | - |
+| 7. Automatic Speaker Names | 3/3 | Code complete (device UAT pending) | 2026-11-24 |
 | 8. Offline Recording With Screen Locked | 0/? | Not started | - |
 
 ---

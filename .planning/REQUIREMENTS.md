@@ -56,9 +56,9 @@
 
 ### Speaker names (Phase 7)
 
-- [ ] **NAME-01**: On-device detection of self-introductions (English + common Hindi/Hinglish) suggests names for speaker labels
-- [ ] **NAME-02**: Online AI name suggestions with evidence, using the existing AI provider chain
-- [ ] **NAME-03**: Suggestions are accepted/dismissed by the user; accepted names go through the existing rename path
+- [x] **NAME-01**: On-device detection of self-introductions (English + common Hindi/Hinglish) suggests names for speaker labels
+- [x] **NAME-02**: Online AI name suggestions with evidence, using the existing AI provider chain
+- [x] **NAME-03**: Suggestions are accepted/dismissed by the user; accepted names go through the existing rename path
 
 ## v2 Requirements
 
@@ -114,7 +114,7 @@
 | UI-05 | Phase 5 | Complete |
 | REL-01 | Phase 5 | Complete |
 | POL-01..03 | Phase 6 | Complete |
-| NAME-01..03 | Phase 7 | Pending |
+| NAME-01..03 | Phase 7 | Complete |
 | OFF-V2-01 | Phase 8 | Pending |
 
 **Coverage:**
