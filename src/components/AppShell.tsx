@@ -2,13 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import { ConnectivityPill } from "./ConnectivityPill";
 import { useConnectivity } from "@/lib/connectivity";
-import { markSignedOut } from "@/components/SyncProvider";
-import { Mic, LayoutList, ListChecks, CalendarClock, LogOut, AudioLines } from "lucide-react";
+import { useSignOut } from "@/hooks/useSignOut";
+import { Mic, LayoutList, ListChecks, CalendarClock, LogOut, AudioLines, CircleUser } from "lucide-react";
 import { cx } from "./ui";
 import { tap } from "@/lib/haptics";
 import { prefersReducedMotion } from "@/lib/motionPref";
@@ -48,21 +47,13 @@ function Logo() {
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { user, cachedUser } = useAuth();
   const offline = useConnectivity() === "offline";
   const email = user?.email ?? cachedUser?.email ?? "";
+  const signOutNow = useSignOut();
   const doSignOut = () => {
     if (offline) return;
-    // Forget the user only after the server confirmed the sign-out; a failed request keeps sync running.
-    void signOut({ redirect: false })
-      .then(() => {
-        markSignedOut();
-        router.replace("/login");
-      })
-      .catch(() => {
-        /* sign-out failed (flaky network): stay signed in with sync untouched */
-      });
+    signOutNow();
   };
   const bg = useBackgroundRecording(pathname !== "/");
   const contentRef = useRef<HTMLDivElement>(null);
@@ -115,13 +106,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="mt-auto border-t border-border/70 pt-3">
-          <div className="flex items-center gap-2.5 px-1.5">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-muted text-meta font-semibold uppercase">
-              {email.slice(0, 1) || "?"}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-meta text-muted-foreground" title={email}>
-              {email}
-            </span>
+          <div className="flex items-center gap-1 px-1.5">
+            <Link
+              href="/profile"
+              aria-label="Profile"
+              aria-current={pathname === "/profile" ? "page" : undefined}
+              title="Profile"
+              className={cx(
+                "flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-btn px-1 hover:bg-muted",
+                pathname === "/profile" && "bg-accent-soft"
+              )}
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-muted text-meta font-semibold uppercase">
+                {email.slice(0, 1) || "?"}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-meta text-muted-foreground" title={email}>
+                {email}
+              </span>
+            </Link>
             <button
               onClick={doSignOut}
               aria-disabled={offline}
@@ -141,15 +143,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Logo />
           <div className="ml-auto flex items-center gap-1">
           <ConnectivityPill />
-          <button
-            onClick={doSignOut}
-              aria-disabled={offline}
-            className={cx("-mr-2 grid h-11 w-11 place-items-center rounded-btn text-muted-foreground hover:text-foreground", offline && "opacity-50")}
-            aria-label="Sign out"
-            title={offline ? signOutTitle : email ? `Sign out (${email})` : "Sign out"}
+          <Link
+            href="/profile"
+            aria-label="Profile"
+            aria-current={pathname === "/profile" ? "page" : undefined}
+            title={email ? `Profile (${email})` : "Profile"}
+            className={cx(
+              "-mr-2 grid h-11 w-11 place-items-center rounded-btn hover:text-foreground",
+              pathname === "/profile" ? "text-accent" : "text-muted-foreground"
+            )}
           >
-            <LogOut className="h-5 w-5" />
-          </button>
+            <CircleUser className="h-6 w-6" />
+          </Link>
           </div>
         </div>
       </header>

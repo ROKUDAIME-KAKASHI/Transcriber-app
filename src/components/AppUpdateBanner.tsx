@@ -5,17 +5,22 @@ import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { LATEST_APK } from "@/lib/appRelease";
-import { getInstalledVersionCode, isUpdateAvailable, isUpdateDismissed, rememberUpdateDismissed, startApkUpdate } from "@/lib/appUpdate";
+import type { ApkRelease } from "@/lib/appVersion";
+import { getInstalledVersionCode, getLatestApk, isUpdateAvailable, isUpdateDismissed, rememberUpdateDismissed, startApkUpdate } from "@/lib/appUpdate";
 import { isRecordingActive } from "@/lib/recordingFlag";
 
 /** Native app only: offers the newest APK when the installed versionCode is older. */
 export function AppUpdateBanner() {
   const toast = useToast();
   const [show, setShow] = useState(false);
+  const [release, setRelease] = useState<ApkRelease>(LATEST_APK);
 
   const check = useCallback(async () => {
     const installed = await getInstalledVersionCode();
-    if (!isUpdateAvailable(installed) || isUpdateDismissed()) return setShow(false);
+    if (installed === null) return setShow(false); // website: nothing to update, no fetch
+    const { release: latest } = await getLatestApk();
+    setRelease(latest);
+    if (!isUpdateAvailable(installed, latest.versionCode) || isUpdateDismissed(latest.versionCode)) return setShow(false);
     setShow(!(await isRecordingActive()));
   }, []);
 
@@ -28,12 +33,12 @@ export function AppUpdateBanner() {
   if (!show) return null;
 
   const update = async () => {
-    const r = await startApkUpdate();
+    const r = await startApkUpdate(release);
     if (r === "copied") toast("Link copied. Open it in Chrome.", "neutral");
     else if (r === "failed") toast("Couldn't open the link. Try again.", "danger");
   };
   const dismiss = () => {
-    rememberUpdateDismissed();
+    rememberUpdateDismissed(release.versionCode);
     setShow(false);
   };
 
@@ -43,7 +48,7 @@ export function AppUpdateBanner() {
       <div className="min-w-0 flex-1">
         <p className="font-semibold">A new version of the app is available</p>
         <p className="mt-0.5 text-meta text-muted-foreground">
-          {LATEST_APK.versionName}: {LATEST_APK.notes}
+          {release.versionName}: {release.notes}
         </p>
         <p className="mt-1 text-meta text-muted-foreground">
           Android may ask you to allow installs from your browser. Installing over the current app keeps your meetings.
