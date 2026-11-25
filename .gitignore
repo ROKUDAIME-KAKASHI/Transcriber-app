@@ -9,6 +9,8 @@ next-env.d.ts
 .neon
 # copied from node_modules on install (scripts/copy-ort.mjs)
 public/ort/
+# copied from node_modules on install (scripts/copy-tesseract.mjs)
+public/tesseract/
 
 # Built APKs for sharing
 dist/
