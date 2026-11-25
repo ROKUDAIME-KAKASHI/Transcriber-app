@@ -377,6 +377,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phase 4 may r
 | 9. Meeting follow-through (quick tasks) | n/a | Shipped (APK 1.2 device UAT pending) | 2026-11-25 |
 | 10. Safety foundations | 0/? | In progress | - |
 | 21. Meeting tabs + auto minutes + Ask | n/a | Code complete (UAT pending) | 2026-11-25 |
+| 22. Guided online-call recording | n/a | Code complete (UAT pending) | 2026-11-25 |
 | 11-20 (v2.0 Steps 1-10) | 0/? | Not started | - |
 
 ---
