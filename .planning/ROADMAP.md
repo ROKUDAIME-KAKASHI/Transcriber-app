@@ -216,7 +216,7 @@ Phases 10-20 map to Steps 0-10 of the v2.0 plan.
 - [ ] **Phase 20: New web address migration (Step 10)** - Move to a new address sync-first, keep the old one working, ship a new APK
 - [x] **Phase 21: Meeting page tabs + auto minutes + Ask (Step 8.1)** (code complete 2026-11-25, UAT pending) - Transcript/Minutes/Summary/Action items/Ask tabs; minutes auto-generate on stop with a "ready in" estimate; one combined small-model request
 - [x] **Phase 22: Guided online-call recording (Step 8.2)** (code complete 2026-11-25, UAT pending) - One-click "Record an online call" with picture guidance, no-audio warning, open the meeting from Minutely
-- [ ] **Phase 23: Screenshot + voice naming (Step 8.3)** - On laptop tab capture, read the highlighted speaker's name from a frame when a new voice starts and attach it to that voice (Mirage or Tesseract.js, on-device, Rs 0); accuracy test on real calls first
+- [x] **Phase 23: Screenshot + voice naming (Step 8.3)** - On laptop tab capture, read the highlighted speaker's name from a frame when a new voice starts and attach it to that voice (Mirage or Tesseract.js, on-device, Rs 0); accuracy test on real calls first
 
 ### Phase 10: Safety foundations
 **Goal**: Every later change can be tried safely before real users see it, and problems are visible and switchable
@@ -378,6 +378,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phase 4 may r
 | 10. Safety foundations | 0/? | In progress | - |
 | 21. Meeting tabs + auto minutes + Ask | n/a | Code complete (UAT pending) | 2026-11-25 |
 | 22. Guided online-call recording | n/a | Code complete (UAT pending) | 2026-11-25 |
+| 23. Screenshot + voice naming | n/a | Code complete, opt-in beta (accuracy UAT pending) | 2026-11-25 |
 | 11-20 (v2.0 Steps 1-10) | 0/? | Not started | - |
 
 ---
