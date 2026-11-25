@@ -794,6 +794,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
         <MeetingTabBar
           tabs={tabs}
           value={tab}
+          labels={{ minutes: docName }}
           onChange={(t) => {
             setTab(t);
             haptics.tap();

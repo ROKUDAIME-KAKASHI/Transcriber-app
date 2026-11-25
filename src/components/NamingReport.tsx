@@ -47,7 +47,7 @@ export function NamingReport({ userId, meetingId, names }: { userId: string | nu
     }
   };
   return (
-    <section className="mb-5 rounded-card border border-border bg-muted/40 p-4" aria-label="Naming report">
+    <section className="mb-5 rounded-chip border border-border/70 bg-muted/40 p-4" aria-label="Naming report">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-ui font-semibold">Naming report (beta)</h3>
@@ -56,7 +56,7 @@ export function NamingReport({ userId, meetingId, names }: { userId: string | nu
             {stats.reads === 1 ? "" : "s"}. Only on this device.
           </p>
         </div>
-        <Button variant="secondary" icon={<ClipboardCopy className="h-4 w-4" aria-hidden />} onClick={() => void copy()}>
+        <Button variant="secondary" className="shrink-0" icon={<ClipboardCopy className="h-4 w-4" aria-hidden />} onClick={() => void copy()}>
           Copy report
         </Button>
       </div>

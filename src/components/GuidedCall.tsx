@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, MonitorSpeaker, TriangleAlert } from "lucide-react";
+import { ChevronDown, ExternalLink, MonitorSpeaker, TriangleAlert } from "lucide-react";
 import {
   detectCallPlatform, guideHidden, openableCallUrl, setGuideHidden, shareProblemCopy, type ShareProblemCode,
 } from "@/lib/guidedCall";
 import type { PlatformId } from "@/lib/naming/highlight";
 import { CallGuide } from "./CallGuide";
 import { ScreenNamingToggle } from "./ScreenNamingToggle";
-import { Button, FieldLabel, Notice, inputCls } from "./ui";
+import { Button, Notice, inputCls } from "./ui";
 
 /** The browser's saved-settings store, or null when it is blocked. */
 function deviceStore(): Storage | null {
@@ -38,12 +38,15 @@ export function GuidedCall({
   onStart: (platform: PlatformId | null) => void;
 }) {
   const [typed, setTyped] = useState<string | null>(null);
+  // Closed until needed: the main record button stays the one big action. Opens by itself for a planned call or a problem.
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const [guide, setGuide] = useState<null | { opened: boolean; blocked: boolean }>(null);
   const text = typed ?? startUrl ?? "";
   const url = openableCallUrl(text);
   const platform = detectCallPlatform(text);
   const badLink = text.trim() !== "" && !url;
   const copy = problem ? shareProblemCopy(problem) : null;
+  const open = !!copy || (userOpen ?? !!startUrl);
 
   const begin = () => {
     let opened = false;
@@ -70,9 +73,16 @@ export function GuidedCall({
   };
 
   return (
-    <div className="border-t border-border/70 px-4 py-4">
-      <FieldLabel htmlFor="call-link">Recording an online call?</FieldLabel>
-      <p className="mb-2 text-meta text-muted-foreground">Works for Google Meet, Teams and Zoom in your browser.</p>
+    <>
+    <details open={open} onToggle={(e) => setUserOpen(e.currentTarget.open)} className="group border-t border-border/70 px-4">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-meta font-semibold [&::-webkit-details-marker]:hidden">
+        <span>
+          Recording an online call?
+          <span className="block font-normal text-muted-foreground">Google Meet, Teams or Zoom in your browser</span>
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
+      </summary>
+      <div className="pb-4 pt-1">
 
       {copy && (
         <div className="mb-3" role="alert">
@@ -95,6 +105,7 @@ export function GuidedCall({
         className={`${inputCls} min-h-11`}
         aria-invalid={badLink || undefined}
         aria-describedby="call-link-note"
+        aria-label="Call link"
       />
       <p id="call-link-note" className="mt-1.5 text-meta text-muted-foreground">
         {badLink
@@ -107,7 +118,7 @@ export function GuidedCall({
       </p>
 
       <Button
-        variant={copy ? "secondary" : "primary"}
+        variant="secondary"
         className="mt-3 w-full"
         disabled={disabled || badLink}
         icon={url ? <ExternalLink className="h-4 w-4" aria-hidden /> : <MonitorSpeaker className="h-4 w-4" aria-hidden />}
@@ -120,6 +131,8 @@ export function GuidedCall({
       )}
 
       <ScreenNamingToggle className="mt-3" />
+      </div>
+    </details>
 
       {guide && (
         <CallGuide
@@ -135,6 +148,6 @@ export function GuidedCall({
           }}
         />
       )}
-    </div>
+    </>
   );
 }
