@@ -1,37 +1,9 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CALL_SILENCE, GUIDE_HIDDEN_KEY, checkShare, detectCallPlatform, guideHidden, initialSilence, openableCallUrl, rmsOf,
-  setGuideHidden, shareProblemCopy, stepSilence, surfaceKind, type KeyValueStore,
+  CALL_SILENCE, detectCallPlatform, initialSilence, openableCallUrl, rmsOf, stepSilence,
 } from "../src/lib/guidedCall.ts";
 import { buildDisplayMediaOptions } from "../src/lib/tabAudio.ts";
-
-describe("surface check", () => {
-  test("kinds", () => {
-    assert.equal(surfaceKind("browser"), "tab");
-    assert.equal(surfaceKind("window"), "window");
-    assert.equal(surfaceKind("monitor"), "screen");
-    assert.equal(surfaceKind(undefined), "unknown");
-    assert.equal(surfaceKind("something-new"), "unknown");
-  });
-  test("a tab with audio is fine", () => assert.equal(checkShare({ displaySurface: "browser", audioTracks: 1 }), null));
-  test("a window or screen is wrong even with audio", () => {
-    assert.equal(checkShare({ displaySurface: "window", audioTracks: 1 }), "window");
-    assert.equal(checkShare({ displaySurface: "monitor", audioTracks: 1 }), "screen");
-  });
-  test("no audio track is caught, with or without the surface", () => {
-    assert.equal(checkShare({ displaySurface: "browser", audioTracks: 0 }), "no-audio");
-    assert.equal(checkShare({ audioTracks: 0 }), "no-audio");
-  });
-  test("an unknown surface with audio is allowed", () => assert.equal(checkShare({ audioTracks: 1 }), null));
-  test("every problem has plain copy", () => {
-    for (const c of ["window", "screen", "no-audio", "cancelled"] as const) {
-      const p = shareProblemCopy(c);
-      assert.ok(p.title.length > 0 && p.fix.length > 0);
-      assert.ok(!/getDisplayMedia|stream/i.test(p.title + p.fix));
-    }
-  });
-});
 
 describe("silence detector", () => {
   const loud = 0.05;
@@ -112,38 +84,6 @@ describe("call links", () => {
     assert.equal(detectCallPlatform("https://evil.com/meet.google.com"), null);
     assert.equal(detectCallPlatform("http://meet.google.com/a"), null);
     assert.equal(detectCallPlatform("https://example.com/call"), null);
-  });
-});
-
-describe("guide: don't show again", () => {
-  const mem = (): KeyValueStore & { data: Map<string, string> } => {
-    const data = new Map<string, string>();
-    return {
-      data,
-      getItem: (k) => data.get(k) ?? null,
-      setItem: (k, v) => void data.set(k, v),
-      removeItem: (k) => void data.delete(k),
-    };
-  };
-  test("shown by default, hidden once saved, shown again when cleared", () => {
-    const s = mem();
-    assert.equal(guideHidden(s), false);
-    setGuideHidden(s, true);
-    assert.equal(s.data.get(GUIDE_HIDDEN_KEY), "1");
-    assert.equal(guideHidden(s), true);
-    setGuideHidden(s, false);
-    assert.equal(guideHidden(s), false);
-  });
-  test("blocked or missing storage never throws", () => {
-    const bad: KeyValueStore = {
-      getItem: () => { throw new Error("blocked"); },
-      setItem: () => { throw new Error("blocked"); },
-      removeItem: () => { throw new Error("blocked"); },
-    };
-    assert.equal(guideHidden(bad), false);
-    assert.doesNotThrow(() => setGuideHidden(bad, true));
-    assert.equal(guideHidden(null), false);
-    assert.doesNotThrow(() => setGuideHidden(undefined, true));
   });
 });
 
