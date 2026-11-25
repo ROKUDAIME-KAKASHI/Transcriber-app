@@ -1,6 +1,7 @@
 import { isFlagOn } from "@/lib/flags";
 import { prisma } from "@/lib/prisma";
 import { MAX_RANGE_DAYS, generateSlots } from "@/lib/scheduling";
+import { plannedBusyForSlots } from "@/lib/calendarDb";
 import { NO_STORE, findPublicEvent, isSchedulingMissing, schedulingMissing } from "@/lib/schedulingDb";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ handle: string;
     const found = await findPublicEvent(handle, slug);
     if (!found) return Response.json({ error: "This booking link does not exist." }, { status: 404, headers: NO_STORE });
     const { host, event } = found;
-    const [availability, bookings] = await Promise.all([
+    const [availability, confirmed, planned] = await Promise.all([
       prisma.availability.findMany({ where: { userId: host.id }, select: { weekday: true, startMin: true, endMin: true } }),
       prisma.booking.findMany({
         where: {
@@ -33,7 +34,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ handle: string;
         },
         select: { startAt: true, endAt: true },
       }),
+      // The host's own planned meetings are busy time too (empty while the calendar switch is off).
+      plannedBusyForSlots(host.id, from, to),
     ]);
+    const bookings = [...confirmed, ...planned];
     const slots = generateSlots({
       availability,
       timeZone: host.timeZone,

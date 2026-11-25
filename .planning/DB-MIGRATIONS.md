@@ -84,9 +84,21 @@ Additive only: one new table (`PlanReference`: the extracted text of a reference
 
 Until it is applied the app still works: the reference routes answer "Pre-work needs a database update" (503) and the Pre-work section and the reference list on the meeting page stay hidden. The feature can also be switched off any time in Admin, Feature switches ("Pre-work"): the routes answer "Pre-work is paused" and the section disappears. Plans themselves are unaffected either way.
 
+## Apply 6_calendar (Phase 15)
+
+Additive only: four new columns, each with a default or NULL (`User.shareFreeBusy` false, `MeetingSeries.keepAhead` 0, `PlannedMeeting.icsSequence` 0, `PlannedAttendee.invitedAt` NULL) and one unique index `PlannedMeeting(seriesId, startAt)` that stops a series from getting two meetings at the same time. Plans without a series have a NULL `seriesId`, which Postgres allows any number of times. No table is created, changed in meaning or dropped.
+
+The migration begins the index with a safety step: if two plans in one series ever shared the exact same start time, the later ones are moved by 1 millisecond each so the index can be built. With no such duplicates (the normal case) it changes nothing. To check first: `SELECT "seriesId", "startAt", count(*) FROM "PlannedMeeting" WHERE "seriesId" IS NOT NULL GROUP BY 1, 2 HAVING count(*) > 1;`
+
+1. On a Neon preview branch first: `npx prisma migrate deploy` with that branch's `DATABASE_URL` / `DATABASE_URL_UNPOOLED`.
+2. After the pull request is merged, the same command against production.
+3. `npm run db:status` should say "Database schema is up to date".
+
+Until it is applied the app still works exactly as before: every new route (`/api/freebusy`, `/api/calendar/*`, `/api/plans/[id]/calendar`, `/api/plans/[id]/invite`, `/api/series/[id]/keep-ahead`) answers "Calendar needs a database update" (503), Find a time, the conflict warning, invites, Series settings and the Profile sharing switch stay hidden, public booking ignores planned meetings, and a plan's .ics is the same file as before. The feature can also be switched off any time in Admin, Feature switches ("Calendar"). Email invites need `RESEND_API_KEY` and `BOOKING_FROM_EMAIL` (the same ones booking emails use); without them the invite button becomes "Share invite file".
+
 ### Brand new databases (for example a fresh Neon preview branch)
 
-A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, `4_planned_meetings`, then `5_prework`).
+A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, `4_planned_meetings`, `5_prework`, then `6_calendar`).
 
 ## From now on
 

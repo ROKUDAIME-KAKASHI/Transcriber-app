@@ -208,7 +208,7 @@ Phases 10-20 map to Steps 0-10 of the v2.0 plan.
 - [x] **Phase 12: Stakeholders directory (Step 2)** - People the user meets, with designation, area of involvement and email
 - [x] **Phase 13: Planned meetings + series (Step 3)** - Meetings planned ahead with time, venue/link, attendees and agenda; Record starts from a plan
 - [x] **Phase 14: Pre-work (Step 4)** - Reference files are summarised by AI into agenda points
-- [ ] **Phase 15: Calendar blocking (Step 5)** - Common free slots for internal users, recurring series, invites
+- [x] **Phase 15: Calendar blocking (Step 5)** - Common free slots for internal users, recurring series, invites
 - [ ] **Phase 16: Tracker upgrades (Step 6)** - Task owners are stakeholders; timeline, overdue alerts, series progress
 - [ ] **Phase 17: Follow-up (Step 7)** - "Plan next meeting" carries unfinished tasks
 - [ ] **Phase 18: Online calls (Step 8)** - Laptop tab capture first, then a meeting bot for phone and laptop

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { NO_STORE, PLAN_SELECT, attendeeRows, failed, isPlanningMissing, notFound, pausedResponse, planningMissing, toPlanDTO } from "@/lib/planningDb";
+import { isUniqueViolation } from "@/lib/calendarDb";
 import { nextOccurrence, type Cadence } from "@/lib/planning";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return Response.json({ plan: row && toPlanDTO(row), existing: false }, { status: 201, headers: NO_STORE });
   } catch (err) {
     if (isPlanningMissing(err)) return planningMissing();
+    if (isUniqueViolation(err)) {
+      // A concurrent request, or a cancelled meeting at that time (6_calendar), already holds the slot.
+      return Response.json({ error: "That date is already taken in this series (it may be a cancelled meeting). Pick the next date by hand." }, { status: 409, headers: NO_STORE });
+    }
     console.error("Series next error:", err);
     return failed("Couldn't plan the next meeting. Try again.");
   }

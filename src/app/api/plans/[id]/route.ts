@@ -3,6 +3,8 @@ import { getUserId, unauthorized } from "@/lib/auth";
 import {
   NO_STORE, PLAN_SELECT, attendeeRows, badRequest, failed, isPlanningMissing, notFound, ownsSeries, pausedResponse, planningMissing, toPlanDTO,
 } from "@/lib/planningDb";
+import { bumpSequence, ensureAheadForUser, isUniqueViolation, restoreInvited, snapshotInvited } from "@/lib/calendarDb";
+import { needsSequenceBump } from "@/lib/calendar";
 import { PlanPatch } from "@/lib/planning";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +20,7 @@ export async function GET(_req: Request, { params }: Ctx) {
   try {
     const row = await prisma.plannedMeeting.findFirst({ where: { id, userId, deletedAt: null }, select: PLAN_SELECT });
     if (!row) return notFound();
+    if (row.seriesId) await ensureAheadForUser(userId, { seriesId: row.seriesId });
     return Response.json({ plan: toPlanDTO(row) }, { headers: NO_STORE });
   } catch (err) {
     if (isPlanningMissing(err)) return planningMissing();
@@ -37,11 +40,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "Invalid details");
   const { attendees, startAt, seriesId, title, durationMin, timeZone, venue, callUrl, agenda, status } = parsed.data;
   try {
-    const current = await prisma.plannedMeeting.findFirst({ where: { id, userId, deletedAt: null }, select: { id: true, status: true } });
+    const current = await prisma.plannedMeeting.findFirst({ where: { id, userId, deletedAt: null }, select: { id: true, status: true, title: true, startAt: true, durationMin: true, venue: true, callUrl: true } });
     if (!current) return notFound();
     if (seriesId && !(await ownsSeries(userId, seriesId))) return badRequest("That series doesn't exist");
     // A recorded meeting stays recorded; only a plan that hasn't happened can be cancelled or re-opened.
     if (status && current.status === "RECORDED") return badRequest("This meeting was already recorded.");
+    const invited = attendees ? await snapshotInvited(id) : null;
     await prisma.$transaction(async (tx) => {
       await tx.plannedMeeting.update({
         where: { id },
@@ -63,10 +67,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
         if (attendees.length) await tx.plannedAttendee.createMany({ data: attendeeRows(id, attendees) });
       }
     });
+    if (invited && invited.size) await restoreInvited(id, invited);
+    // Invitees need to see a change of time, length, place, link, title or status as an update (best effort).
+    if (needsSequenceBump(current, { title, startAt: startAt !== undefined ? new Date(startAt) : undefined, durationMin, venue, callUrl, status })) {
+      await bumpSequence(id);
+    }
     const row = await prisma.plannedMeeting.findFirst({ where: { id, userId }, select: PLAN_SELECT });
     return Response.json({ plan: row && toPlanDTO(row) }, { headers: NO_STORE });
   } catch (err) {
     if (isPlanningMissing(err)) return planningMissing();
+    if (isUniqueViolation(err)) return badRequest("Another meeting in this series is already at that time.");
     console.error("Plan update error:", err);
     return failed("Couldn't save the changes. Try again.");
   }

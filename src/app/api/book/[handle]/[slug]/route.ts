@@ -8,6 +8,7 @@ import { isSlotAvailable } from "@/lib/scheduling";
 import { sendBookingEmails } from "@/lib/bookingEmail";
 import { NO_STORE, clientIp, findAgendaFor, findPublicEvent, isSchedulingMissing, schedulingMissing } from "@/lib/schedulingDb";
 import { MAX_AGENDA_CHARS } from "@/lib/followUpAgenda";
+import { plannedBusyForSlots } from "@/lib/calendarDb";
 import { createPlanForBooking } from "@/lib/planningDb";
 
 export const dynamic = "force-dynamic";
@@ -73,6 +74,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ handle: string
     const agenda = agendaRow ? agendaRow.text.slice(0, MAX_AGENDA_CHARS) : null;
     const cancelToken = randomBytes(24).toString("base64url");
 
+    // Planned meetings block time too. Read outside the transaction: a missing table must not poison it.
+    const planned = await plannedBusyForSlots(host.id, start, end);
+
     const booking = await prisma.$transaction(async (tx) => {
       // One booking at a time per host: the lock is released when the transaction ends.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${host.id}))`;
@@ -97,7 +101,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ handle: string
         bufferMin: event.bufferMin,
         minNoticeMin: event.minNoticeMin,
         maxDaysAhead: event.maxDaysAhead,
-        bookings,
+        bookings: [...bookings, ...planned],
         now: new Date(),
       });
       if (!ok) throw new SlotTaken();

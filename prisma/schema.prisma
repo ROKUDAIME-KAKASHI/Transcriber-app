@@ -19,6 +19,8 @@ model User {
   bookingSlug String?   @unique
   /// IANA time zone the weekly availability is expressed in
   timeZone    String?
+  /// Opt-in: other Minutely users who add this person to a meeting can see busy blocks (no titles)
+  shareFreeBusy Boolean @default(false)
   availability Availability[]
   eventTypes  EventType[]
   bookings    Booking[]
@@ -227,6 +229,8 @@ model MeetingSeries {
   defaultDurationMin Int              @default(30)
   defaultVenue       String?
   defaultCallUrl     String?
+  /// Keep this many future meetings planned ahead (0 = off)
+  keepAhead          Int              @default(0)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   deletedAt          DateTime?
@@ -256,12 +260,15 @@ model PlannedMeeting {
   meetingId   String?            @unique
   /// The booking this plan came from, if any (no foreign key either)
   bookingId   String?            @unique
+  /// iCalendar SEQUENCE: bumped when time, place or link change so invites update
+  icsSequence Int                @default(0)
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   deletedAt   DateTime?
   attendees   PlannedAttendee[]
   references  PlanReference[]
 
+  @@unique([seriesId, startAt])
   @@index([userId, startAt])
 }
 
@@ -275,6 +282,8 @@ model PlannedAttendee {
   email            String?
   designation      String?
   role             String?
+  /// When an email invite was last sent to this person
+  invitedAt        DateTime?
 
   @@index([plannedMeetingId])
 }

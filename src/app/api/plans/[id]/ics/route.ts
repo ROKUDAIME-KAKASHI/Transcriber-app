@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
-import { buildIcs } from "@/lib/scheduling";
 import { NO_STORE, PLAN_SELECT, failed, isPlanningMissing, notFound, pausedResponse, planningMissing, toPlanDTO } from "@/lib/planningDb";
-import { attendeeLine, endOf } from "@/lib/planning";
+import { sequenceOf } from "@/lib/calendarDb";
+import { icsMethodFor } from "@/lib/calendar";
+import { planIcs } from "@/lib/planIcs";
 
 export const dynamic = "force-dynamic";
 
@@ -20,23 +21,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     ]);
     if (!row || !me) return notFound();
     const p = toPlanDTO(row);
-    const description = [
-      p.callUrl ? `Join: ${p.callUrl}` : "",
-      p.attendees.length ? `With: ${p.attendees.map(attendeeLine).join(", ")}` : "",
-      p.agenda?.trim() ? `Agenda\n${p.agenda.trim()}` : "",
-    ].filter(Boolean).join("\n\n");
-    const ics = buildIcs({
-      uid: `plan-${p.id}@transcriber`,
-      start: new Date(p.startAt),
-      end: endOf(p),
-      title: p.title,
-      description: description || null,
-      location: p.venue ?? p.callUrl,
-      organizerName: me.email.split("@")[0] || "Organizer",
-      organizerEmail: me.email,
-      attendees: p.attendees.filter((a) => a.email).map((a) => ({ name: a.name, email: a.email as string })),
-      cancelled: p.status === "CANCELLED",
-    });
+    // Invite semantics (REQUEST / CANCEL, SEQUENCE, RSVP) only while the calendar feature is live; else exactly as before.
+    const sequence = await sequenceOf(id);
+    const guests = p.attendees.filter((a) => a.email).length;
+    const ics = planIcs(p, me.email, sequence === null ? undefined : { method: icsMethodFor(p.status, guests), sequence });
     return new Response(ics, {
       headers: {
         "Content-Type": "text/calendar; charset=utf-8",

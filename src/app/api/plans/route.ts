@@ -3,6 +3,7 @@ import { getUserId, unauthorized } from "@/lib/auth";
 import {
   NO_STORE, PLAN_SELECT, attendeeRows, badRequest, failed, isPlanningMissing, ownsSeries, pausedResponse, planningMissing, toPlanDTO,
 } from "@/lib/planningDb";
+import { ensureAheadForUser, isUniqueViolation } from "@/lib/calendarDb";
 import { PlanCreate } from "@/lib/planning";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ export async function GET(req: Request) {
   const from = dateParam(q.get("from"));
   const to = dateParam(q.get("to"));
   const seriesId = (q.get("seriesId") ?? "").slice(0, 40);
+  // Series set to "keep N planned ahead" top themselves up here. Never throws; a no-op until 6_calendar is applied.
+  await ensureAheadForUser(userId);
   try {
     const rows = await prisma.plannedMeeting.findMany({
       where: {
@@ -62,6 +65,7 @@ export async function POST(req: Request) {
     return Response.json({ plan: row && toPlanDTO(row) }, { status: 201, headers: NO_STORE });
   } catch (err) {
     if (isPlanningMissing(err)) return planningMissing();
+    if (isUniqueViolation(err)) return badRequest("Another meeting in this series is already at that time.");
     console.error("Plan create error:", err);
     return failed("Couldn't save this meeting. Try again.");
   }
