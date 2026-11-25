@@ -199,6 +199,8 @@ export const SaveBody = z.object({
       z.object({
         task: z.string().trim().min(1).max(300),
         owner: optText(100),
+        /** The People entry picked as owner (ignored when the tracker upgrades are off or the person is unknown). */
+        ownerStakeholderId: z.string().trim().min(1).max(64).nullish(),
         deadlineText: optText(100),
         sourceQuote: z.string().max(1000),
       })

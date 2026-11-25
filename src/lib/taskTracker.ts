@@ -199,6 +199,8 @@ export const PatchBody = z
   .object({
     status: z.enum(STATUSES),
     owner: trimmedOrNull(100),
+    /** The People entry picked as owner; null clears the link. Needs the tracker upgrades (ignored otherwise). */
+    ownerStakeholderId: z.string().trim().min(1).max(64).nullable(),
     dueDate: dueDateField,
     note: trimmedOrNull(1000),
     task: z.string().trim().min(1).max(300),
