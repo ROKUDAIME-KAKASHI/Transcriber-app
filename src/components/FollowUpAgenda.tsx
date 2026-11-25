@@ -9,6 +9,7 @@ import { copyText, shareOrSave, shareText } from "@/lib/export/deliver";
 import { useConnectivity } from "@/lib/connectivity";
 import { agendaFileName, buildAgendaDraft, type AgendaItem } from "@/lib/followUpAgenda";
 import { localToday } from "@/lib/taskTracker";
+import { useFlag } from "@/lib/flagsClient";
 import { useToast } from "./Toast";
 import { Button, GateReason, cx, inputCls } from "./ui";
 
@@ -20,6 +21,8 @@ export function AgendaButton(props: {
   describedBy?: string;
   className?: string;
 }) {
+  const on = useFlag("followUpAgenda");
+  if (!on) return null;
   return (
     <Button
       loading={props.loading}

@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { adminConfigured, isAdminAuthed } from "@/lib/adminAuth";
 import { loadAdminData, type AdminData } from "@/lib/adminData";
 import { loadErrorRows } from "@/lib/errorLogDb";
+import { clearFlagsCache, getFlagsState } from "@/lib/flags";
+import { FLAG_KEYS, FLAG_LABELS } from "@/lib/flagsCore";
 import { DEEPGRAM_USD_PER_MIN, engineKind, estimateDeepgramUsd, fmtDuration, fmtHours } from "@/lib/adminStats";
-import { AdminErrors, AdminLogin, AdminLogout, AdminUsersTable, type ErrorRowView, type UserRowView } from "@/components/AdminClient";
+import { AdminErrors, AdminFlags, AdminLogin, AdminLogout, AdminUsersTable, type ErrorRowView, type FlagRowView, type UserRowView } from "@/components/AdminClient";
 import { Badge, Notice, Panel, PanelHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +75,9 @@ export default async function AdminPage() {
     );
   }
 
-  const [d, errs] = await Promise.all([loadAdminData(), loadErrorRows()]);
+  clearFlagsCache();
+  const [d, errs, flagState] = await Promise.all([loadAdminData(), loadErrorRows(), getFlagsState()]);
+  const flagRows: FlagRowView[] = FLAG_KEYS.map((k) => ({ key: k, label: FLAG_LABELS[k], enabled: flagState.flags[k] }));
   const errorRows: ErrorRowView[] = errs.rows.map((e) => ({
     id: e.id,
     kind: e.kind,
@@ -160,6 +164,7 @@ export default async function AdminPage() {
           </table>
         </div>
       </Panel>
+      <AdminFlags rows={flagRows} available={flagState.available} />
       <AdminErrors rows={errorRows} available={errs.available} />
     </Shell>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, FieldLabel, Notice, Panel, PanelHeader, inputCls } from "./ui";
+import { Button, FieldLabel, Notice, Panel, PanelHeader, Switch, inputCls } from "./ui";
 
 export function AdminLogin() {
   const [pw, setPw] = useState("");
@@ -199,6 +199,53 @@ export function AdminErrors({ rows, available }: { rows: ErrorRowView[]; availab
           </table>
         </div>
       )}
+    </Panel>
+  );
+}
+
+export type FlagRowView = { key: string; label: string; enabled: boolean };
+
+export function AdminFlags({ rows, available }: { rows: FlagRowView[]; available: boolean }) {
+  const [values, setValues] = useState<Record<string, boolean>>(() => Object.fromEntries(rows.map((r) => [r.key, r.enabled])));
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function toggle(key: string, enabled: boolean) {
+    setBusyKey(key);
+    setErr(null);
+    try {
+      const res = await fetch("/api/admin/flags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, enabled }),
+      });
+      if (res.ok) setValues((v) => ({ ...v, [key]: enabled }));
+      else setErr(res.status === 503 ? "Feature switches need a database update first." : "Could not save the change.");
+    } catch {
+      setErr("Could not reach the server.");
+    }
+    setBusyKey(null);
+  }
+
+  return (
+    <Panel>
+      <PanelHeader title="Feature switches" meta="takes effect within about a minute" />
+      <div className="space-y-1 p-3">
+        {!available && (
+          <Notice tone="warning" title="Switches table missing">Apply the database migrations (see .planning/DB-MIGRATIONS.md). Everything stays on until then.</Notice>
+        )}
+        {err && <Notice tone="danger">{err}</Notice>}
+        {rows.map((r) => (
+          <Switch
+            key={r.key}
+            label={r.label}
+            description={r.key}
+            checked={values[r.key] ?? r.enabled}
+            disabled={!available || busyKey === r.key}
+            onChange={(v) => void toggle(r.key, v)}
+          />
+        ))}
+      </div>
     </Panel>
   );
 }

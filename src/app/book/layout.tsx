@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { AudioLines } from "lucide-react";
+import { PublicNotice } from "@/components/PublicNotice";
+import { isFlagOn } from "@/lib/flags";
 
 export const metadata: Metadata = {
   title: "Book a time | Minutely",
@@ -8,7 +10,10 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 };
 
-export default function BookLayout({ children }: { children: React.ReactNode }) {
+export const dynamic = "force-dynamic";
+
+export default async function BookLayout({ children }: { children: React.ReactNode }) {
+  const on = await isFlagOn("scheduling");
   return (
     <div className="min-h-dvh">
       <header className="border-b border-border/70 bg-card pt-[env(safe-area-inset-top)]">
@@ -21,7 +26,7 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
           </span>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-4xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">{children}</main>
+      <main className="mx-auto w-full max-w-4xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">{on ? children : <PublicNotice title="Booking is turned off">Please contact the person who sent you this link.</PublicNotice>}</main>
       <footer className="mx-auto w-full max-w-4xl px-4 pb-10 text-meta text-muted-foreground sm:px-6">
         Scheduling by Minutely
       </footer>
