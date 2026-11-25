@@ -145,7 +145,7 @@ export function Recorder() {
   }, []);
   const lockedRecordingOn = useFlag("offlineLockedRecording");
   const nameSuggestionsOn = useFlag("nameSuggestions");
-  const nativeLocal = inApp && localCapture && lockedRecordingOn && onDevice !== null;
+  const nativeLocal = inApp && localCapture && (lockedRecordingOn || nativeRec.isRecording || nativeRec.isStarting) && onDevice !== null;
   const nativeMode = inApp && (effective === "deepgram" || nativeRec.isRecording || nativeRec.isStarting);
   const rec = nativeMode ? nativeRec : webRec;
   useEffect(() => {

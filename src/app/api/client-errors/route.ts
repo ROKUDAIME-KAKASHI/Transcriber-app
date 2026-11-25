@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { FailureLimiter } from "@/lib/adminAuthCore";
 import { getUserId } from "@/lib/auth";
-import { ERROR_KINDS, LIMITS, clip, fingerprint, sanitizeUrl, scrubMessage } from "@/lib/errorLogCore";
+import { ERROR_KINDS, LIMITS, fingerprint, sanitizeUrl, scrubMessage, scrubStack } from "@/lib/errorLogCore";
 import { isErrorLogMissing } from "@/lib/errorLogDb";
 import { prisma } from "@/lib/prisma";
 import { logServerError } from "@/lib/serverLog";
@@ -27,6 +27,7 @@ export async function POST(req: Request) {
   if (limiter.blocked(ip)) return noContent();
   limiter.fail(ip);
 
+  if (Number(req.headers.get("content-length") ?? 0) > 40_000) return noContent();
   const raw = await req.text().catch(() => "");
   if (raw.length > 40_000) return noContent();
   let json: unknown;
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
   const b = parsed.data;
 
   const message = scrubMessage(b.message);
-  const stack = b.stack ? clip(b.stack, LIMITS.stack) : null;
+  const stack = b.stack ? scrubStack(b.stack) : null;
   const fp = fingerprint(b.kind, message, stack);
   const now = new Date();
 
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
           message,
           stack,
           url: sanitizeUrl(b.url),
-          userAgent: clip(req.headers.get("user-agent") ?? "", LIMITS.userAgent) || null,
+          userAgent: (req.headers.get("user-agent") ?? "").slice(0, LIMITS.userAgent) || null,
           appVersion: b.appVersion ?? null,
           fingerprint: fp,
           lastSeenAt: now,

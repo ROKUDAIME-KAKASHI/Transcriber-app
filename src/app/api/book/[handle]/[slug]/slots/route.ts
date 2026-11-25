@@ -1,3 +1,4 @@
+import { isFlagOn } from "@/lib/flags";
 import { prisma } from "@/lib/prisma";
 import { MAX_RANGE_DAYS, generateSlots } from "@/lib/scheduling";
 import { NO_STORE, findPublicEvent, isSchedulingMissing, schedulingMissing } from "@/lib/schedulingDb";
@@ -6,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** Free start times (ISO, UTC) between ?from= and ?to=, at most 45 days apart. Public. */
 export async function GET(req: Request, ctx: { params: Promise<{ handle: string; slug: string }> }) {
+  if (!(await isFlagOn("scheduling"))) return Response.json({ error: "Booking is turned off" }, { status: 503, headers: NO_STORE });
   const { handle, slug } = await ctx.params;
   const q = new URL(req.url).searchParams;
   const from = new Date(q.get("from") ?? "");

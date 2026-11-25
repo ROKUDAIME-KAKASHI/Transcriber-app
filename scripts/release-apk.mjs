@@ -70,6 +70,18 @@ function run(cmd, cmdArgs, opts = {}) {
   }
 }
 
+// Ctrl+C or an unexpected exception must not leave half-bumped version files behind.
+let done = false;
+process.on("SIGINT", () => {
+  if (!done) restore();
+  process.exit(130);
+});
+process.on("uncaughtException", (e) => {
+  if (!done) restore();
+  console.error(`release-apk: ${e?.message ?? e}`);
+  process.exit(1);
+});
+
 fs.writeFileSync(gradleFile, bumpGradle(gradleOrig, plan.versionCode, plan.versionName));
 fs.writeFileSync(releaseFile, bumpAppRelease(releaseOrig, plan.versionCode, plan.versionName, plan.notes));
 
@@ -87,4 +99,5 @@ for (const t of targets) {
   fs.copyFileSync(builtApk, t);
   console.log(`release-apk: wrote ${path.relative(root, t)}`);
 }
+done = true;
 console.log(`release-apk: done. Commit android/app/build.gradle, src/lib/appRelease.ts and public/downloads/Minutely.apk on a branch, then follow .planning/RELEASE.md.`);

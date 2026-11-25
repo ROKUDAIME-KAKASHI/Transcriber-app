@@ -10,9 +10,24 @@ Until now the schema was applied with `prisma db push`. From now on every schema
 | `prisma/migrations/1_safety` | New Step-0 tables: `ClientError` (error log) and `FeatureFlag` (feature switches) |
 | `prisma/migrations/migration_lock.toml` | Says the provider is postgresql |
 
+## Step 0 (read-only): check the live database really matches `0_init`
+
+Run this first. It only reads the database structure and writes nothing. It compares the live database (direct, non-pooled connection) with what the migration folders would build:
+
+```bash
+npx prisma migrate diff --from-url "$DATABASE_URL_UNPOOLED" --to-migrations prisma/migrations --script
+```
+
+(`--to-migrations` needs a throw-away "shadow" database. If Prisma asks for one, add `--shadow-database-url <an empty scratch database>`, never the live one. A free empty Neon branch works.)
+
+- **Output with only `CREATE TABLE "ClientError"`, `CREATE TABLE "FeatureFlag"` and their `CREATE INDEX` lines** (everything else empty): the live database already matches `0_init`, and the diff is exactly what `1_safety` will add. Safe to baseline.
+- **Anything else** (`ALTER TABLE`, `DROP`, other tables or columns): the live database has drifted from `0_init`. Do NOT run `migrate resolve`. Send the output to the developer first.
+
+An output of `-- This is an empty migration.` would mean `1_safety` was already applied, which is also fine.
+
 ## One-time baseline for the existing live database (owner does this once)
 
-The live database already contains everything in `0_init` (it was created by `db push`), so `0_init` must be marked as already applied instead of being run. Run these from the project folder with the **live** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in your environment (the live values from Vercel / `.env`):
+The live database already contains everything in `0_init` (it was created by `db push`), so `0_init` must be marked as already applied instead of being run. Run these from the project folder with the **live** `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct, used by Prisma migrate through `directUrl`) in your environment (the live values from Vercel / `.env`):
 
 ```bash
 npx prisma migrate resolve --applied 0_init

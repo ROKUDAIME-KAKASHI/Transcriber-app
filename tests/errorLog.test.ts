@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { createReportGate, fingerprint, hashString, sanitizeUrl, scrubMessage, topFrame } from "../src/lib/errorLogCore.ts";
+import { createReportGate, fingerprint, hashString, sanitizeUrl, scrubMessage, scrubStack, topFrame } from "../src/lib/errorLogCore.ts";
 
 describe("errorLogCore", () => {
   test("hashString is stable and 16 hex chars", () => {
@@ -43,5 +43,10 @@ describe("errorLogCore", () => {
     assert.equal(g.allow("a"), false);
     for (let i = 0; i < 9; i++) assert.equal(g.allow("k" + i), true);
     assert.equal(g.allow("one-too-many"), false);
+  });
+
+  test("scrubMessage and scrubStack remove emails and query strings", () => {
+    assert.equal(scrubMessage("failed for a.b@x.co at https://h/p?token=1"), "failed for [email] at https://h/p");
+    assert.equal(scrubStack("at f (https://h/a.js?t=secret:1:2) a@b.io"), "at f (https://h/a.js) [email]");
   });
 });

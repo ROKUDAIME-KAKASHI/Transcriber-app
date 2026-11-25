@@ -21,13 +21,25 @@ export function sanitizeUrl(raw: string | undefined | null): string | null {
   return clip(s, LIMITS.url);
 }
 
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+
 /** Removes obvious secrets from a free-text message: query strings and long token-like runs. */
 export function scrubMessage(raw: string): string {
   const s = String(raw)
     .replace(/(https?:\/\/[^\s"'<>?#]+)[?#][^\s"'<>]*/gi, "$1")
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
+    .replace(EMAIL_RE, "[email]")
     .replace(/[A-Za-z0-9_-]{32,}/g, "[redacted]");
   return clip(s, LIMITS.message);
+}
+
+/** Stack traces: drop query strings, emails and bearer tokens but keep the frames readable. */
+export function scrubStack(raw: string): string {
+  const s = String(raw)
+    .replace(/(https?:\/\/[^\s"'<>?#)]+)[?#][^\s"'<>)]*/gi, "$1")
+    .replace(/(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
+    .replace(EMAIL_RE, "[email]");
+  return clip(s, LIMITS.stack);
 }
 
 /** First meaningful stack frame, with line/column and query strings removed so deploys of the same bug match. */
