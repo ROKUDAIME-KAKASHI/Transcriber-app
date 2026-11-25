@@ -4,11 +4,15 @@ import { summaryModel } from "@/lib/ai";
 import { aiFailure } from "@/lib/aiErrors";
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
+import { FailureLimiter } from "@/lib/adminAuthCore";
 import { withLegacyFallback } from "@/lib/meetingSelect";
 import { parseTranscript, speakerLabel, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
 import { buildActionItemsPrompt, chunkLines, mergeItems, parseActionItems, verifyItems } from "@/lib/actionItems";
 
 // Long meetings take a few model calls, two at a time (AICredits rejects more at once).
+/** Best-effort per-user cap on AI calls (per server instance) to bound cost. */
+const limiter = new FailureLimiter(30, 60 * 60 * 1000);
+
 export const maxDuration = 300;
 const CHUNK_CONCURRENCY = 2;
 
@@ -34,6 +38,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const userId = await getUserId();
   if (!userId) return unauthorized();
   const { id } = await params;
+  if (limiter.blocked(userId)) return Response.json({ error: "Too many extractions. Try again later." }, { status: 429 });
+  limiter.fail(userId);
 
   const body = Body.safeParse(await req.json().catch(() => ({})));
   if (!body.success) return Response.json({ error: "Invalid request" }, { status: 400 });

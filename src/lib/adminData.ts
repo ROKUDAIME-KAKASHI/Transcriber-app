@@ -17,7 +17,6 @@ export type RecentMeeting = {
   id: string;
   createdAt: Date;
   email: string;
-  title: string;
   durationSec: number;
   engine: string | null;
   status: string;
@@ -36,7 +35,7 @@ export type AdminData = {
   engineAvailable: boolean;
 };
 
-/** Aggregates only: never selects transcript, document or speaker names. */
+/** Aggregates only: never selects transcript, document, titles or speaker names. */
 async function load(legacy: boolean): Promise<AdminData> {
   const now = new Date();
   const since7 = new Date(now.getTime() - 7 * DAY);
@@ -55,12 +54,12 @@ async function load(legacy: boolean): Promise<AdminData> {
       ? prisma.meeting.findMany({
           orderBy: { createdAt: "desc" },
           take: 50,
-          select: { id: true, title: true, status: true, durationSec: true, createdAt: true, user: { select: { email: true } } },
+          select: { id: true, status: true, durationSec: true, createdAt: true, user: { select: { email: true } } },
         })
       : prisma.meeting.findMany({
           orderBy: { createdAt: "desc" },
           take: 50,
-          select: { id: true, title: true, status: true, durationSec: true, engine: true, createdAt: true, user: { select: { email: true } } },
+          select: { id: true, status: true, durationSec: true, engine: true, createdAt: true, user: { select: { email: true } } },
         }),
   ]);
 
@@ -83,12 +82,11 @@ async function load(legacy: boolean): Promise<AdminData> {
     userStats: foldUsers(rows, users),
     daily: dailySeries(wr, 30, now),
     recent: (recent as unknown as {
-      id: string; title: string; status: string; durationSec: number; engine?: string | null; createdAt: Date; user: { email: string };
+      id: string; status: string; durationSec: number; engine?: string | null; createdAt: Date; user: { email: string };
     }[]).map((m) => ({
       id: m.id,
       createdAt: m.createdAt,
       email: m.user.email,
-      title: m.title,
       durationSec: m.durationSec,
       engine: m.engine ?? null,
       status: m.status,

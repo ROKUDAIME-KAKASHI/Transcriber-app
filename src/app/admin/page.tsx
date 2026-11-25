@@ -129,7 +129,7 @@ export default async function AdminPage() {
           <table className="w-full min-w-[720px] text-left text-meta">
             <thead className="text-muted-foreground">
               <tr className="border-b border-border/70">
-                {["Date (UTC)", "User", "Title", "Duration", "Engine", "Status"].map((h) => (
+                {["Date (UTC)", "User", "Duration", "Engine", "Status"].map((h) => (
                   <th key={h} className="whitespace-nowrap px-4 py-2 font-semibold">{h}</th>
                 ))}
               </tr>
@@ -139,7 +139,6 @@ export default async function AdminPage() {
                 <tr key={r.id} className="border-b border-border/40 last:border-0">
                   <td className="whitespace-nowrap px-4 py-2">{fmtDateTime(r.createdAt)}</td>
                   <td className="px-4 py-2">{r.email}</td>
-                  <td className="max-w-[240px] truncate px-4 py-2">{r.title}</td>
                   <td className="whitespace-nowrap px-4 py-2">{fmtDuration(r.durationSec)}</td>
                   <td className="px-4 py-2">
                     <Badge tone={engineKind(r.engine) === "cloud" ? "accent" : "neutral"}>{r.engine ?? "unknown"}</Badge>

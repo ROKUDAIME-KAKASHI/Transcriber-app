@@ -254,7 +254,9 @@ function TaskTrackerInner() {
           if (!cur || !before) return cur;
           const old = before;
           const restore: Patch = {};
-          for (const k of Object.keys(p) as (keyof Patch)[]) (restore as Record<string, unknown>)[k] = old[k];
+          const now = cur.find((i) => i.id === id);
+          // Skip a field a newer edit has since changed, so a late failure can't undo it.
+          for (const k of Object.keys(p) as (keyof Patch)[]) if (now && now[k] === p[k]) (restore as Record<string, unknown>)[k] = old[k];
           return sortTasks(cur.map((i) => (i.id === id ? { ...i, ...restore } : i)));
         });
         toast("Couldn't update the task. Try again.", "danger");
