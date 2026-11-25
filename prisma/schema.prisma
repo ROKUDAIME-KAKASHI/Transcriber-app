@@ -70,11 +70,31 @@ model ActionItem {
   /// NOT_STARTED | IN_PROGRESS | BLOCKED | DONE
   status       String    @default("NOT_STARTED")
   note         String?
+  /// Soft delete: set when the user deletes the task, so its change history survives. Filtered out of every list.
+  deletedAt    DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  events       ActionItemEvent[]
 
   @@index([userId, status])
   @@index([meetingId])
+}
+
+/// One change to a task: created, one field updated, or deleted. Powers the history in the tracker.
+model ActionItemEvent {
+  id           String     @id @default(cuid())
+  actionItemId String
+  actionItem   ActionItem @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+  userId       String
+  /// created | updated | deleted
+  action       String
+  /// status | owner | dueDate | note | task (updated only)
+  field        String?
+  oldValue     String?
+  newValue     String?
+  createdAt    DateTime   @default(now())
+
+  @@index([actionItemId, createdAt])
 }
 
 /// One weekly availability range, in the host's time zone. Minutes from midnight.
