@@ -16,8 +16,11 @@ const DEVICE_WORDS =
 const UI_WORDS =
   /\b(mute|muted|unmute|camera|microphone|mic|participants?|recording|joining|waiting|present(?:ing|ation)?|screen|captions?|raise|hand|pin|pinned|more|options|reactions?|chat|people|share|leave|end|call|live|you)\b/i;
 
-const MAX_WORDS = 4;
-const MAX_LEN = 40;
+/** Names are data that end up in AI prompts: a person's name is never an instruction. */
+const INSTRUCTION_WORDS = /\b(ignore|disregard|forget|override|instructions?|system|prompts?|assistant|developer|jailbreak|output)\b/i;
+
+const MAX_WORDS = 3;
+const MAX_LEN = 30;
 
 /** Common OCR mix-ups inside a word: 0 -> o, 1 -> l, 5 -> s, 8 -> b (only when letters surround them). */
 function fixDigits(word: string): string {
@@ -45,7 +48,7 @@ export function cleanName(raw: string | null | undefined): CleanName | null {
   const name = words.join(" ");
   const letters = name.replace(/[^\p{L}]/gu, "");
   if (letters.length < 2 || name.length > MAX_LEN) return null;
-  if (DEVICE_WORDS.test(name) || UI_WORDS.test(name)) return null;
+  if (DEVICE_WORDS.test(name) || UI_WORDS.test(name) || INSTRUCTION_WORDS.test(name)) return null;
   // Names are not made of single letters ("i l t", "A B"). One initial next to a real word ("Rahul K") is fine.
   const singles = words.filter((w) => w.replace(/[^\p{L}]/gu, "").length === 1).length;
   if (singles >= 2 || singles === words.length) return null;
@@ -104,14 +107,28 @@ export interface RosterMatch {
 
 export const ROSTER_THRESHOLD = 0.8;
 
-function scoreAgainst(cand: string, truncated: boolean, rosterKey: string): number {
-  let best = Math.max(similarity(cand, rosterKey), similarity(sortedTokens(cand), sortedTokens(rosterKey)));
+/** Names shorter than this (letters only) must match exactly: "Amit" is not "Amita", "Ravi" is not "Ravina". */
+export const MIN_FUZZY_LETTERS = 5;
+
+const letterCount = (k: string) => k.replace(/ /g, "").length;
+
+function scoreAgainst(cand: string, truncated: boolean, rosterKey: string, firstNameOnly: boolean): number {
+  const exact = cand === rosterKey || sortedTokens(cand) === sortedTokens(rosterKey);
+  let best = 0;
+  if (exact) best = 1;
+  else if (Math.min(letterCount(cand), letterCount(rosterKey)) >= MIN_FUZZY_LETTERS) {
+    best = Math.max(similarity(cand, rosterKey), similarity(sortedTokens(cand), sortedTokens(rosterKey)));
+  }
   const ct = cand.split(" ");
   const rt = rosterKey.split(" ");
-  // A first name alone ("Priya") for "Priya Nair".
-  if (ct.length === 1 && rt.length > 1 && similarity(ct[0], rt[0]) >= 0.85) best = Math.max(best, 0.85 * similarity(ct[0], rt[0]) + 0.1);
-  // A cut-off label ("priyanka sh") is the start of the full name.
-  if (truncated && cand.length >= 4 && rosterKey.startsWith(cand.replace(/\s+\S{0,2}$/, ""))) best = Math.max(best, 0.9);
+  // A first name alone ("Priya") for "Priya Nair": only where allowed, and only when nobody else in the roster has that first name.
+  if (firstNameOnly && ct.length === 1 && rt.length > 1) {
+    const s = similarity(ct[0], rt[0]);
+    if (ct[0] === rt[0] || (Math.min(ct[0].length, rt[0].length) >= MIN_FUZZY_LETTERS && s >= 0.85)) best = Math.max(best, 0.85 * s + 0.1);
+  }
+  // A cut-off label ("priyanka sh") is the start of the full name (the part before the cut must be a real stretch of it).
+  const stem = cand.replace(/\s+\S{0,2}$/, "");
+  if (truncated && stem.length >= MIN_FUZZY_LETTERS && rosterKey.startsWith(stem)) best = Math.max(best, 0.9);
   return best;
 }
 
@@ -119,16 +136,27 @@ function scoreAgainst(cand: string, truncated: boolean, rosterKey: string): numb
  * The roster entry this name is (the roster spelling is used so "Rahul Sharma" and "rahul sharrna" collapse),
  * or null. When two different people fit equally well the answer is null: better no name than a wrong one.
  */
-export function matchRoster(candidate: string, roster: ReadonlyArray<string>, truncated = false, threshold = ROSTER_THRESHOLD): RosterMatch | null {
+export function matchRoster(
+  candidate: string,
+  roster: ReadonlyArray<string>,
+  truncated = false,
+  threshold = ROSTER_THRESHOLD,
+  /** Allow "Priya" to stand for "Priya Nair" (only when that first name is unique in the roster). */
+  allowFirstName = true,
+): RosterMatch | null {
   const cand = normKey(candidate);
   if (!cand) return null;
+  const firstOf = (k: string) => k.split(" ")[0];
+  const keys = [...new Set(roster.map(normKey).filter(Boolean))];
+  const sameFirst = cand.includes(" ") ? 0 : keys.filter((k) => k.includes(" ") && similarity(firstOf(cand), firstOf(k)) >= 0.85).length;
+  const firstNameOnly = allowFirstName && sameFirst === 1;
   const scored: Array<{ name: string; key: string; score: number }> = [];
   const seen = new Set<string>();
   for (const r of roster) {
     const key = normKey(r);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    scored.push({ name: r.trim(), key, score: scoreAgainst(cand, truncated, key) });
+    scored.push({ name: r.trim(), key, score: scoreAgainst(cand, truncated, key, firstNameOnly) });
   }
   scored.sort((a, b) => b.score - a.score);
   const top = scored[0];
@@ -170,7 +198,7 @@ export function resolveWithRosters(
   if (!c) return null;
   const a = matchRoster(c.name, attendees, c.truncated);
   if (a) return { name: a.name, roster: true };
-  const d = matchRoster(c.name, directory, c.truncated, DIRECTORY_THRESHOLD);
+  const d = matchRoster(c.name, directory, c.truncated, DIRECTORY_THRESHOLD, false);
   if (d) return { name: d.name, roster: true };
   if (c.truncated) return null;
   return { name: c.name, roster: false };

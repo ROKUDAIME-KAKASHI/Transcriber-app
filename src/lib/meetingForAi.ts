@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { withLegacyFallback } from "@/lib/meetingSelect";
-import { parseTranscript, speakerLabel, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
+import { aiSpeakerLabel, parseTranscript, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
 
 export interface AiMeeting {
   title: string;
@@ -40,7 +40,7 @@ export async function loadMeetingForAi(id: string, userId: string): Promise<AiMe
 export function labelledLines(parts: TranscriptPart[], names: SpeakerNames): string[] {
   const multi = new Set(parts.map((p) => p.speaker)).size > 1;
   return parts
-    .map((p) => ({ who: speakerLabel(p.speaker, names), text: p.text.replace(/\s+/g, " ").trim() }))
+    .map((p) => ({ who: aiSpeakerLabel(p.speaker, names), text: p.text.replace(/\s+/g, " ").trim() }))
     .filter((p) => p.text)
     .map((p) => (multi ? `${p.who}: ${p.text}` : p.text));
 }

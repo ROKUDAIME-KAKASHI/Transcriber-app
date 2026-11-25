@@ -76,7 +76,7 @@ async function run(userId: string, id: string, opts: z.infer<typeof Body>): Prom
   limiter.fail(userId);
 
   const multiSpeaker = new Set(meeting.parts.map((p) => p.speaker)).size > 1;
-  const raw = transcriptToText(meeting.parts, { names: meeting.names, multiSpeaker });
+  const raw = transcriptToText(meeting.parts, { names: meeting.names, multiSpeaker, forAi: true });
   const header = `Meeting: ${oneLine(meeting.title)}\nLength: ${Math.round(meeting.durationSec / 60)} min`;
   const model = summaryModel(opts.model);
 

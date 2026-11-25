@@ -9,7 +9,7 @@ import { isFlagOn } from "@/lib/flags";
 import { planPromptBlock } from "@/lib/planning";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { withLegacyFallback } from "@/lib/meetingSelect";
-import { parseTranscript, transcriptToText } from "@/lib/transcript";
+import { UNTRUSTED_LABELS_NOTE, parseTranscript, transcriptToText } from "@/lib/transcript";
 import { FULL_TRANSCRIPT_SECTION, PROMPTS } from "@/lib/minutesPrompts";
 
 // Long meetings take several AI calls. 300 s is the most every Vercel plan allows; if the platform cuts
@@ -127,7 +127,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Decided once for the whole meeting so every chunk of a long meeting is labelled alike.
   const multiSpeaker = new Set(parts.map((p) => p.speaker)).size > 1;
   // [mm:ss] text per line; "Name:" / "Speaker N:" labels when the meeting has several speakers.
-  const raw = transcriptToText(parts, { names, multiSpeaker });
+  const raw = transcriptToText(parts, { names, multiSpeaker, forAi: true });
   const words = parts.reduce((n, p) => n + p.text.split(/\s+/).length, 0);
   const includeFullTranscript = words <= FULL_TRANSCRIPT_MAX_WORDS;
   if (!raw.trim()) return Response.json({ error: "This meeting has no transcript yet." }, { status: 400 });
@@ -159,8 +159,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           maxOutputTokens: 4000,
           maxRetries: 2,
           abortSignal: AbortSignal.timeout(180_000),
-          system: NOTES_PROMPT,
-          prompt: `Part ${i + 1} of ${chunks.length}${multiSpeaker ? " (speaker labels are consistent across parts)" : ""}:\n\n${transcriptToText(chunk, { names, multiSpeaker })}`,
+          system: NOTES_PROMPT + UNTRUSTED_LABELS_NOTE,
+          prompt: `Part ${i + 1} of ${chunks.length}${multiSpeaker ? " (speaker labels are consistent across parts)" : ""}:\n\n${transcriptToText(chunk, { names, multiSpeaker, forAi: true })}`,
         });
         return `## Part ${i + 1} of ${chunks.length}\n\n${r.text.trim()}`;
       });
@@ -172,7 +172,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       maxOutputTokens: 16000,
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(240_000),
-      system: PROMPTS[template] + planBlock + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
+      system: PROMPTS[template] + UNTRUSTED_LABELS_NOTE + planBlock + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
       prompt,
     });
     const document = unwrapFence(result.text);

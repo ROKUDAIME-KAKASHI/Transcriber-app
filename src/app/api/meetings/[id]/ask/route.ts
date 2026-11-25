@@ -6,7 +6,7 @@ import { getUserId, unauthorized } from "@/lib/auth";
 import { isFlagOn } from "@/lib/flags";
 import { FailureLimiter } from "@/lib/adminAuthCore";
 import { logServerError } from "@/lib/serverLog";
-import { speakerLabel } from "@/lib/transcript";
+import { aiSpeakerLabel } from "@/lib/transcript";
 import { loadMeetingForAi } from "@/lib/meetingForAi";
 import {
   ASK_SYSTEM, MAX_HISTORY_CHARS, MAX_HISTORY_TURNS, MAX_QUESTION_CHARS, askPrompt, chunkTranscript, parseAskReply, renderContext,
@@ -47,7 +47,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!meeting) return Response.json({ error: "Meeting not found" }, { status: 404 });
   if (!meeting.parts.some((p) => p.text.trim())) return Response.json({ error: "This meeting has no transcript yet." }, { status: 400 });
 
-  const chunks = chunkTranscript(meeting.parts, (s) => speakerLabel(s, meeting.names));
+  const chunks = chunkTranscript(meeting.parts, (s) => aiSpeakerLabel(s, meeting.names));
   const picked = selectChunks(chunks, body.data.question);
   // Quotes are checked against the whole transcript, not only the excerpts that were sent.
   const haystack = meeting.parts.map((p) => p.text).join("\n");
