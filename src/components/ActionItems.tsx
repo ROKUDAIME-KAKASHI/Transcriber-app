@@ -50,7 +50,13 @@ export function ActionItems({
   names,
   hasTranscript,
   meetingTitle,
+  seed,
+  onSaved,
 }: {
+  /** Items found together with the minutes. They fill the review list; nothing is saved until the user approves. */
+  seed?: { task: string; owner: string | null; deadlineText: string | null; sourceQuote: string; verified: boolean }[] | null;
+  /** Called after the user saved the reviewed items (so the seed is not offered again). */
+  onSaved?: () => void;
   meetingId: string;
   meetingTitle?: string;
   parts: TranscriptPart[];
@@ -110,6 +116,25 @@ export function ActionItems({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Items that came with the minutes appear for review once the saved list is known (so duplicates start unchecked).
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !seed || saved === null || rows !== null) return;
+    seeded.current = true;
+    setRows(
+      seed.map((i) => ({
+        key: keyRef.current++,
+        checked: matchTask(i.task, savedTasks)?.kind !== "same",
+        task: i.task,
+        owner: i.owner ?? "",
+        ownerId: null,
+        deadline: i.deadlineText ?? "",
+        quote: i.sourceQuote,
+        verified: i.verified,
+      }))
+    );
+  }, [seed, saved, rows, savedTasks]);
 
   const extract = async () => {
     setError(null);
@@ -186,6 +211,7 @@ export function ActionItems({
       const data = (await res.json()) as { items: SavedItem[]; saved: number; skipped?: number };
       setSaved(data.items);
       setRows(null);
+      onSaved?.();
       const n = `${data.saved} ${data.saved === 1 ? "task" : "tasks"}`;
       toast(data.skipped ? `Saved ${n} · ${data.skipped} ${data.skipped === 1 ? "duplicate" : "duplicates"} skipped` : `Saved ${n}`, "success");
     } catch {

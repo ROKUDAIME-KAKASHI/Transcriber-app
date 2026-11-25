@@ -10,6 +10,7 @@ import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
 import { isNativeApp, nativeCapabilities } from "@/lib/nativeRecorder";
 import { useFlag } from "@/lib/flagsClient";
+import { enqueueAuto } from "@/lib/minutesJob";
 import { setWebRecording } from "@/lib/recordingFlag";
 import { formatDuration } from "@/lib/transcript";
 import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
@@ -404,6 +405,15 @@ export function Recorder() {
     () => rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0),
     [rec.transcriptParts]
   );
+
+  // Stop -> write the minutes for this meeting once (queued; the runner waits for internet and sign-in).
+  const autoMinutesOn = useFlag("autoMinutes");
+  const queuedMeeting = useRef<string | null>(null);
+  useEffect(() => {
+    if (!finished || !autoMinutesOn || !rec.meetingId || queuedMeeting.current === rec.meetingId) return;
+    queuedMeeting.current = rec.meetingId;
+    enqueueAuto(rec.meetingId, words);
+  }, [finished, autoMinutesOn, rec.meetingId, words]);
 
   const mode = calmMode({
     recording: busy,
