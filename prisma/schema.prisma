@@ -24,6 +24,8 @@ model User {
   bookings    Booking[]
   agendaDrafts AgendaDraft[]
   stakeholders Stakeholder[]
+  meetingSeries MeetingSeries[]
+  plannedMeetings PlannedMeeting[]
 }
 
 model Meeting {
@@ -212,4 +214,66 @@ model Stakeholder {
   deletedAt    DateTime?
 
   @@index([userId, name])
+}
+
+/// A run of related meetings (weekly review, monthly board). Soft-deleted; its plans stay.
+model MeetingSeries {
+  id                 String           @id @default(cuid())
+  userId             String
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title              String
+  /// NONE | WEEKLY | BIWEEKLY | MONTHLY
+  cadence            String           @default("NONE")
+  defaultDurationMin Int              @default(30)
+  defaultVenue       String?
+  defaultCallUrl     String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  deletedAt          DateTime?
+  plans              PlannedMeeting[]
+
+  @@index([userId])
+}
+
+/// A meeting that exists before it happens: time, venue or link, attendees, agenda.
+model PlannedMeeting {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seriesId    String?
+  series      MeetingSeries?     @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  title       String
+  startAt     DateTime
+  durationMin Int
+  /// IANA zone the host planned it in
+  timeZone    String
+  venue       String?
+  callUrl     String?
+  agenda      String?            @db.Text
+  /// PLANNED | RECORDED | CANCELLED
+  status      String             @default("PLANNED")
+  /// The recorded Meeting. No foreign key: meetings are created on the device first and reach the server later.
+  meetingId   String?            @unique
+  /// The booking this plan came from, if any (no foreign key either)
+  bookingId   String?            @unique
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+  attendees   PlannedAttendee[]
+
+  @@index([userId, startAt])
+}
+
+/// One invited person on a plan. stakeholderId has no foreign key (a deleted person keeps their name here).
+model PlannedAttendee {
+  id               String         @id @default(cuid())
+  plannedMeetingId String
+  plannedMeeting   PlannedMeeting @relation(fields: [plannedMeetingId], references: [id], onDelete: Cascade)
+  stakeholderId    String?
+  name             String
+  email            String?
+  designation      String?
+  role             String?
+
+  @@index([plannedMeetingId])
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { FailureLimiter } from "@/lib/adminAuthCore";
 import { sendCancelEmail } from "@/lib/bookingEmail";
+import { cancelPlanForBooking } from "@/lib/planningDb";
 import { NO_STORE, clientIp, isSchedulingMissing, schedulingMissing, tokensEqual } from "@/lib/schedulingDb";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ bookingId: str
     if (!b || !tokensEqual(body.data.t, b.cancelToken)) return notFound();
     if (b.status !== "CANCELLED") {
       await prisma.booking.update({ where: { id: b.id }, data: { status: "CANCELLED" }, select: { id: true } });
+      await cancelPlanForBooking(b.id);
       const origin = new URL(req.url).origin;
       after(() =>
         sendCancelEmail(

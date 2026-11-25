@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { sendCancelEmail } from "@/lib/bookingEmail";
+import { cancelPlanForBooking } from "@/lib/planningDb";
 import { NO_STORE, isSchedulingMissing, schedulingMissing } from "@/lib/schedulingDb";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     if (!b) return Response.json({ error: "Booking not found." }, { status: 404, headers: NO_STORE });
     if (b.status !== "CANCELLED") {
       await prisma.booking.update({ where: { id }, data: { status: "CANCELLED" }, select: { id: true } });
+      await cancelPlanForBooking(b.id);
       const origin = new URL(req.url).origin;
       after(() =>
         sendCancelEmail(
