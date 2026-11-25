@@ -9,6 +9,7 @@ Until now the schema was applied with `prisma db push`. From now on every schema
 | `prisma/migrations/0_init` | The whole schema as it is on the live database today (User, Meeting, ActionItem, Availability, EventType, Booking, AgendaDraft) |
 | `prisma/migrations/1_safety` | New Step-0 tables: `ClientError` (error log) and `FeatureFlag` (feature switches) |
 | `prisma/migrations/2_history` | Phase 11: `ActionItem.deletedAt` (soft delete) and the `ActionItemEvent` change-history table |
+| `prisma/migrations/3_stakeholders` | Phase 12: the `Stakeholder` table (People directory) |
 | `prisma/migrations/migration_lock.toml` | Says the provider is postgresql |
 
 ## Step 0 (read-only): check the live database really matches `0_init`
@@ -52,9 +53,19 @@ Additive only: one nullable column and one new table, so the old app keeps worki
 
 Until it is applied the app still works. Deleting a task removes it for real (no soft delete), no history is written and the History section in the tracker stays hidden. After it is applied, deleted tasks are kept hidden (`deletedAt` set) so their history survives.
 
+## Apply 3_stakeholders (Phase 12)
+
+Additive only: one new table (`Stakeholder`, soft-deleted via `deletedAt`) with an index and a cascade foreign key to `User`. Nothing existing changes.
+
+1. On a Neon preview branch first: `npx prisma migrate deploy` with that branch's `DATABASE_URL` / `DATABASE_URL_UNPOOLED`.
+2. After the pull request is merged, the same command against production.
+3. `npm run db:status` should say "Database schema is up to date".
+
+Until it is applied the app still works: the People page and its API routes answer "Stakeholders need a database update" (503), the pickers fall back to plain text, and every other feature is unaffected. The feature can also be switched off any time in Admin, Feature switches ("People directory").
+
 ### Brand new databases (for example a fresh Neon preview branch)
 
-A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, then `2_history`).
+A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, then `3_stakeholders`).
 
 ## From now on
 

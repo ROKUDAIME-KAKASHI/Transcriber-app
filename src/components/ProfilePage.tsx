@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Check, Copy, Download, RefreshCw, Share2 } from "lucide-react";
+import { Check, ChevronRight, Copy, Download, RefreshCw, Share2, Users } from "lucide-react";
 import { Badge, Button, Panel, PanelHeader, Switch } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
 import { useOfflineReadiness } from "@/components/OfflineModelControl";
 import { useConnectivity } from "@/lib/connectivity";
 import { useMotionPref } from "@/lib/motionPref";
+import { useFlag } from "@/lib/flagsClient";
 import { useSignOut } from "@/hooks/useSignOut";
 import { LATEST_APK } from "@/lib/appRelease";
 import { getInstalledVersion, getLatestApk, isUpdateAvailable, startApkUpdate } from "@/lib/appUpdate";
@@ -349,12 +350,31 @@ function StorageSection() {
   );
 }
 
+/* ---------- People ---------- */
+function PeopleSection() {
+  const on = useFlag("stakeholders");
+  if (!on) return null;
+  return (
+    <Panel aria-label="People">
+      <Link href="/people" className="flex min-h-14 items-center gap-3 rounded-panel px-4 py-3 hover:bg-muted">
+        <Users className="h-5 w-5 shrink-0 text-accent" aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="block text-ui font-semibold">People</span>
+          <span className="block text-meta text-muted-foreground">The people you meet, for attendees and task owners</span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </Link>
+    </Panel>
+  );
+}
+
 export function ProfilePage() {
   const offline = useConnectivity() === "offline";
   return (
     <div className="mx-auto w-full max-w-xl space-y-4">
       <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
       <AccountSection offline={offline} />
+      <PeopleSection />
       <BookingSection offline={offline} />
       <AppSection offline={offline} />
       <PreferencesSection />

@@ -7,7 +7,7 @@ import { useAuth } from "./AuthProvider";
 import { ConnectivityPill } from "./ConnectivityPill";
 import { useConnectivity } from "@/lib/connectivity";
 import { useSignOut } from "@/hooks/useSignOut";
-import { Mic, LayoutList, ListChecks, CalendarClock, LogOut, AudioLines, CircleUser } from "lucide-react";
+import { Mic, LayoutList, ListChecks, CalendarClock, Users, LogOut, AudioLines, CircleUser } from "lucide-react";
 import { cx } from "./ui";
 import { tap } from "@/lib/haptics";
 import { prefersReducedMotion } from "@/lib/motionPref";
@@ -51,6 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const tasksOn = useFlag("taskTracker");
   const scheduleOn = useFlag("scheduling");
   const navItems = NAV.filter((n) => (n.href === "/tasks" ? tasksOn : n.href === "/schedule" ? scheduleOn : true));
+  const peopleOn = useFlag("stakeholders");
   const { user, cachedUser } = useAuth();
   const offline = useConnectivity() === "offline";
   const email = user?.email ?? cachedUser?.email ?? "";
@@ -108,6 +109,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+          {peopleOn && (
+            <Link
+              href="/people"
+              aria-current={pathname.startsWith("/people") ? "page" : undefined}
+              className={cx(
+                "flex min-h-10 items-center gap-3 rounded-btn px-2.5 text-ui font-medium transition-[background-color,transform] duration-[var(--dur-1)] active:scale-[0.96]",
+                pathname.startsWith("/people") ? "bg-accent-soft text-foreground" : "text-muted-foreground hover:bg-muted"
+              )}
+            >
+              <Users className={cx("h-4 w-4", pathname.startsWith("/people") && "text-accent")} />
+              People
+            </Link>
+          )}
         </nav>
         <div className="mt-auto border-t border-border/70 pt-3">
           <div className="flex items-center gap-1 px-1.5">

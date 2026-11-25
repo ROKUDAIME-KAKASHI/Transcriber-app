@@ -1,5 +1,6 @@
 "use client";
 
+import { PersonPicker } from "./PersonPicker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ListChecks, Plus, Trash2, X } from "lucide-react";
 import { useFeatureGate } from "@/lib/featureGate";
@@ -303,11 +304,11 @@ export function ActionItems({
                           <label className="mb-1 block text-meta font-semibold text-muted-foreground md:sr-only" htmlFor={`ai-owner-${r.key}`}>
                             Owner
                           </label>
-                          <input
+                          <PersonPicker
                             id={`ai-owner-${r.key}`}
                             maxLength={100}
                             value={r.owner}
-                            onChange={(e) => update(r.key, { owner: e.target.value })}
+                            onChange={(v) => update(r.key, { owner: v })}
                             className={inputCls}
                             placeholder="Unassigned"
                           />

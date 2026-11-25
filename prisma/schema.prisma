@@ -23,6 +23,7 @@ model User {
   eventTypes  EventType[]
   bookings    Booking[]
   agendaDrafts AgendaDraft[]
+  stakeholders Stakeholder[]
 }
 
 model Meeting {
@@ -191,4 +192,24 @@ model FeatureFlag {
   enabled   Boolean
   note      String?
   updatedAt DateTime @updatedAt
+}
+
+/// A person the user meets: reused when picking attendees and task owners. Soft-deleted so nothing that mentions them is ever lost.
+model Stakeholder {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  designation  String?
+  organisation String?
+  /// Area of involvement
+  area         String?
+  email        String?
+  phone        String?
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([userId, name])
 }
