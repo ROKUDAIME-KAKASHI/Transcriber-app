@@ -1,6 +1,7 @@
 /** Pure duplicate-detection helpers. No imports, so node:test can load them. They only tag; nothing is ever deleted. */
 
 export const NEAR_DUPLICATE = 0.8;
+const MAX_DUP_SCAN = 200;
 
 const ARTICLES = new Set(["a", "an", "the"]);
 
@@ -9,6 +10,8 @@ export function normalizeTaskText(s: string): string {
   return (s ?? "")
     .normalize("NFKC")
     .toLowerCase()
+    // Zero-width joiners sit inside Devanagari conjuncts: drop them so the word is not split.
+    .replace(/[​-‍⁠﻿]/g, "")
     .replace(/[^\p{L}\p{N}\p{M}\s]/gu, " ")
     .split(/\s+/)
     .filter((w) => w && !ARTICLES.has(w))
@@ -16,13 +19,19 @@ export function normalizeTaskText(s: string): string {
 }
 
 /** Token Jaccard similarity of two task texts, 0 to 1. Empty text never matches anything. */
-export function similarity(a: string, b: string): number {
-  const x = new Set(normalizeTaskText(a).split(" ").filter(Boolean));
-  const y = new Set(normalizeTaskText(b).split(" ").filter(Boolean));
+function tokens(s: string): Set<string> {
+  return new Set(normalizeTaskText(s).split(" ").filter(Boolean));
+}
+
+function jaccard(x: Set<string>, y: Set<string>): number {
   if (!x.size || !y.size) return 0;
   let inter = 0;
   for (const t of x) if (y.has(t)) inter++;
   return inter / (x.size + y.size - inter);
+}
+
+export function similarity(a: string, b: string): number {
+  return jaccard(tokens(a), tokens(b));
 }
 
 export type MatchKind = "same" | "near";
@@ -55,13 +64,16 @@ export function findTaskDuplicates<T extends { id: string; task: string; meeting
     else byMeeting.set(t.meeting.id, [t]);
   }
   const out = new Map<string, string>();
-  for (const list of byMeeting.values()) {
+  for (const all of byMeeting.values()) {
+    // Cap the pairwise scan so one huge meeting can't freeze the tracker.
+    const list = all.slice(0, MAX_DUP_SCAN);
+    const sets = list.map((t) => tokens(t.task));
     for (let i = 0; i < list.length; i++) {
       let best = 0;
       let other = "";
       for (let j = 0; j < list.length; j++) {
         if (i === j) continue;
-        const s = similarity(list[i].task, list[j].task);
+        const s = jaccard(sets[i], sets[j]);
         if (s >= NEAR_DUPLICATE && s > best) {
           best = s;
           other = list[j].id;

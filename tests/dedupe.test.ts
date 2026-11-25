@@ -92,3 +92,7 @@ test("sortEvents is newest first and capped", () => {
   assert.equal(out.length, 20);
   assert.ok(out[0].createdAt > out[1].createdAt);
 });
+
+test("Devanagari conjunct with a joiner stays one word", () => {
+  assert.equal(normalizeTaskText("क्\u200dष काम"), "क्ष काम");
+});
