@@ -1,5 +1,6 @@
 "use client";
 
+import { ScreenNamingToggle } from "./ScreenNamingToggle";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Check, ChevronRight, Copy, Download, RefreshCw, Share2, Users } from "lucide-react";
@@ -388,6 +389,7 @@ function PreferencesSection() {
           checked={pref === "reduced"}
           onChange={(on) => setPref(on ? "reduced" : "auto")}
         />
+        <ScreenNamingToggle />
         {tasksOn && plusOn && (
           <Switch
             label="Remind me about overdue tasks"

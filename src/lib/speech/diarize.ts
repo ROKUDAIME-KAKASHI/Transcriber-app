@@ -268,18 +268,21 @@ export function compactLabels(labels: number[]): number[] {
 /**
  * Moves speaker names with the person, not the number (trap 4). A name goes to the final id that most of its
  * live parts now carry, if that id has no name yet. Names whose id has no parts in final are dropped.
+ * `weak` lists live ids whose name was set automatically (read from the call screen): when two voices merge,
+ * a name the user typed always wins over those, whatever the voice numbers.
  */
 export function remapNames(
   names: Record<string, string> | null | undefined,
   live: number[],
   final: number[],
+  weak?: ReadonlySet<number>,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   if (!names) return out;
   const n = Math.min(live.length, final.length);
   const ids = Object.keys(names)
     .filter((k) => String(names[k] ?? "").trim() !== "" && Number.isInteger(Number(k)))
-    .sort((a, b) => Number(a) - Number(b));
+    .sort((a, b) => (weak?.has(Number(a)) ? 1 : 0) - (weak?.has(Number(b)) ? 1 : 0) || Number(a) - Number(b));
   for (const key of ids) {
     const l = Number(key);
     const counts = new Map<number, number>();

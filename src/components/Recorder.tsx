@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
-  MonitorSpeaker, HardDrive, Info, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, FileText, ChevronDown, ArrowDown,
+  MonitorSpeaker, ExternalLink, HardDrive, Info, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, FileText, ChevronDown, ArrowDown, TriangleAlert,
 } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
 import { isNativeApp, nativeCapabilities } from "@/lib/nativeRecorder";
 import { useFlag } from "@/lib/flagsClient";
+import { enqueueAuto } from "@/lib/minutesJob";
+import { useLocalUser } from "./SyncProvider";
 import { setWebRecording } from "@/lib/recordingFlag";
 import { formatDuration } from "@/lib/transcript";
 import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
@@ -30,6 +32,14 @@ import { calmMode, CALM_BOOST_MS } from "@/lib/calmMode";
 import { peekTitlePrefill, setTitlePrefill } from "@/lib/titlePrefill";
 import { peekPlanPrefill, setPlanPrefill } from "@/lib/planLink";
 import { NextUpCard } from "./NextUpCard";
+import {
+  TAB_HINT, TAB_SPEAKER_NOTE, defaultSource, guidedCallAvailable, safeCallUrl, showSourceSelector, type AudioSourceChoice,
+} from "@/lib/tabAudio";
+import { CALL_SILENT_MESSAGE } from "@/lib/guidedCall";
+import { GuidedCall } from "./GuidedCall";
+import { NamingStrip } from "./NamingStrip";
+import { useScreenNamingOptIn } from "@/lib/naming/client";
+import { usePeople } from "@/lib/stakeholdersClient";
 import { useMotionPref } from "@/lib/motionPref";
 import * as haptics from "@/lib/haptics";
 
@@ -37,6 +47,7 @@ const MIC_KEY = "transcriber.micId";
 const ENGINE_KEY = "transcriber.engine";
 const LANG_KEY = "transcriber.language";
 const LAST_ON_DEVICE_KEY = "transcriber.lastOnDeviceEngine";
+const SOURCE_KEY = "transcriber.audioSource";
 
 const ENGINES: { value: RecordEngine; title: string; description: string; aside: string; icon: React.ReactNode }[] = [
   {
@@ -132,7 +143,31 @@ export function Recorder() {
   const gateStart = onDevice
     ? startGate({ preferredCached: cur?.preferredCached ?? false, ortCached: cur?.ortCached ?? false, conn })
     : { allowed: true as boolean, reason: undefined as string | undefined };
-  const webRec = useRecorder({ captureSystemAudio, deviceId: micId, engine: effective, language });
+  // Online calls on a laptop: record a browser tab's audio (optionally with the mic). Hidden in the app, on phones/tablets and where the browser can't share a tab.
+  const tabAudioOn = useFlag("tabAudio");
+  const [tabCapable, setTabCapable] = useState(false);
+  const [guidedCapable, setGuidedCapable] = useState(false);
+  const [audioSource, setAudioSource] = useState<AudioSourceChoice>("mic");
+  const [tabMic, setTabMic] = useState(true);
+  const [callUrl, setCallUrl] = useState<string | null>(null);
+  /** Names of the people planned for this meeting (from the plan the recording is linked to). */
+  const [planAttendees, setPlanAttendees] = useState<string[]>([]);
+  const tabSelector = tabAudioOn && tabCapable;
+  // "Record an online call": same laptop-only rules as the tab source, plus its own switch.
+  const guidedCallOn = useFlag("guidedCall");
+  const guidedEntry = guidedCallOn && tabSelector && guidedCapable;
+  // Screen naming (beta): the People directory helps match names read from the call screen. Only fetched when it can be used.
+  const [namingOptIn] = useScreenNamingOptIn();
+  const peopleDir = usePeople(guidedEntry && namingOptIn);
+  const directoryNames = useMemo(() => peopleDir.people.map((p) => p.name).filter(Boolean).slice(0, 2000), [peopleDir.people]);
+  const [reshareNote, setReshareNote] = useState<string | null>(null);
+  const [resharing, setResharing] = useState(false);
+  const source: AudioSourceChoice = tabSelector ? audioSource : "mic";
+  const webRec = useRecorder({ captureSystemAudio: tabSelector ? false : captureSystemAudio, deviceId: micId, engine: effective, language, source, tabMic });
+  const callSilent = !!webRec.callSilent;
+  useEffect(() => {
+    if (!callSilent) setReshareNote(null);
+  }, [callSilent]);
   const nativeRec = useNativeRecorder({ language });
   // Android app: cloud mode records in a native service that keeps going with the screen off.
   const [inApp, setInApp] = useState(false);
@@ -162,6 +197,28 @@ export function Recorder() {
   const followLive = useCallback((smooth = true) => {
     const c = scrollRef.current;
     if (c) c.scrollTo({ top: c.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  }, []);
+
+  useEffect(() => {
+    const coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+    const capable = showSourceSelector(true, {
+      native: isNativeApp(),
+      userAgent: navigator.userAgent,
+      coarsePointer: coarse,
+      hasGetDisplayMedia: typeof navigator.mediaDevices?.getDisplayMedia === "function",
+    });
+    setTabCapable(capable);
+    setGuidedCapable(guidedCallAvailable({
+      native: isNativeApp(),
+      userAgent: navigator.userAgent,
+      coarsePointer: coarse,
+      hasGetDisplayMedia: typeof navigator.mediaDevices?.getDisplayMedia === "function",
+    }));
+    try {
+      if (capable && localStorage.getItem(SOURCE_KEY) === "tab") setAudioSource("tab");
+    } catch {
+      /* storage blocked */
+    }
   }, []);
 
   // getDisplayMedia (tab/system audio) is desktop-only.
@@ -338,10 +395,38 @@ export function Recorder() {
     }
   }, [rec.isRecording, rec.isStarting]);
 
+  // A plan with a call link: offer the call's tab as the source and a "Join call" link. Online only; failures are silent.
+  useEffect(() => {
+    if (!prefillPlan) {
+      setCallUrl(null);
+      return;
+    }
+    const id = peekPlanPrefill();
+    if (!id || !tabSelector) return;
+    let cancelled = false;
+    fetch(`/api/plans/${encodeURIComponent(id)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { plan?: { callUrl?: string | null; attendees?: { name?: string }[] } } | null) => {
+        if (!cancelled && Array.isArray(j?.plan?.attendees)) {
+          setPlanAttendees(j.plan.attendees.map((a) => (typeof a?.name === "string" ? a.name : "")).filter(Boolean));
+        }
+        const url = safeCallUrl(j?.plan?.callUrl);
+        if (cancelled || !url) return;
+        setCallUrl((cur) => cur ?? url);
+        setAudioSource(defaultSource({ available: true, callUrl: url, saved: null }));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [prefillPlan, tabSelector]);
+
   const hasTranscript = rec.transcriptParts.length > 0;
   const hasLive = !!rec.interimText || !!rec.liveStatus;
   const busy = rec.isRecording;
   const starting = rec.isStarting;
+  // A guided start records a tab although `source` is "mic": show the tab notes while it runs.
+  const shownSource: AudioSourceChoice = webRec.guidedRun && (busy || starting) && !nativeMode ? "tab" : source;
   /** Settings are locked while starting or recording. */
   const locked = busy || starting;
   useEffect(() => setSessionLocked(locked), [locked]);
@@ -353,6 +438,16 @@ export function Recorder() {
     () => rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0),
     [rec.transcriptParts]
   );
+
+  // Stop -> write the minutes for this meeting once (queued; the runner waits for internet and sign-in).
+  const autoMinutesOn = useFlag("autoMinutes");
+  const { userId: autoUserId } = useLocalUser();
+  const queuedMeeting = useRef<string | null>(null);
+  useEffect(() => {
+    if (!finished || !autoMinutesOn || !autoUserId || !rec.meetingId || queuedMeeting.current === rec.meetingId) return;
+    // Remembered only once queued, so late final phrases that push the count past the minimum still get a run.
+    if (enqueueAuto(autoUserId, rec.meetingId, words)) queuedMeeting.current = rec.meetingId;
+  }, [finished, autoMinutesOn, autoUserId, rec.meetingId, words]);
 
   const mode = calmMode({
     recording: busy,
@@ -411,8 +506,15 @@ export function Recorder() {
             onRecord={(plan) => {
               setTitlePrefill(plan.title);
               setPlanPrefill(plan.id);
+              const planUrl = safeCallUrl(plan.callUrl);
+              setCallUrl(planUrl);
+              setPlanAttendees((plan.attendees ?? []).map((a) => a.name).filter(Boolean));
+              if (tabSelector && planUrl) setAudioSource("tab");
               setPrefillTitle(peekTitlePrefill());
               setPrefillPlan(true);
+              // A call plan on a laptop: pick the call's tab as the source and let the user start from the main
+              // button (Join call link shown), so the tab picker opens from their own tap.
+              if (tabSelector && planUrl) return;
               haptics.start();
               rec.start("mic");
             }}
@@ -537,7 +639,7 @@ export function Recorder() {
           )}
 
           <p className="mx-auto mt-2 min-h-[1.25rem] max-w-[30ch] text-meta text-muted-foreground" aria-live="polite">
-            {rec.statusMsg === "Ready" ? "" : rec.statusMsg}
+            {rec.statusMsg === "Ready" || (guidedEntry && webRec.shareProblem) ? "" : rec.statusMsg}
           </p>
 
           <div className="mt-2 flex min-h-11 items-center justify-center">
@@ -564,6 +666,27 @@ export function Recorder() {
               <NoSoundNotice />
             </div>
           )}
+          {guidedEntry && !nativeMode && busy && webRec.callSilent && !rec.isPaused && (
+            <div className="mt-2 w-full text-left" role="status">
+              <Notice tone="warning" icon={<TriangleAlert className="h-4 w-4" />} title="No call sound">
+                {CALL_SILENT_MESSAGE}
+                <Button
+                  className="mt-2 w-full"
+                  loading={resharing}
+                  onClick={async () => {
+                    setResharing(true);
+                    setReshareNote(null);
+                    const r = await webRec.reshareTab();
+                    setResharing(false);
+                    if (!r.ok) setReshareNote(r.message);
+                  }}
+                >
+                  Share again
+                </Button>
+                {reshareNote && <span className="mt-2 block">{reshareNote}</span>}
+              </Notice>
+            </div>
+          )}
           {rec.notice && (
             <div className="mt-2 w-full text-left" role="status">
               <Notice
@@ -578,6 +701,21 @@ export function Recorder() {
         </div>
 
         {!busy && !starting && <OverdueLine />}
+
+        {guidedEntry && !nativeMode && !busy && !starting && (
+          <GuidedCall
+            disabled={blocked || !gateStart.allowed}
+            startUrl={callUrl}
+            problem={webRec.shareProblem ?? null}
+            onStart={(platform) => {
+              haptics.start();
+              void webRec.start("mic", {
+                guided: true,
+                naming: { platform, attendees: planAttendees, directory: directoryNames },
+              });
+            }}
+          />
+        )}
 
         <div className="space-y-5 border-t border-border/70 px-4 py-4">
           <div>
@@ -638,6 +776,50 @@ export function Recorder() {
               </div>
             )}
           </div>
+
+          {tabSelector && (
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <FieldLabel>Audio source</FieldLabel>
+                {callUrl && (
+                  <a
+                    href={callUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mb-1.5 inline-flex min-h-8 items-center gap-1.5 text-meta font-semibold text-accent underline underline-offset-2"
+                  >
+                    Join call <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                    <span className="sr-only">(opens in a new tab)</span>
+                  </a>
+                )}
+              </div>
+              <Segmented<AudioSourceChoice>
+                label="Audio source"
+                value={shownSource}
+                disabled={locked}
+                onChange={(v) => {
+                  setAudioSource(v);
+                  remember(SOURCE_KEY, v);
+                }}
+                options={[
+                  { value: "mic", label: "Microphone", icon: <Mic className="h-4 w-4" /> },
+                  { value: "tab", label: "Call in a browser tab", icon: <MonitorSpeaker className="h-4 w-4" /> },
+                ]}
+              />
+              {shownSource === "tab" && (
+                <div className="mt-2">
+                  <Switch
+                    label="Also record my microphone"
+                    checked={tabMic}
+                    onChange={setTabMic}
+                    disabled={locked}
+                  />
+                  <p className="mt-1 px-3 text-meta text-muted-foreground">{TAB_HINT}</p>
+                  {effective !== "deepgram" && <p className="mt-1 px-3 text-meta text-muted-foreground">{TAB_SPEAKER_NOTE}</p>}
+                </div>
+              )}
+            </div>
+          )}
 
           {rec.stoppedRemotely && (
             <div className="mt-3" role="status">
@@ -724,7 +906,7 @@ export function Recorder() {
                 </div>
               </div>
 
-              {canCaptureSystem && (
+              {canCaptureSystem && !tabSelector && (
                 <label className="flex cursor-pointer items-start gap-3 rounded-chip border border-border px-4 py-3 hover:bg-muted has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
                   <MonitorSpeaker className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="flex-1">
@@ -794,6 +976,11 @@ export function Recorder() {
           {busy && rec.noSound && (
             <div className="mb-4 lg:hidden" role="alert">
               <NoSoundNotice />
+            </div>
+          )}
+          {busy && !nativeMode && webRec.screenNaming && (
+            <div className="mb-4">
+              <NamingStrip state={webRec.screenNaming} names={rec.speakerNames} onRename={webRec.renameSpeaker} />
             </div>
           )}
           {!hasTranscript && !hasLive ? (

@@ -14,6 +14,8 @@ import * as haptics from "@/lib/haptics";
 import { useToast } from "./Toast";
 import { SpeakerChip } from "./SpeakerChip";
 import { RenameSpeakerSheet } from "./RenameSpeakerSheet";
+import { NamingReport } from "./NamingReport";
+import { recordNamingRename } from "@/lib/naming/client";
 import { NameSuggestions } from "./NameSuggestions";
 import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/aiModels";
 import { navBack } from "@/lib/navStack";
@@ -34,6 +36,13 @@ import type { ExportKind, ExportMeeting } from "@/lib/export/types";
 import { TranscriptView } from "./TranscriptView";
 import { ActionItems } from "./ActionItems";
 import { LinkedPlanCard } from "./LinkedPlanCard";
+import { MeetingTabBar, PANEL_ID, tabId } from "./MeetingTabBar";
+import { MinutesStatus } from "./MinutesStatus";
+import { SummaryTab } from "./SummaryTab";
+import { AskTab } from "./AskTab";
+import { TAB_STORAGE_KEY, pickInitialTab, visibleTabs, withTabParam, type TabId } from "@/lib/meetingTabs";
+import { GenError, applyOutcome, generateAll, retryNow, useJob } from "@/lib/minutesJob";
+import { useExtras, writeExtras } from "@/lib/meetingExtras";
 import { useFlag } from "@/lib/flagsClient";
 import { useFeatureGate } from "@/lib/featureGate";
 import { Badge, Button, FieldLabel, GateReason, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
@@ -65,8 +74,14 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const [template, setTemplate] = useState(meeting.template ?? "MOM");
   const [docTemplate, setDocTemplate] = useState(meeting.template ?? "MOM");
   const [doc, setDoc] = useState(meeting.document);
-  const [tab, setTab] = useState<"document" | "transcript" | "tasks">(meeting.document ? "document" : "transcript");
+  const [tab, setTabState] = useState<TabId>(meeting.document ? "minutes" : "transcript");
   const actionItemsOn = useFlag("actionItems");
+  const tabsOn = useFlag("meetingTabs");
+  const askOn = useFlag("meetingAsk");
+  const combinedOn = useFlag("autoMinutes");
+  const tabs = visibleTabs({ tabs: tabsOn, actions: actionItemsOn, ask: askOn });
+  const extras = useExtras(userId, meeting.id);
+  const job = useJob(meeting.id);
   const nameSuggestionsOn = useFlag("nameSuggestions");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +98,38 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const [headerRenaming, setHeaderRenaming] = useState<number | null>(null);
   const [regenOpen, setRegenOpen] = useState(false);
   const chipRefs = useRef(new Map<number, HTMLButtonElement>());
+
+  // Which tab opens: ?tab= link, else the last one used on this device. Changing tab rewrites ?tab= without adding a
+  // history entry, so the Android back button still leaves the meeting.
+  const setTab = useCallback((t: TabId, remember = true) => {
+    setTabState(t);
+    if (!remember) return;
+    try {
+      localStorage.setItem(TAB_STORAGE_KEY, t);
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${withTabParam(window.location.search, t)}${window.location.hash}`);
+    } catch {
+      /* storage or history blocked: the tab still changes */
+    }
+  }, []);
+  const tabInit = useRef(false);
+  useEffect(() => {
+    // With the tabs switch off the page opens as it always did (document, else transcript): no saved tab, no ?tab=.
+    if (tabInit.current || !tabsOn) return;
+    tabInit.current = true;
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(TAB_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    const param = new URLSearchParams(window.location.search).get("tab");
+    setTabState(pickInitialTab({ param, saved, hasDoc: !!meeting.document, visible: tabs }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabsOn]);
+  // If a switch hides the open tab (or the flags load late), move to one that is shown.
+  useEffect(() => {
+    if (!tabs.includes(tab)) setTabState(tabs[0]);
+  }, [tabs, tab]);
 
   const [names, setNames] = useState<Record<string, string> | null>(meeting.speakerNames ?? null);
   const rawText = transcriptToText(meeting.transcript, { names });
@@ -128,6 +175,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
       else delete next[k];
     }
     namesRef.current = next;
+    // Screen naming report: a name you type over an automatic one counts as a change (device-only counts).
+    if (userId) await recordNamingRename(userId, meeting.id, Object.fromEntries(Object.entries(updates).map(([k, v]) => [Number(k), v.trim()])));
     try {
       if (userId && (await setSpeakerNames(userId, meeting.id, next))) {
         poke(meeting.id);
@@ -196,7 +245,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
         setDoc(m.document);
         if (m.template) setDocTemplate(m.template);
         if (userId) void setServerDocument(userId, meeting.id, m.document, m.template ?? template);
-        setTab("document");
+        setTab("minutes");
         setStatus(null);
         setError(null);
         setBusy(false);
@@ -236,6 +285,21 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [checkForResult]);
 
+  // Minutes written automatically after Stop show up here without a reload.
+  useEffect(() => {
+    if (job?.phase === "done" && job.document && job.document !== doc) {
+      setDoc(job.document);
+      if (job.template) setDocTemplate(job.template);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.phase, job?.document]);
+  // The local copy changed underneath us (sync pulled a document written on another device).
+  const lastPropDoc = useRef(meeting.document);
+  useEffect(() => {
+    if (meeting.document && meeting.document !== lastPropDoc.current) setDoc(meeting.document);
+    lastPropDoc.current = meeting.document;
+  }, [meeting.document]);
+
   const generate = async () => {
     setBusy(true);
     setError(null);
@@ -257,6 +321,25 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
         return;
       }
     }
+    if (combinedOn) {
+      // One small request for minutes + summary + action items (the old calls are the fallback inside generateAll).
+      try {
+        const out = await generateAll(meeting.id, { template, model, force: true, combined: true });
+        await applyOutcome(userId ?? null, meeting.id, out);
+        setDoc(out.document);
+        setDocTemplate(out.template);
+        setTab("minutes");
+        setBusy(false);
+      } catch (e) {
+        if (e instanceof GenError && e.network) {
+          startPolling();
+          return;
+        }
+        setError(e instanceof Error ? e.message : "Processing failed. Please try again.");
+        setBusy(false);
+      }
+      return;
+    }
     let res: Response;
     try {
       res = await fetch(`/api/meetings/${meeting.id}/process`, {
@@ -274,7 +357,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
       setDoc(data.document);
       setDocTemplate(template);
       if (userId) void setServerDocument(userId, meeting.id, data.document, template);
-      setTab("document");
+      setTab("minutes");
       setBusy(false);
       return;
     }
@@ -319,7 +402,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   };
 
   const docName = docTemplate === "Report" ? "Report" : "Minutes";
-  const showingDoc = tab === "document" && !!doc;
+  const showingDoc = (tab === "minutes" || tab === "summary" || tab === "ask") && !!doc;
   const currentText = showingDoc ? doc! : rawText;
   const currentName = showingDoc ? docName : "Transcript";
 
@@ -707,24 +790,45 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
       <LinkedPlanCard meetingId={meeting.id} className="mb-4" />
 
       {/* ---------- Tabs ---------- */}
-      <Segmented
-        semantics="tabs"
-        label="Meeting content"
-        value={tab}
-        onChange={(t) => {
-          setTab(t);
-          haptics.tap();
-        }}
-        options={[
-          { value: "document", label: docName, id: "meeting-tab-document", controls: "meeting-tabpanel" },
-          { value: "transcript", label: "Transcript", id: "meeting-tab-transcript", controls: "meeting-tabpanel" },
-          ...(actionItemsOn ? [{ value: "tasks" as const, label: "Action items", id: "meeting-tab-tasks", controls: "meeting-tabpanel" }] : []),
-        ]}
-        className="mb-4 max-w-[480px]"
-      />
+      {tabsOn ? (
+        <MeetingTabBar
+          tabs={tabs}
+          value={tab}
+          onChange={(t) => {
+            setTab(t);
+            haptics.tap();
+          }}
+          className="mb-4"
+        />
+      ) : (
+        <Segmented
+          semantics="tabs"
+          label="Meeting content"
+          value={tab}
+          onChange={(t) => {
+            setTab(t);
+            haptics.tap();
+          }}
+          options={tabs.map((t) => ({
+            value: t,
+            label: t === "minutes" ? docName : t === "transcript" ? "Transcript" : "Action items",
+            id: tabId(t),
+            controls: PANEL_ID,
+          }))}
+          className="mb-4 max-w-[480px]"
+        />
+      )}
 
-      <div key={tab} id="meeting-tabpanel" role="tabpanel" aria-labelledby={`meeting-tab-${tab}`} className="text-in space-y-4">
-        {tab === "document" ? (
+      {tabsOn && combinedOn && (
+        <MinutesStatus
+          meetingId={meeting.id}
+          className="mb-4"
+          onRetry={() => userId && void retryNow(userId, meeting.id, words)}
+        />
+      )}
+
+      <div key={tab} id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(tab)} className="text-in space-y-4">
+        {tab === "minutes" ? (
           doc ? (
             <>
               <Panel className="px-5 py-6 sm:px-8 sm:py-8">
@@ -751,10 +855,23 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
               {aiForm}
             </Panel>
           )
-        ) : tab === "tasks" && actionItemsOn ? (
-          <ActionItems meetingId={meeting.id} meetingTitle={meeting.title} parts={meeting.transcript} names={names} hasTranscript={hasTranscript} />
+        ) : tab === "actions" && actionItemsOn ? (
+          <ActionItems
+            meetingId={meeting.id}
+            meetingTitle={meeting.title}
+            parts={meeting.transcript}
+            names={names}
+            hasTranscript={hasTranscript}
+            seed={extras.items}
+            onSaved={() => writeExtras(userId, meeting.id, { items: null })}
+          />
+        ) : tab === "summary" ? (
+          <SummaryTab meetingId={meeting.id} hasTranscript={hasTranscript} model={model} />
+        ) : tab === "ask" && askOn ? (
+          <AskTab meetingId={meeting.id} hasTranscript={hasTranscript} />
         ) : (
           <Panel className="px-5 py-6 sm:px-8 sm:py-8">
+            <NamingReport userId={userId} meetingId={meeting.id} names={names} />
             {hasTranscript ? (
               <TranscriptView parts={meeting.transcript} window="head" speakerNames={names} onRenameSpeaker={renameSpeaker} renameHint />
             ) : (

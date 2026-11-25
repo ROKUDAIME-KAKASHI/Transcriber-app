@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { FailureLimiter } from "@/lib/adminAuthCore";
 import { withLegacyFallback } from "@/lib/meetingSelect";
-import { parseTranscript, speakerLabel, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
+import { UNTRUSTED_LABELS_NOTE, aiSpeakerLabel, parseTranscript, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
 import { buildActionItemsPrompt, chunkLines, mergeItems, parseActionItems, verifyItems } from "@/lib/actionItems";
 
 // Long meetings take a few model calls, two at a time (AICredits rejects more at once).
@@ -29,7 +29,7 @@ function toLines(parts: TranscriptPart[], names: SpeakerNames): string[] {
   const multi = new Set(parts.map((p) => p.speaker)).size > 1;
   // One line per phrase: newlines inside a phrase must not forge extra "Name:" lines.
   return parts
-    .map((p) => ({ who: speakerLabel(p.speaker, names), text: p.text.replace(/\s+/g, " ").trim() }))
+    .map((p) => ({ who: aiSpeakerLabel(p.speaker, names), text: p.text.replace(/\s+/g, " ").trim() }))
     .filter((p) => p.text)
     .map((p) => (multi ? `${p.who}: ${p.text}` : p.text));
 }
@@ -85,6 +85,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           const i = next++;
           const r = await generateText({
             model: summaryModel("glm"),
+            system: UNTRUSTED_LABELS_NOTE.trim(),
             prompt: buildActionItemsPrompt(chunks[i]),
             maxOutputTokens: 4000,
             maxRetries: 1,

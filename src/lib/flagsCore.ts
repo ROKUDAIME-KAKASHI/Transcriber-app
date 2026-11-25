@@ -14,6 +14,12 @@ export const FLAG_DEFAULTS = {
   calendar: true,
   trackerPlus: true,
   followUpPlanning: true,
+  tabAudio: true,
+  meetingTabs: true,
+  autoMinutes: true,
+  meetingAsk: true,
+  guidedCall: true,
+  screenNaming: true,
 } as const;
 
 export type FlagKey = keyof typeof FLAG_DEFAULTS;
@@ -34,6 +40,12 @@ export const FLAG_LABELS: Record<FlagKey, string> = {
   calendar: "Calendar: free/busy sharing, Find a time, series auto-planning, email invites",
   trackerPlus: "Tracker upgrades: owners from People, timeline, overdue alerts, series progress",
   followUpPlanning: "Plan next meeting: carries unfinished tasks into the next planned meeting",
+  tabAudio: "Record online calls from a browser tab (laptops)",
+  meetingTabs: "Meeting page tabs: Transcript, Minutes, Summary, Action items, Ask",
+  autoMinutes: "Write minutes, summary and action items automatically after Stop (one small AI request; costs credits)",
+  meetingAsk: "Ask tab: questions about a meeting, answered with quotes (small AI request per question)",
+  guidedCall: "Record an online call: picture guide, wrong-choice and no-sound warnings, open the call from Minutely (laptops)",
+  screenNaming: "Read speaker names from the call screen on laptops (on-device; each person also turns it on in their own settings, beta)",
 };
 
 export function isFlagKey(k: unknown): k is FlagKey {

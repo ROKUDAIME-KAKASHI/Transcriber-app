@@ -60,6 +60,11 @@ const nextConfig: NextConfig = {
         source: "/ort/:file*",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
+      {
+        // OCR files for reading names off the call screen (Phase 23). Same origin, so COEP is happy.
+        source: "/tesseract/:file*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
     ];
   },
 };
