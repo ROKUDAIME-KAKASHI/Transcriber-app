@@ -5,10 +5,26 @@ export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY && process.env.BOOKING_FROM_EMAIL);
 }
 
-async function send(payload: { to: string; subject: string; text: string; ics?: string; icsName?: string }) {
+export interface MailPayload {
+  to: string;
+  subject: string;
+  text: string;
+  ics?: string;
+  icsName?: string;
+  /** MIME type of the attachment, e.g. "text/calendar; method=REQUEST; charset=utf-8". */
+  icsType?: string;
+  replyTo?: string;
+}
+
+/** Sends one email. Returns true when Resend accepted it; never throws. */
+export async function sendMail(payload: MailPayload): Promise<boolean> {
+  return send(payload);
+}
+
+async function send(payload: MailPayload): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.BOOKING_FROM_EMAIL;
-  if (!key || !from) return;
+  if (!key || !from) return false;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -18,16 +34,23 @@ async function send(payload: { to: string; subject: string; text: string; ics?: 
         to: [payload.to],
         subject: payload.subject,
         text: payload.text,
+        ...(payload.replyTo ? { reply_to: payload.replyTo } : {}),
         attachments: payload.ics
-          ? [{ filename: payload.icsName ?? "meeting.ics", content: Buffer.from(payload.ics, "utf8").toString("base64") }]
+          ? [{
+              filename: payload.icsName ?? "meeting.ics",
+              content: Buffer.from(payload.ics, "utf8").toString("base64"),
+              ...(payload.icsType ? { content_type: payload.icsType } : {}),
+            }]
           : undefined,
       }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) console.error("Booking email failed with status", res.status);
+    return res.ok;
   } catch {
     // Never log the key or the request; a failed email must not fail the booking.
     console.error("Booking email could not be sent");
+    return false;
   }
 }
 

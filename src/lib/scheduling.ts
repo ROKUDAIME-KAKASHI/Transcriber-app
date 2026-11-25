@@ -262,6 +262,12 @@ export interface IcsInput {
   url?: string;
   now?: Date;
   cancelled?: boolean;
+  /** Calendar invite semantics. Omitted: METHOD:PUBLISH exactly as before. */
+  method?: "PUBLISH" | "REQUEST" | "CANCEL";
+  /** iCalendar SEQUENCE; omitted: no SEQUENCE line. */
+  sequence?: number;
+  /** Ask `attendees` to reply (RSVP=TRUE, PARTSTAT=NEEDS-ACTION). */
+  rsvp?: boolean;
 }
 
 export function buildIcs(i: IcsInput): string {
@@ -270,7 +276,7 @@ export function buildIcs(i: IcsInput): string {
     "VERSION:2.0",
     "PRODID:-//Minutely//Scheduling//EN",
     "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
+    `METHOD:${i.method ?? "PUBLISH"}`,
     "BEGIN:VEVENT",
     `UID:${i.uid}`,
     `DTSTAMP:${icsStamp(i.now ?? new Date())}`,
@@ -278,14 +284,15 @@ export function buildIcs(i: IcsInput): string {
     `DTEND:${icsStamp(i.end)}`,
     `SUMMARY:${icsEscape(i.title)}`,
   ];
+  if (i.sequence !== undefined) lines.push(`SEQUENCE:${Math.max(0, Math.floor(i.sequence))}`);
   if (i.description) lines.push(`DESCRIPTION:${icsEscape(i.description)}`);
   if (i.location) lines.push(`LOCATION:${icsEscape(i.location)}`);
   if (i.url) lines.push(`URL:${i.url}`);
   lines.push(
     `ORGANIZER;CN=${icsParam(i.organizerName)}:mailto:${i.organizerEmail}`,
     ...(i.attendeeName && i.attendeeEmail ? [`ATTENDEE;CN=${icsParam(i.attendeeName)};ROLE=REQ-PARTICIPANT:mailto:${i.attendeeEmail}`] : []),
-    ...(i.attendees ?? []).map((a) => `ATTENDEE;CN=${icsParam(a.name)};ROLE=REQ-PARTICIPANT:mailto:${a.email.replace(/[^\x21-\x7e]|[<>"]/g, "")}`),
-    `STATUS:${i.cancelled ? "CANCELLED" : "CONFIRMED"}`,
+    ...(i.attendees ?? []).map((a) => `ATTENDEE;CN=${icsParam(a.name)};ROLE=REQ-PARTICIPANT${i.rsvp ? ";PARTSTAT=NEEDS-ACTION;RSVP=TRUE" : ""}:mailto:${a.email.replace(/[^\x21-\x7e]|[<>"]/g, "")}`),
+    `STATUS:${i.cancelled || i.method === "CANCEL" ? "CANCELLED" : "CONFIRMED"}`,
     "END:VEVENT",
     "END:VCALENDAR"
   );
