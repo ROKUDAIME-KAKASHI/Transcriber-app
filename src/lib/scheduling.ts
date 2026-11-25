@@ -289,7 +289,7 @@ export function buildIcs(i: IcsInput): string {
   if (i.location) lines.push(`LOCATION:${icsEscape(i.location)}`);
   if (i.url) lines.push(`URL:${i.url}`);
   lines.push(
-    `ORGANIZER;CN=${icsParam(i.organizerName)}:mailto:${i.organizerEmail}`,
+    `ORGANIZER;CN=${icsParam(i.organizerName)}:mailto:${i.organizerEmail.replace(/[^!-~]|[<>"]/g, "")}`,
     ...(i.attendeeName && i.attendeeEmail ? [`ATTENDEE;CN=${icsParam(i.attendeeName)};ROLE=REQ-PARTICIPANT:mailto:${i.attendeeEmail}`] : []),
     ...(i.attendees ?? []).map((a) => `ATTENDEE;CN=${icsParam(a.name)};ROLE=REQ-PARTICIPANT${i.rsvp ? ";PARTSTAT=NEEDS-ACTION;RSVP=TRUE" : ""}:mailto:${a.email.replace(/[^\x21-\x7e]|[<>"]/g, "")}`),
     `STATUS:${i.cancelled || i.method === "CANCEL" ? "CANCELLED" : "CONFIRMED"}`,

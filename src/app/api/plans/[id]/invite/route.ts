@@ -17,6 +17,17 @@ export const maxDuration = 60;
 const planLimiter = new FailureLimiter(3, 60 * 60_000);
 const userLimiter = new FailureLimiter(10, 60 * 60_000);
 
+// Daily ceiling on emails (not sends) per person, so the owner's Resend account can't be used as a relay.
+const MAX_EMAILS_PER_DAY = 100;
+const DAY_MS = 24 * 60 * 60_000;
+const emailLog = new Map<string, number[]>();
+function emailsToday(userId: string, now: number): number[] {
+  const list = (emailLog.get(userId) ?? []).filter((t) => now - t < DAY_MS);
+  if (list.length) emailLog.set(userId, list);
+  else emailLog.delete(userId);
+  return list;
+}
+
 const Body = z.object({ mode: z.enum(["invite", "cancel"]) });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -72,8 +83,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (planLimiter.blocked(id) || userLimiter.blocked(userId)) {
       return Response.json({ error: "You've sent a lot of invites. Try again in an hour." }, { status: 429, headers: NO_STORE });
     }
+    const nowMs = Date.now();
+    const today = emailsToday(userId, nowMs);
+    if (today.length + recipients.length > MAX_EMAILS_PER_DAY) {
+      return Response.json({ error: "You've reached today's limit for invite emails. Try again tomorrow, or share the invite file." }, { status: 429, headers: NO_STORE });
+    }
     planLimiter.fail(id);
     userLimiter.fail(userId);
+    for (let i = 0; i < recipients.length; i++) today.push(nowMs);
+    emailLog.set(userId, today);
 
     const everInvited = extra.attendees.some((a) => a.invitedAt);
     const kind = mode === "cancel" ? "cancel" : everInvited ? "update" : "invite";
