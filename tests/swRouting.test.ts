@@ -11,7 +11,7 @@ const req = (over: Record<string, unknown> = {}, headers: Record<string, string>
 const r = (path: string, request = req()) => routing.route(new URL(path, O), request, O);
 
 describe("shellFor", () => {
-  for (const p of ["/", "/meetings", "/meeting", "/tasks", "/people", "/schedule", "/profile", "/login", "/offline"]) {
+  for (const p of ["/", "/meetings", "/meeting", "/tasks", "/people", "/plan", "/schedule", "/profile", "/login", "/offline"]) {
     test(`shell ${p}`, () => assert.deepEqual(routing.shellFor(p), { shell: p }));
   }
   test("trailing slash", () => assert.deepEqual(routing.shellFor("/meetings/"), { shell: "/meetings" }));
