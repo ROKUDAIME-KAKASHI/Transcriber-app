@@ -125,6 +125,8 @@ export function nameTakenElsewhere(ctx: NamingContext, cluster: number, name: st
     if (Number(k) === cluster) continue;
     if (typeof v === "string" && normKey(v) === key) return true;
   }
+  // Names that are only shown (probable, "You") are not in `names`, but still belong to their voice.
+  for (const [c, a] of ctx.auto) if (c !== cluster && normKey(a.name) === key) return true;
   return false;
 }
 

@@ -17,6 +17,8 @@ export class FrameSource {
   private capture: ImageCaptureLike | null = null;
   private video: HTMLVideoElement | null = null;
   private disposed = false;
+  /** Set by dispose() for good: a closed source is never revived by setTrack. */
+  private closed = false;
 
   constructor(track: MediaStreamTrack) {
     this.track = track;
@@ -44,6 +46,7 @@ export class FrameSource {
 
   /** Swap to the track of a new share ("Share again"). */
   setTrack(track: MediaStreamTrack) {
+    if (this.closed) return;
     this.release();
     this.track = track;
     this.disposed = false;
@@ -78,6 +81,7 @@ export class FrameSource {
   }
 
   dispose() {
+    this.closed = true;
     this.release();
   }
 }

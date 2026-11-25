@@ -285,6 +285,11 @@ export function useRecorder(opts: {
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
   const phraseWhoRef = useRef<Map<number, PhraseInfo>>(new Map());
   const namingStatsRef = useRef<NamingStats | null>(null);
+  /** Voices whose stored name came from the call screen (not the user): they lose a stop-time merge against a typed name. */
+  const autoVoicesRef = useRef<number[]>([]);
+  const dgUtteranceRef = useRef<{ speaker: number; sec: number } | null>(null);
+  /** Names shown but never stored: "probably X" and "You". Cleared when naming ends. */
+  const shownOnlyRef = useRef<Record<string, string>>({});
   const refineMapRef = useRef<{ live: number[]; final: number[] } | null>(null);
   /** Parts the server has confirmed; autosave sends only the rest. */
   const savedPartsRef = useRef(0);
@@ -374,6 +379,14 @@ export function useRecorder(opts: {
   const pendingRelabelRef = useRef<{ names: Record<string, string> | null } | null>(null);
 
   const patch = (p: Partial<RecorderState>) => setState((s) => ({ ...s, ...p }));
+
+  /** What the screen shows: stored names (the user's, and confirmed screen names) over names that are only shown. */
+  const displayNames = (): Record<string, string> | null => {
+    const stored = speakerNamesRef.current;
+    const shown = shownOnlyRef.current;
+    if (Object.keys(shown).length === 0) return stored;
+    return { ...shown, ...(stored ?? {}) };
+  };
 
   // ---- Persistence -------------------------------------------------------
   /**
@@ -633,7 +646,7 @@ export function useRecorder(opts: {
         const vectors = parts.map((_, i) => vectorsRef.current.get(i) ?? null);
         const final = compactLabels(mapToLive(refine(vectors, { live }), live));
         refineMapRef.current = { live, final };
-        const names = remapNames(speakerNamesRef.current, live, final);
+        const names = remapNames(speakerNamesRef.current, live, final, new Set(autoVoicesRef.current));
         if (final.some((l, i) => l !== live[i])) {
           partsRef.current = parts.map((p, i) => (p.speaker === final[i] ? p : { ...p, speaker: final[i] }));
           dirtyRef.current = true;
@@ -696,7 +709,7 @@ export function useRecorder(opts: {
     if (name) next[String(n)] = name;
     else delete next[String(n)];
     speakerNamesRef.current = next;
-    patch({ speakerNames: next });
+    patch({ speakerNames: displayNames() });
     const id = meetingIdRef.current;
     if (!id) return true;
     try {
@@ -883,6 +896,14 @@ export function useRecorder(opts: {
   };
 
   // ---- Deepgram (cloud) ----------------------------------------------------
+  /** Screen naming: the utterance that just ended belongs to this speaker. Called once per utterance. */
+  const flushDgUtterance = () => {
+    const u = dgUtteranceRef.current;
+    dgUtteranceRef.current = null;
+    const namer = namerRef.current;
+    if (u && namer) namer.noteSpeech(u.speaker, namer.classify(Math.min(10, Math.max(1, u.sec))));
+  };
+
   /** Adds a final Deepgram result: one bubble per speaker turn, growing until a pause. */
   const appendDeepgram = (msg: DeepgramMessage) => {
     const words = msg.channel?.alternatives?.[0]?.words ?? [];
@@ -900,8 +921,12 @@ export function useRecorder(opts: {
       openBubbleRef.current = true;
     }
     if (msg.speech_final) openBubbleRef.current = false;
-    // Screen naming: these words were just said by this voice.
-    if (lastSpeaker !== null && namerRef.current) namerRef.current.noteSpeech(lastSpeaker, namerRef.current.classify(3));
+    // Screen naming: counted once per utterance (not once per result message), with the real length of the speech.
+    if (lastSpeaker !== null && namerRef.current && words.length) {
+      const sec = Math.max(0, (words[words.length - 1].end ?? 0) - (words[0].start ?? 0));
+      dgUtteranceRef.current = { speaker: lastSpeaker, sec: (dgUtteranceRef.current?.sec ?? 0) + sec };
+    }
+    if (msg.speech_final) flushDgUtterance();
     if (parts !== partsRef.current) {
       partsRef.current = parts;
       dirtyRef.current = true;
@@ -960,6 +985,7 @@ export function useRecorder(opts: {
         }
         if (msg.type === "UtteranceEnd") {
           openBubbleRef.current = false;
+          flushDgUtterance();
           return;
         }
         if (msg.type !== "Results") return;
@@ -1079,6 +1105,11 @@ export function useRecorder(opts: {
   const disposeNaming = () => {
     try { namerRef.current?.dispose(); } catch { /* silent */ }
     namerRef.current = null;
+    dgUtteranceRef.current = null;
+    if (Object.keys(shownOnlyRef.current).length) {
+      shownOnlyRef.current = {};
+      patch({ speakerNames: displayNames() });
+    }
     try { videoTrackRef.current?.stop(); } catch { /* silent */ }
     videoTrackRef.current = null;
     try { pendingVideoRef.current?.stop(); } catch { /* silent */ }
@@ -1197,6 +1228,7 @@ export function useRecorder(opts: {
     // Screen naming: keep its numbers for the report before the namer is dropped.
     const namingSnap = namerRef.current?.snapshot() ?? null;
     if (namingSnap) namingStatsRef.current = namingSnap;
+    autoVoicesRef.current = namerRef.current?.autoVoices() ?? [];
     cleanupMedia();
     if (pausedAtRef.current !== null) {
       pausedMsRef.current += Date.now() - pausedAtRef.current;
@@ -2065,7 +2097,13 @@ export function useRecorder(opts: {
         host: {
           getNames: () => speakerNamesRef.current,
           setAutoName: (cluster, name) => void writeSpeakerName(cluster, name),
-          onState: (st) => patch({ screenNaming: st }),
+          onState: (st) => {
+            // "Probably X" and "You" are derived from the namer's current state each time: shown, never stored or synced.
+            const shown: Record<string, string> = {};
+            for (const [k, v] of Object.entries(st.auto)) if (v.source === "me" || v.level !== "confirmed") shown[k] = v.name;
+            shownOnlyRef.current = shown;
+            patch({ screenNaming: st, speakerNames: displayNames() });
+          },
         },
       });
       namerRef.current = namer;

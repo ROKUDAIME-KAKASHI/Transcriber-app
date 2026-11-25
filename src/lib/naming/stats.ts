@@ -26,13 +26,17 @@ export interface NamingStats {
   rejected: number;
   noTile: number;
   failed: number;
+  /** Phrases whose voice arrived too late to read the screen for (a slow embedding makes naming inert). */
+  stale: number;
+  /** Failure counts by fixed code (never a message). */
+  errCodes: Record<string, number>;
   ring: number;
   speakerView: number;
   auto: AutoEntry[];
 }
 
 export function newStats(platform: string | null, now: number): NamingStats {
-  return { v: 1, platform, startedAt: now, clusters: 0, reads: 0, usable: 0, rejected: 0, noTile: 0, failed: 0, ring: 0, speakerView: 0, auto: [] };
+  return { v: 1, platform, startedAt: now, clusters: 0, reads: 0, usable: 0, rejected: 0, noTile: 0, failed: 0, stale: 0, errCodes: {}, ring: 0, speakerView: 0, auto: [] };
 }
 
 export function setAuto(s: NamingStats, e: Omit<AutoEntry, "changedTo">): void {
@@ -90,6 +94,9 @@ export function formatReport(s: NamingStats, opts?: { speakerLabel?: (n: number)
   lines.push(`Names read from the screen: ${screen.length} (${changed.length} changed by you afterwards, ${pct(screen.length - changed.length, screen.length)} kept)`);
   lines.push(`"You" label on the microphone voice: ${me.length ? "yes" : "no"}`);
   lines.push(`Screen reads: ${s.reads} (usable name ${s.usable}, rejected ${s.rejected}, no speaking tile found ${s.noTile}, errors ${s.failed})`);
+  lines.push(`Too late to read (voice found more than a moment after the phrase): ${s.stale}`);
+  const codes = Object.entries(s.errCodes ?? {});
+  if (codes.length) lines.push(`Error codes: ${codes.map(([k, v]) => `${k} x${v}`).join(", ")}`);
   lines.push(`Tile found by: highlight ring ${s.ring}, speaker view ${s.speakerView}`);
   for (const a of s.auto) {
     const base = `${label(a.cluster)}: ${a.name} (${a.source === "me" ? "microphone" : `${a.level}, ${a.reads} read${a.reads === 1 ? "" : "s"}`})`;
@@ -115,6 +122,8 @@ export function parseStats(x: unknown): NamingStats | null {
     rejected: num(o.rejected),
     noTile: num(o.noTile),
     failed: num(o.failed),
+    stale: num(o.stale),
+    errCodes: o.errCodes && typeof o.errCodes === "object" ? Object.fromEntries(Object.entries(o.errCodes).filter(([, v]) => typeof v === "number" && Number.isFinite(v))) : {},
     ring: num(o.ring),
     speakerView: num(o.speakerView),
     auto: o.auto
