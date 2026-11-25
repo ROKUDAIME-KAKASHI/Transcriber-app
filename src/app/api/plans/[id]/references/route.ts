@@ -6,7 +6,7 @@ import { NO_STORE, badRequest, failed, notFound } from "@/lib/planningDb";
 import {
   REFERENCE_SELECT, isPreworkMissing, ownedPlan, preworkMissing, preworkPaused, toReferenceDTO,
 } from "@/lib/preworkDb";
-import { fileToText } from "@/lib/preworkExtract";
+import { fileToText, sniffMatches } from "@/lib/preworkExtract";
 import {
   MAX_REFERENCES, MAX_REFERENCE_BYTES, capText, cleanFileName, normalizeText, referenceKind,
 } from "@/lib/prework";
@@ -95,10 +95,13 @@ export async function POST(req: Request, { params }: Ctx) {
       const kind = referenceKind(fileName);
       if (!kind) return badRequest("Use a PDF, Word (.docx), .txt or .md file.");
       if (file.size > MAX_REFERENCE_BYTES) return Response.json({ error: TOO_BIG }, { status: 413, headers: NO_STORE });
-      sizeBytes = file.size;
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (bytes.length > MAX_REFERENCE_BYTES) return Response.json({ error: TOO_BIG }, { status: 413, headers: NO_STORE });
+      if (!sniffMatches(kind, bytes)) return badRequest("That file doesn't look like a " + (kind === "text" ? "text" : kind === "pdf" ? "PDF" : "Word (.docx)") + " file.");
+      sizeBytes = bytes.length;
       mimeType = MIME[kind] ?? "text/plain";
       try {
-        raw = await fileToText(kind, new Uint8Array(await file.arrayBuffer()));
+        raw = await fileToText(kind, bytes);
       } catch (err) {
         logServerError("POST /api/plans/[id]/references extract", err);
         return unprocessable(
@@ -122,6 +125,12 @@ export async function POST(req: Request, { params }: Ctx) {
       data: { plannedMeetingId: id, userId, fileName, mimeType, sizeBytes, text, truncated },
       select: REFERENCE_SELECT,
     });
+    // Re-check the cap after insert so two parallel uploads can't both slip past the earlier count.
+    const after = await prisma.planReference.count({ where: { plannedMeetingId: id, userId, deletedAt: null } });
+    if (after > MAX_REFERENCES) {
+      await prisma.planReference.updateMany({ where: { id: row.id, userId }, data: { deletedAt: new Date() } });
+      return badRequest(`A meeting can have at most ${MAX_REFERENCES} reference files. Delete one first.`);
+    }
     return Response.json({ reference: toReferenceDTO(row) }, { status: 201, headers: NO_STORE });
   } catch (err) {
     if (isPreworkMissing(err)) return preworkMissing();

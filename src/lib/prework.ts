@@ -121,7 +121,9 @@ DOCUMENT_END>>>`;
 
 export function buildPointsPrompt(documentText: string): string {
   // A function replacer, so "$&" and friends inside the document stay literal.
-  return TEMPLATE.replace("{{document}}", () => documentText);
+  // Strip the marker strings so the document can't close the data block early.
+  const safe = documentText.replace(/<<<DOCUMENT_START|DOCUMENT_END>>>/g, " ");
+  return TEMPLATE.replace("{{document}}", () => safe);
 }
 
 /** Split into at most `maxChunks` pieces of about `size` characters, cutting at paragraph, line or space. */
@@ -179,7 +181,7 @@ export function verifyPoints(points: { point: string; sourceQuote: string }[], d
   const hay = normalizeForMatch(documentText);
   return points.map((p) => {
     const q = normalizeForMatch(p.sourceQuote);
-    return { ...p, verified: q.length > 0 && hay.includes(q) };
+    return { ...p, verified: q.length >= 8 && hay.includes(q) };
   });
 }
 
