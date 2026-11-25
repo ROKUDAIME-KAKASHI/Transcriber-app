@@ -27,6 +27,12 @@ export interface TaskRow {
   id: string;
   task: string;
   owner: string | null;
+  /** The People entry the owner is linked to (set only when that person still exists). */
+  ownerStakeholderId?: string | null;
+  /** That person's designation, for the owner chip. */
+  ownerDesignation?: string | null;
+  /** The series of the planned meeting this task's meeting was recorded from, if any. */
+  series?: { id: string; title: string } | null;
   deadlineText: string | null;
   /** ISO timestamp (UTC midnight of the due day) or null. */
   dueDate: string | null;
@@ -102,11 +108,16 @@ export function sortTasks<T extends Sortable>(items: T[]): T[] {
 
 export interface TaskFilters {
   status: StatusFilter;
-  /** An owner name, UNASSIGNED, or "" for any. */
+  /** An owner name, "p:<stakeholderId>", UNASSIGNED, or "" for any. */
   owner: string;
   /** A meeting id or "" for any. */
   meetingId: string;
+  /** A series id or ""/undefined for any. */
+  seriesId?: string;
 }
+
+/** Owner filter value that selects a linked person by id. */
+export const OWNER_PERSON_PREFIX = "p:";
 
 const ownerKey = (o: string | null | undefined) => (o ?? "").trim().toLowerCase();
 
@@ -114,8 +125,11 @@ export function matchesFilters(t: TaskRow, f: TaskFilters): boolean {
   if (f.status === "open" ? t.status === "DONE" : f.status !== "all" && t.status !== f.status) return false;
   if (f.owner === UNASSIGNED) {
     if (ownerKey(t.owner) !== "") return false;
-  } else if (f.owner && ownerKey(t.owner) !== ownerKey(f.owner)) return false;
+  } else if (f.owner.startsWith(OWNER_PERSON_PREFIX)) {
+    if (t.ownerStakeholderId !== f.owner.slice(OWNER_PERSON_PREFIX.length)) return false;
+  } else if (f.owner && (t.ownerStakeholderId || ownerKey(t.owner) !== ownerKey(f.owner))) return false;
   if (f.meetingId && t.meeting.id !== f.meetingId) return false;
+  if (f.seriesId && t.series?.id !== f.seriesId) return false;
   return true;
 }
 
@@ -124,7 +138,7 @@ export function filterTasks(items: TaskRow[], f: TaskFilters): TaskRow[] {
 }
 
 /** Per-status counts, applying the owner and meeting filters but not the status one. */
-export function statusCounts(items: TaskRow[], f: Pick<TaskFilters, "owner" | "meetingId">): Record<StatusFilter, number> {
+export function statusCounts(items: TaskRow[], f: Pick<TaskFilters, "owner" | "meetingId" | "seriesId">): Record<StatusFilter, number> {
   const out: Record<StatusFilter, number> = { open: 0, all: 0, NOT_STARTED: 0, IN_PROGRESS: 0, BLOCKED: 0, DONE: 0 };
   for (const t of items) {
     if (!matchesFilters(t, { ...f, status: "all" })) continue;
