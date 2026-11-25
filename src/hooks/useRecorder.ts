@@ -1930,8 +1930,12 @@ export function useRecorder(opts: {
         // Asked first, while the tap's permission to open the picker is still fresh.
         patch({ statusMsg: "Choose the call's tab…" });
         tabAudio = await getTabAudio();
+        if (startTokenRef.current !== token) {
+          // Cancelled while the picker was open: cleanup already ran, so release this share here (no leaked capture indicator).
+          tabAudio.getTracks().forEach((t) => t.stop());
+          throw new StartCancelled();
+        }
         streamsRef.current.push(tabAudio);
-        check();
       }
       if (useSample) {
         mic = await createSampleStream(ctx);
@@ -1947,6 +1951,7 @@ export function useRecorder(opts: {
         // Getting the mic changes the phone's audio session; resume again so iOS doesn't leave it suspended.
         ctx.resume().catch(() => {});
       }
+      if (mic && tabMode && startTokenRef.current !== token) mic.getTracks().forEach((t) => t.stop()); // cancelled during the mic prompt
       if (mic) streamsRef.current.push(mic);
       check();
 
@@ -2023,6 +2028,10 @@ export function useRecorder(opts: {
         patch({ meetingId: data.meeting.id, statusMsg: "Starting…" });
       }
 
+      // "Stop sharing" during the start-up (model download, connecting) can't stop a recording that hasn't begun: refuse to start on a dead share.
+      if (tabAudio && tabAudio.getAudioTracks().every((t) => t.readyState === "ended")) {
+        throw Object.assign(new Error("Sharing stopped before recording began. Start again and keep the tab shared."), { name: "TabAudioError" });
+      }
       wantRecordingRef.current = true;
       await acquireWakeLock();
       if (engine === "deepgram") await startDeepgram();
