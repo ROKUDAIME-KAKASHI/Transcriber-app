@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarPlus, ChevronLeft, CloudOff, Mic, Phone, Repeat, Share2, X } from "lucide-react";
 import { Badge, Button, FieldLabel, Notice, Panel, PanelHeader, cx, inputCls, selectCls } from "./ui";
 import { PersonPicker } from "./PersonPicker";
+import { PreworkSection } from "./PreworkSection";
 import { useToast } from "./Toast";
 import { useConnectivity } from "@/lib/connectivity";
 import { shareText } from "@/lib/export/deliver";
@@ -492,6 +493,10 @@ export function PlanPage() {
           />
         </div>
       </Panel>
+
+      {plan && plan.status !== "CANCELLED" && (
+        <PreworkSection planId={plan.id} agenda={form.agenda} onAgenda={(next) => set("agenda", next)} offline={offline} />
+      )}
 
       <Panel>
         <PanelHeader title="Series" />

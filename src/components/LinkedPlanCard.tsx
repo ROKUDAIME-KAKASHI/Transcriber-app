@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, ChevronDown, MapPin, Repeat, Users, Video } from "lucide-react";
+import { CalendarClock, ChevronDown, FileText, MapPin, Repeat, Users, Video } from "lucide-react";
 import { useFlag } from "@/lib/flagsClient";
 import { useConnectivity } from "@/lib/connectivity";
 import { attendeeLine, whenText, type PlanDTO } from "@/lib/planning";
@@ -18,6 +18,8 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
   const online = useConnectivity() !== "offline";
   const [plan, setPlan] = useState<PlanDTO | null>(null);
   const [open, setOpen] = useState(false);
+  const preworkOn = useFlag("prework");
+  const [refs, setRefs] = useState<{ id: string; fileName: string; points: unknown[] | null }[]>([]);
 
   useEffect(() => {
     if (!on || !online) return;
@@ -32,6 +34,21 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
       cancelled = true;
     };
   }, [on, online, meetingId]);
+
+  const planId = plan?.id;
+  useEffect(() => {
+    if (!on || !preworkOn || !online || !planId) return;
+    let cancelled = false;
+    void fetch(`/api/plans/${encodeURIComponent(planId)}/references`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { references?: { id: string; fileName: string; points: unknown[] | null }[] } | null) => {
+        if (!cancelled) setRefs(j?.references ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [on, preworkOn, online, planId]);
 
   if (!on || !plan) return null;
   const hasAgenda = !!plan.agenda?.trim();
@@ -73,6 +90,22 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
                 {plan.series.title}
               </Link>
             </p>
+          )}
+          {preworkOn && refs.length > 0 && (
+            <div className="space-y-0.5">
+              <p className="text-meta font-semibold text-muted-foreground">Pre-work</p>
+              <ul className="space-y-0.5">
+                {refs.map((r) => (
+                  <li key={r.id} className="flex items-start gap-1.5 text-meta text-muted-foreground">
+                    <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span className="min-w-0 break-words">
+                      {r.fileName}
+                      {r.points ? ` · ${r.points.length} ${r.points.length === 1 ? "point" : "points"}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {hasAgenda && (
             <div>

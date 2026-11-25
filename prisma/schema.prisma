@@ -260,6 +260,7 @@ model PlannedMeeting {
   updatedAt   DateTime           @updatedAt
   deletedAt   DateTime?
   attendees   PlannedAttendee[]
+  references  PlanReference[]
 
   @@index([userId, startAt])
 }
@@ -274,6 +275,27 @@ model PlannedAttendee {
   email            String?
   designation      String?
   role             String?
+
+  @@index([plannedMeetingId])
+}
+
+/// Extracted text of a reference file attached to a plan. The file itself is never stored.
+model PlanReference {
+  id               String         @id @default(cuid())
+  plannedMeetingId String
+  plannedMeeting   PlannedMeeting @relation(fields: [plannedMeetingId], references: [id], onDelete: Cascade)
+  userId           String
+  fileName         String
+  mimeType         String
+  sizeBytes        Int
+  text             String         @db.Text
+  /// True when the text was cut at the 200k character limit
+  truncated        Boolean        @default(false)
+  /// AI summary points: [{ point, source_quote, verified }]
+  points           Json?
+  summarizedAt     DateTime?
+  createdAt        DateTime       @default(now())
+  deletedAt        DateTime?
 
   @@index([plannedMeetingId])
 }

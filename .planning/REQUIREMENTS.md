@@ -128,8 +128,8 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 - [x] **PLAN-01**: User can plan a meeting with time, venue or link, attendees and agenda (Phase 13)
 - [x] **PLAN-02**: Meetings can repeat as a series (Phase 13)
 - [x] **PLAN-03**: Record starts from a planned meeting, prefilled and linked (Phase 13)
-- [ ] **PRE-01**: Reference files can be attached to a planned meeting (Phase 14)
-- [ ] **PRE-02**: AI turns reference files into editable agenda points (Phase 14)
+- [x] **PRE-01**: Reference files can be attached to a planned meeting (Phase 14)
+- [x] **PRE-02**: AI turns reference files into editable agenda points (Phase 14)
 - [ ] **CAL-01**: Common free slots are shown for selected internal users (Phase 15)
 - [ ] **CAL-02**: Chosen slots are blocked for everyone and invites are sent (Phase 15)
 - [ ] **CAL-03**: Recurring series block every occurrence (Phase 15)
@@ -201,7 +201,7 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 | HIST-01 | Phase 11 | Complete (needs UAT, apply 2_history) |
 | STK-01..02 | Phase 12 | Complete (needs UAT, apply 3_stakeholders) |
 | PLAN-01..03 | Phase 13 | Complete (needs UAT, apply 4_planned_meetings) |
-| PRE-01..02 | Phase 14 | Pending |
+| PRE-01..02 | Phase 14 | Complete (needs UAT, apply 5_prework) |
 | CAL-01..03 | Phase 15 | Pending |
 | TRK-01..03 | Phase 16 | Pending |
 | FUP-01..02 | Phase 17 | Pending |

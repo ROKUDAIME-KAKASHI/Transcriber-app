@@ -10,6 +10,7 @@ export const FLAG_DEFAULTS = {
   offlineLockedRecording: true,
   stakeholders: true,
   plannedMeetings: true,
+  prework: true,
 } as const;
 
 export type FlagKey = keyof typeof FLAG_DEFAULTS;
@@ -26,6 +27,7 @@ export const FLAG_LABELS: Record<FlagKey, string> = {
   offlineLockedRecording: "Offline recording with the screen locked (Android app)",
   stakeholders: "People directory (People page and person pickers)",
   plannedMeetings: "Planned meetings and series (Plan page, Upcoming list)",
+  prework: "Pre-work: reference files and AI agenda points on plans",
 };
 
 export function isFlagKey(k: unknown): k is FlagKey {

@@ -74,9 +74,19 @@ Additive only: three new tables (`MeetingSeries`, `PlannedMeeting`, `PlannedAtte
 
 Until it is applied the app still works: the plan routes answer "Planning needs a database update" (503), the Upcoming list, the Next up card and the Planned meeting card stay hidden, a new booking is still created (its plan is skipped), and AI minutes use the old prompt. The feature can also be switched off any time in Admin, Feature switches ("Planned meetings and series"): the routes answer "Planning is paused" and the entry points disappear.
 
+## Apply 5_prework (Phase 14)
+
+Additive only: one new table (`PlanReference`: the extracted text of a reference file plus its AI points, soft-deleted via `deletedAt`) with an index and a cascade foreign key to `PlannedMeeting`. Nothing existing changes. The uploaded files themselves are never stored.
+
+1. On a Neon preview branch first: `npx prisma migrate deploy` with that branch's `DATABASE_URL` / `DATABASE_URL_UNPOOLED`.
+2. After the pull request is merged, the same command against production.
+3. `npm run db:status` should say "Database schema is up to date".
+
+Until it is applied the app still works: the reference routes answer "Pre-work needs a database update" (503) and the Pre-work section and the reference list on the meeting page stay hidden. The feature can also be switched off any time in Admin, Feature switches ("Pre-work"): the routes answer "Pre-work is paused" and the section disappears. Plans themselves are unaffected either way.
+
 ### Brand new databases (for example a fresh Neon preview branch)
 
-A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, then `4_planned_meetings`).
+A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, `4_planned_meetings`, then `5_prework`).
 
 ## From now on
 
