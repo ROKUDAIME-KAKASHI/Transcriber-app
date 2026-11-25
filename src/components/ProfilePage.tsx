@@ -1,8 +1,8 @@
 "use client";
 
-import { ScreenNamingToggle } from "./ScreenNamingToggle";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { ScreenNamingToggle } from "./ScreenNamingToggle";
 import { Check, ChevronRight, Copy, Download, RefreshCw, Share2, Users } from "lucide-react";
 import { Badge, Button, Panel, PanelHeader, Switch } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";

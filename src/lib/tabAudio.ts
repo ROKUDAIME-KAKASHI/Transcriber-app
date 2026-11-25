@@ -77,8 +77,8 @@ export function audioTrackCount(tracks: ReadonlyArray<TrackLike>): number {
 
 export const NO_TAB_AUDIO_MESSAGE = "No tab audio was shared. Choose the call's tab and tick 'Share tab audio'.";
 export const SHARING_STOPPED_MESSAGE = "Sharing stopped — recording saved";
-export const TAB_HINT = "Pick the Meet/Zoom/Teams tab and turn on 'Share tab audio'. Use headphones so voices aren't recorded twice.";
-export const TAB_SPEAKER_NOTE = "Speaker labels work best with Cloud";
+export const TAB_HINT = "Pick the Meet, Zoom or Teams tab and keep “Also share tab audio” on. Use headphones so voices aren't recorded twice.";
+export const TAB_SPEAKER_NOTE = "Speaker labels work best with the Cloud engine.";
 
 /** Message for a failed getDisplayMedia(). A dismissed picker is a normal answer, not an error. */
 export function displayMediaErrorMessage(name: string | undefined): string {

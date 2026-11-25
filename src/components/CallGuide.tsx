@@ -9,7 +9,7 @@ import { Button, cx } from "./ui";
 function PickerMock({ step }: { step: 1 | 2 | 3 }) {
   const hot = "ring-2 ring-accent bg-accent-soft";
   return (
-    <svg viewBox="0 0 240 150" role="img" aria-hidden className="h-auto w-full max-w-[260px] shrink-0 rounded-chip border border-border/70 bg-muted/40">
+    <svg viewBox="0 0 240 150" role="img" aria-hidden className="h-auto w-full max-w-[300px] shrink-0 rounded-chip border border-border/70 bg-muted/40">
       <rect x="8" y="8" width="224" height="134" rx="8" className="fill-card" stroke="currentColor" strokeOpacity="0.15" />
       {/* Step 1: the three kinds of thing to share. */}
       {[
@@ -25,7 +25,7 @@ function PickerMock({ step }: { step: 1 | 2 | 3 }) {
             stroke={i === 0 && step === 1 ? undefined : "currentColor"}
             strokeOpacity={i === 0 && step === 1 ? 1 : 0.2}
           />
-          <text x={t.x + 32} y="31" textAnchor="middle" fontSize="10" className="fill-foreground" fontWeight={i === 0 ? 700 : 400}>{t.label}</text>
+          <text x={t.x + 32} y="31" textAnchor="middle" fontSize="10.5" className="fill-foreground" fontWeight={i === 0 ? 700 : 400}>{t.label}</text>
         </g>
       ))}
       {/* Step 2: the list of tabs, the call is one of them. */}
@@ -42,7 +42,7 @@ function PickerMock({ step }: { step: 1 | 2 | 3 }) {
             fillOpacity={r.call ? 1 : 0.6}
           />
           <rect x="22" y={r.y + 5} width="8" height="8" rx="2" className="fill-muted-foreground" fillOpacity="0.5" />
-          <text x="36" y={r.y + 12.5} fontSize="10" className="fill-foreground" fontWeight={r.call ? 700 : 400}>{r.label}</text>
+          <text x="36" y={r.y + 12.5} fontSize="10.5" className="fill-foreground" fontWeight={r.call ? 700 : 400}>{r.label}</text>
         </g>
       ))}
       {/* Step 3: the sound checkbox and the Share button. */}
@@ -52,10 +52,10 @@ function PickerMock({ step }: { step: 1 | 2 | 3 }) {
         strokeWidth={step === 3 ? 2 : 0}
       />
       <rect x="22" y="115" width="12" height="12" rx="3" className="fill-accent" />
-      <path d="M25 121 l3 3 l5 -6" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <text x="40" y="124" fontSize="9" className="fill-foreground">Also share tab audio</text>
+      <path d="M25 121 l3 3 l5 -6" className="stroke-accent-foreground" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <text x="40" y="124" fontSize="10.5" className="fill-foreground">Share tab audio</text>
       <rect x="150" y="110" width="74" height="22" rx="11" className="fill-accent" />
-      <text x="187" y="124" textAnchor="middle" fontSize="10" fill="white" fontWeight="700">Share</text>
+      <text x="187" y="124" textAnchor="middle" fontSize="10.5" className="fill-accent-foreground" fontWeight="700">Share</text>
     </svg>
   );
 }
@@ -94,17 +94,39 @@ export function CallGuide({
     closeRef.current = onClose;
   });
   const continueRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unregister = pushOverlay(() => closeRef.current());
+    // Focus returns to what opened the guide, and Tab stays inside it while it is open.
+    const opener = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeRef.current();
+      if (e.key === "Escape") {
+        closeRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = dialogRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), a[href]");
+      if (!items || items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!dialogRef.current?.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     continueRef.current?.focus();
     return () => {
       unregister();
       document.removeEventListener("keydown", onKey);
+      if (opener?.isConnected) opener.focus();
     };
   }, []);
 
@@ -112,6 +134,7 @@ export function CallGuide({
     <>
       <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal
         aria-labelledby="call-guide-title"
@@ -156,7 +179,7 @@ export function CallGuide({
         <p className="mt-4 text-meta text-muted-foreground">Use headphones so voices aren&apos;t recorded twice.</p>
 
         {!compact && (
-          <label className="mt-3 flex min-h-8 cursor-pointer items-center gap-2 text-meta text-muted-foreground">
+          <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-2 text-meta text-muted-foreground">
             <input
               type="checkbox"
               checked={dontShow}
