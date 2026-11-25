@@ -10,6 +10,7 @@ import { useOfflineReadiness } from "@/components/OfflineModelControl";
 import { useConnectivity } from "@/lib/connectivity";
 import { useMotionPref } from "@/lib/motionPref";
 import { useFlag } from "@/lib/flagsClient";
+import { useCalendarReady } from "@/lib/calendarClient";
 import { useSignOut } from "@/hooks/useSignOut";
 import { LATEST_APK } from "@/lib/appRelease";
 import { getInstalledVersion, getLatestApk, isUpdateAvailable, startApkUpdate } from "@/lib/appUpdate";
@@ -309,6 +310,67 @@ function AppSection({ offline }: { offline: boolean }) {
   );
 }
 
+/* ---------- Calendar sharing ---------- */
+function CalendarSection({ offline }: { offline: boolean }) {
+  const on = useFlag("calendar");
+  const ready = useCalendarReady(on && !offline);
+  const toast = useToast();
+  const [share, setShare] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    void fetch("/api/calendar/prefs", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { shareFreeBusy?: boolean } | null) => {
+        if (!cancelled && j) setShare(Boolean(j.shareFreeBusy));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [ready]);
+
+  if (!ready || share === null) return null;
+
+  const change = async (next: boolean) => {
+    if (saving) return;
+    setSaving(true);
+    const before = share;
+    setShare(next);
+    try {
+      const r = await fetch("/api/calendar/prefs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shareFreeBusy: next }),
+      });
+      if (!r.ok) throw new Error(String(r.status));
+      toast(next ? "Sharing when you're busy" : "Sharing turned off", "success");
+    } catch {
+      setShare(before);
+      toast("Couldn't save this setting. Try again.", "danger");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Panel aria-label="Calendar">
+      <PanelHeader title="Calendar" />
+      <div className="p-2">
+        <Switch
+          label="Let people who add me see when I'm busy"
+          description="Other Minutely users who add your email to a meeting see only the busy blocks and your working hours. No titles or details."
+          checked={share}
+          disabled={saving || offline}
+          onChange={(v) => void change(v)}
+        />
+      </div>
+    </Panel>
+  );
+}
+
 /* ---------- Preferences ---------- */
 function PreferencesSection() {
   const { pref, setPref } = useMotionPref();
@@ -376,6 +438,7 @@ export function ProfilePage() {
       <AccountSection offline={offline} />
       <PeopleSection />
       <BookingSection offline={offline} />
+      <CalendarSection offline={offline} />
       <AppSection offline={offline} />
       <PreferencesSection />
       <StorageSection />

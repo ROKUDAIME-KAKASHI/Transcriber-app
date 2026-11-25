@@ -3,18 +3,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CalendarPlus, ChevronLeft, CloudOff, Mic, Phone, Repeat, Share2, X } from "lucide-react";
+import { AlertTriangle, CalendarPlus, ChevronLeft, CloudOff, Mail, Mic, Phone, Repeat, Settings2, Share2, X } from "lucide-react";
 import { Badge, Button, FieldLabel, Notice, Panel, PanelHeader, cx, inputCls, selectCls } from "./ui";
 import { PersonPicker } from "./PersonPicker";
 import { PreworkSection } from "./PreworkSection";
+import { FindATime } from "./FindATime";
+import { SeriesSettingsSheet } from "./SeriesSettingsSheet";
 import { useToast } from "./Toast";
 import { useConnectivity } from "@/lib/connectivity";
+import { useFlag } from "@/lib/flagsClient";
+import { fetchMine, fetchPlanCalendar, useCalendarReady, type PlanCalendarInfo } from "@/lib/calendarClient";
+import { conflictMessage, conflictsWith, inviteLabel, type BusyBlock } from "@/lib/calendar";
 import { shareText } from "@/lib/export/deliver";
 import { usePeople } from "@/lib/stakeholdersClient";
 import { navBack } from "@/lib/navStack";
 import { deliverPlanIcs, openCallLink } from "@/lib/planActions";
 import {
-  CADENCES, CADENCE_LABEL, PLAN_DURATIONS, blankForm, formFromPlan, inviteText, payloadFromForm, recordHref,
+  CADENCES, CADENCE_LABEL, PLAN_DURATIONS, blankForm, formFromPlan, formStart, inviteText, payloadFromForm, recordHref,
   type AttendeeForm, type Cadence, type PlanDTO, type PlanForm, type SeriesDTO,
 } from "@/lib/planning";
 
@@ -84,6 +89,11 @@ export function PlanPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const calOn = useFlag("calendar");
+  const calReady = useCalendarReady(calOn && !offline);
+  const [calInfo, setCalInfo] = useState<PlanCalendarInfo | null>(null);
+  const [conflicts, setConflicts] = useState<BusyBlock[]>([]);
+  const [seriesSheet, setSeriesSheet] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,6 +131,50 @@ export function PlanPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const planId = plan?.id;
+  const planStatus = plan?.status;
+  const reloadCal = useCallback(async () => {
+    if (!planId) return;
+    const r = await fetchPlanCalendar(planId);
+    setCalInfo(r.ok ? r.data : null);
+  }, [planId]);
+
+  // Who was emailed, and whether the server can email at all. Hidden until the calendar feature is usable.
+  useEffect(() => {
+    if (!calReady || !planId) {
+      setCalInfo(null);
+      return;
+    }
+    void reloadCal();
+  }, [calReady, planId, reloadCal]);
+
+  // Non-blocking heads-up when the chosen time overlaps something already in your calendar.
+  const fDate = form?.date;
+  const fTime = form?.time;
+  const fTz = form?.timeZone;
+  const fDur = form?.durationMin;
+  useEffect(() => {
+    const start = formStart({ date: fDate ?? "", time: fTime ?? "", timeZone: fTz ?? "UTC" });
+    if (!calReady || !start.ok || !fDur || (planStatus && planStatus !== "PLANNED")) {
+      setConflicts([]);
+      return;
+    }
+    const startMs = new Date(start.startAt).getTime();
+    const endMs = startMs + fDur * 60_000;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const r = await fetchMine(startMs - 12 * 3_600_000, endMs + 12 * 3_600_000, planId);
+      if (cancelled) return;
+      setConflicts(
+        r.ok ? conflictsWith(r.data.busy.map((b) => ({ startMs: new Date(b.start).getTime(), endMs: new Date(b.end).getTime(), title: b.title })), startMs, endMs) : []
+      );
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [calReady, fDate, fTime, fTz, fDur, planId, planStatus]);
 
   const set = <K extends keyof PlanForm>(k: K, v: PlanForm[K]) => {
     setForm((f) => (f ? { ...f, [k]: v } : f));
@@ -189,6 +243,7 @@ export function PlanPage() {
       } else {
         setPlan(saved);
         setForm(formFromPlan(saved));
+        void reloadCal();
         if (seriesId !== form.seriesId) {
           const sr = await fetch("/api/series", { cache: "no-store" }).catch(() => null);
           const sj = sr?.ok ? ((await sr.json().catch(() => null)) as { series?: SeriesDTO[] } | null) : null;
@@ -219,6 +274,7 @@ export function PlanPage() {
       setPlan(saved);
       setConfirmCancel(false);
       toast(status === "CANCELLED" ? "Meeting cancelled" : "Meeting restored", "success");
+      void reloadCal();
     } catch {
       toast("Couldn't reach the server. Try again.", "danger");
     } finally {
@@ -271,6 +327,37 @@ export function PlanPage() {
       if (r === "copied") toast("Sharing isn't available here. Invite copied instead.", "neutral");
     } catch {
       toast("Couldn't share the invite. Try again.", "danger");
+    }
+  };
+
+  const sendInvites = async (mode: "invite" | "cancel") => {
+    if (!plan) return;
+    setBusy("invite");
+    try {
+      const res = await fetch(`/api/plans/${encodeURIComponent(plan.id)}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
+        if (j?.code === "email_not_configured") {
+          setCalInfo((c) => (c ? { ...c, emailConfigured: false } : c));
+          toast("Email isn't set up. Share the invite file instead.", "neutral");
+        } else {
+          toast(j?.error ?? "Couldn't send the invites. Try again.", "danger");
+        }
+        return;
+      }
+      const j = (await res.json()) as { sent: number; failed: string[]; kind: "invite" | "update" | "cancel" };
+      const n = `${j.sent} ${j.sent === 1 ? "person" : "people"}`;
+      toast(j.kind === "cancel" ? `Cancellation sent to ${n}` : j.kind === "update" ? `Update sent to ${n}` : `Invite sent to ${n}`, "success");
+      if (j.failed.length) toast(`Couldn't reach ${j.failed.join(", ")}`, "danger");
+      await reloadCal();
+    } catch {
+      toast("Couldn't reach the server. Try again.", "danger");
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -340,6 +427,11 @@ export function PlanPage() {
   const chosenSeries = series.find((s) => s.id === form.seriesId);
   const durationChips = PLAN_DURATIONS.includes(form.durationMin as (typeof PLAN_DURATIONS)[number]) ? [...PLAN_DURATIONS] : [...PLAN_DURATIONS, form.durationMin].sort((a, b) => a - b);
   const needSave = dirty ? "Save your changes first" : undefined;
+  const conflictText = conflictMessage(conflicts, form.timeZone);
+  const withEmail = plan ? plan.attendees.filter((a) => a.email) : [];
+  const invitedCount = calInfo ? Object.keys(calInfo.invited).length : 0;
+  const label = plan && calInfo ? inviteLabel(plan.status, invitedCount > 0) : null;
+  const canInvite = !!label && (label === "Send cancellation" || withEmail.length > 0);
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -391,6 +483,23 @@ export function PlanPage() {
               ))}
             </div>
           </div>
+          {conflictText && (
+            <p role="status" className="flex items-start gap-2 rounded-chip border border-warning/30 bg-warning-soft px-3 py-2 text-ui">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+              <span>
+                {conflictText}. <span className="text-muted-foreground">You can still save.</span>
+              </span>
+            </p>
+          )}
+          {calReady && !locked && !offline && (
+            <FindATime
+              planId={plan?.id}
+              attendees={form.attendees}
+              durationMin={form.durationMin}
+              timeZone={form.timeZone}
+              onPick={(date, time) => setForm((f) => (f ? { ...f, date, time } : f))}
+            />
+          )}
           <div>
             <p className="text-meta text-muted-foreground">
               Times in {form.timeZone.replace(/_/g, " ")} ·{" "}
@@ -533,7 +642,14 @@ export function PlanPage() {
               </div>
             </div>
           )}
-          {chosenSeries && form.seriesId !== NEW_SERIES && <p className="text-meta text-muted-foreground">{CADENCE_LABEL[chosenSeries.cadence]}</p>}
+          {chosenSeries && form.seriesId !== NEW_SERIES && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-meta text-muted-foreground">{CADENCE_LABEL[chosenSeries.cadence]}</p>
+              <Button icon={<Settings2 className="h-4 w-4" aria-hidden />} onClick={() => setSeriesSheet(true)}>
+                Series settings
+              </Button>
+            </div>
+          )}
         </div>
       </Panel>
 
@@ -578,12 +694,38 @@ export function PlanPage() {
               <Button icon={<Share2 className="h-4 w-4" aria-hidden />} disabled={dirty} onClick={() => void shareInvite()}>
                 Share invite
               </Button>
+              {canInvite && calInfo && (
+                calInfo.emailConfigured ? (
+                  <Button
+                    variant={label === "Send cancellation" ? "danger" : "secondary"}
+                    icon={<Mail className="h-4 w-4" aria-hidden />}
+                    loading={busy === "invite"}
+                    disabled={dirty || offline}
+                    onClick={() => void sendInvites(label === "Send cancellation" ? "cancel" : "invite")}
+                  >
+                    {label}
+                  </Button>
+                ) : (
+                  <Button icon={<Share2 className="h-4 w-4" aria-hidden />} loading={busy === "ics"} disabled={dirty || offline} onClick={() => void addToCalendar()}>
+                    Share invite file
+                  </Button>
+                )
+              )}
               {plan.seriesId && (
                 <Button icon={<Repeat className="h-4 w-4" aria-hidden />} loading={busy === "next"} disabled={offline} onClick={() => void planNext()}>
                   Plan next in series
                 </Button>
               )}
             </div>
+            {canInvite && calInfo && (
+              <p className="text-meta text-muted-foreground" aria-live="polite">
+                {calInfo.emailConfigured
+                  ? label === "Send cancellation"
+                    ? `${invitedCount} ${invitedCount === 1 ? "person was" : "people were"} invited by email. Tell them it's cancelled.`
+                    : `${withEmail.length} of ${plan.attendees.length} attendees have an email${invitedCount ? `, ${invitedCount} already invited` : ""}.${withEmail.length < plan.attendees.length ? " Add an email to invite the rest." : ""}`
+                  : "Email isn't set up. Share the invite file instead."}
+              </p>
+            )}
             {!recorded && (
               <div className="flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
                 {cancelled ? (
@@ -624,6 +766,15 @@ export function PlanPage() {
             )}
           </div>
         </Panel>
+      )}
+      {seriesSheet && chosenSeries && (
+        <SeriesSettingsSheet
+          series={chosenSeries}
+          calendarOn={calReady}
+          offline={offline}
+          onChanged={(next) => setSeries((list) => list.map((x) => (x.id === next.id ? next : x)))}
+          onClose={() => setSeriesSheet(false)}
+        />
       )}
     </div>
   );
