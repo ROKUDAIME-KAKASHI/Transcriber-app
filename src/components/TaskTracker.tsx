@@ -1,5 +1,6 @@
 "use client";
 
+import { PersonPicker } from "./PersonPicker";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -150,12 +151,15 @@ function TaskItem({
           <label className="mb-1 block text-meta font-semibold text-muted-foreground lg:sr-only" htmlFor={`owner-${item.id}`}>
             Owner
           </label>
-          <input
+          <PersonPicker
             id={`owner-${item.id}`}
             maxLength={100}
             value={owner}
             placeholder="Unassigned"
-            onChange={(e) => setOwner(e.target.value)}
+            onChange={setOwner}
+            onCommit={(name) => {
+              if (name !== (item.owner ?? "")) onPatch(item.id, { owner: name || null });
+            }}
             onBlur={saveOwner}
             onKeyDown={(e) => {
               if (e.key === "Enter") e.currentTarget.blur();

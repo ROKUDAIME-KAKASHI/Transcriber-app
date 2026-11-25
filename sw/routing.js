@@ -1,7 +1,7 @@
 // Pure SW routing. No imports: inlined verbatim into public/sw.js and also loaded by node tests.
 var MEETING_ID_RE_SOURCE = "^[a-z0-9_-]{16,40}$";
 var MEETING_ID_RE_LOCAL = new RegExp(MEETING_ID_RE_SOURCE);
-var SHELLS = ["/", "/meetings", "/meeting", "/tasks", "/schedule", "/profile", "/login", "/offline"];
+var SHELLS = ["/", "/meetings", "/meeting", "/tasks", "/people", "/schedule", "/profile", "/login", "/offline"];
 
 function shellFor(pathname) {
   var p = pathname.length > 1 && pathname.charAt(pathname.length - 1) === "/" ? pathname.slice(0, -1) : pathname;

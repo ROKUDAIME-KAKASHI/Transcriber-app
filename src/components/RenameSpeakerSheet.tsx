@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { pushOverlay } from "@/lib/overlays";
 import { Button, FieldLabel, inputCls } from "./ui";
+import { usePeople } from "@/lib/stakeholdersClient";
+import { pickerOptions } from "@/lib/stakeholders";
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
@@ -26,6 +28,7 @@ export function RenameSpeakerSheet({
   const [error, setError] = useState(false);
   const [desktop, setDesktop] = useState(false);
   const [shown, setShown] = useState(false);
+  const { status, people } = usePeople();
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
@@ -81,6 +84,12 @@ export function RenameSpeakerSheet({
     if (!ok) setError(true);
   };
 
+  // Names from the People directory that match what is typed (free text still works).
+  const suggestions = useMemo(
+    () => (status === "ready" ? pickerOptions(people, value, 4).filter((p) => p.name.trim().toLowerCase() !== value.trim().toLowerCase()) : []),
+    [status, people, value]
+  );
+
   const color = `var(--speaker-${speaker % 6})`;
   const inputId = `rename-speaker-${speaker}`;
 
@@ -132,6 +141,26 @@ export function RenameSpeakerSheet({
           }}
           className={`${inputCls} min-h-11`}
         />
+        {suggestions.length > 0 && (
+          <div className="mt-2" role="group" aria-label="Names from People">
+            <p className="text-meta text-muted-foreground">From People</p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {suggestions.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setValue(p.name.slice(0, 40));
+                    inputRef.current?.focus();
+                  }}
+                  className="min-h-11 max-w-full truncate rounded-chip bg-muted px-3 text-ui font-medium hover:bg-accent-soft lg:min-h-8"
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <p className="mt-2 text-meta text-muted-foreground">Applies to the transcript, exports and minutes.</p>
         {error && (
           <p className="mt-2 text-meta text-danger" role="alert">
