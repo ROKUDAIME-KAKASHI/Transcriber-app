@@ -16,8 +16,8 @@ export const FLAG_DEFAULTS = {
   followUpPlanning: true,
   tabAudio: true,
   meetingTabs: true,
-  autoMinutes: false,
-  meetingAsk: false,
+  autoMinutes: true,
+  meetingAsk: true,
 } as const;
 
 export type FlagKey = keyof typeof FLAG_DEFAULTS;
