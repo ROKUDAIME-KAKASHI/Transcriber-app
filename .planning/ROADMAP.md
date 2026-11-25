@@ -1,8 +1,8 @@
-# Roadmap: Transcriber
+# Roadmap: Minutely (formerly Transcriber)
 
 ## Overview
 
-This milestone fixes the existing Transcriber web app and Android app so it works on a phone, anywhere. First, exports, the share sheet and navigation get fixed, and every new native plugin ships in one APK. Next comes a local-first meeting store with sync to the server. On top of that store we add the offline app shell, offline sign-in and gating of online-only features. On-device speaker separation is built on the same store (parallel with the offline shell). Last, the screens get the "Aurora Ink" redesign with motion, and a new signed APK is built and checked on the Xiaomi phone.
+This milestone fixes the existing Transcriber web app and Android app so it works on a phone, anywhere. First, exports, the share sheet and navigation get fixed, and every new native plugin ships in one APK. Next comes a local-first meeting store with sync to the server. On top of that store we add the offline app shell, offline sign-in and gating of online-only features. On-device speaker separation is built on the same store (parallel with the offline shell). Then the screens get the "Aurora Ink" redesign with motion, and a new signed APK is built and checked on the Xiaomi phone. Finally, meetings are followed through with action items, a task tracker, a follow-up agenda and scheduling (Phase 9, shipped as quick tasks).
 
 ## Phases
 
@@ -20,9 +20,10 @@ Decimal phases appear between their surrounding integers in numeric order.
  (completed 2026-11-21)
 - [x] **Phase 4: On-Device Speaker Separation** - Moonshine/Whisper transcripts say who said what, renamable, used by AI minutes
 - [x] **Phase 5: Aurora Ink Redesign & Release** - Alive, modern, simple UI with motion; signed APK built and verified on the Xiaomi phone (completed 2026-11-23)
-- [x] **Phase 6: UI Polish Leftovers** - Recording pill gets pause/stop, contrast/type/radius/spacing fixes from the Phase 5 UI review (completed 2026-11-24)
-- [x] **Phase 7: Automatic Speaker Names** - Speakers who introduce themselves ("Hi, I'm Priya") get their names suggested and applied in one tap
+- [x] **Phase 6: UI Polish Leftovers** - Recording pill gets pause/stop, contrast/type/radius/spacing fixes from the Phase 5 UI review (code complete 2026-11-24, device UAT pending)
+- [x] **Phase 7: Automatic Speaker Names** - Speakers who introduce themselves ("Hi, I'm Priya") get their names suggested and applied in one tap (code complete 2026-11-24, device UAT pending)
 - [x] **Phase 8: Offline Recording With Screen Locked** - On-device (free, offline) recording keeps going with the phone locked in the Android app (code complete 2026-11-24, device UAT pending)
+- [x] **Phase 9: Meeting follow-through (shipped as quick tasks)** - Action items, task tracker, follow-up agenda, scheduling, profile, admin dashboard and the Minutely rename (shipped 2026-11-25, device UAT pending for APK 1.2)
 
 ## Phase Details
 
@@ -35,7 +36,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. In the Android app and on the website, tapping TXT, Word or PDF on a meeting produces a real file that opens. This includes a long Hindi (Devanagari) meeting as PDF, with no "Couldn't make the PDF" error
   2. Tapping "Share" opens the native share sheet (WhatsApp, Drive, Telegram, Gmail, copy...) with the minutes or transcript as a file or text. Browsers without Web Share fall back to a download
   3. An older installed APK that lacks the new plugins still loads the new web code, and exports fall back gracefully instead of crashing
-  4. Tapping the "Transcriber" brand goes to Record from anywhere. Every meeting page has a back arrow to the meetings list, even when opened directly with no history
+  4. Tapping the brand name goes to Record from anywhere. Every meeting page has a back arrow to the meetings list, even when opened directly with no history
   5. The Android back button closes open sheets first, then goes back. It never exits the app while recording (it minimizes instead)
 **Plans:** 4/4 plans complete
 
@@ -144,6 +145,10 @@ Plans:
   1. The floating recording pill (shown on other screens while recording) has pause/resume and stop buttons that work for both the native (Cloud, APK) and the in-page recorders; tapping its body still goes to Record; it also shows on laptop width
   2. Switch off-track, radio ring and idle timer pass 3:1 contrast in light mode
   3. No off-scale type (`text-[13px]`, `text-[2rem]`, stray `text-lg/xl`), no `rounded-lg/xl` stragglers, no half-step spacing on the shared primitives; toast sits just above the tab bar unless a pill/bar is shown
+**Plans:** 1/1 plans complete
+
+Plans:
+- [x] 06-01-PLAN.md — Recording pill pause/stop, contrast, type/radius/spacing and toast offset fixes (wave 1)
 **UI hint**: yes
 
 ### Phase 7: Automatic Speaker Names
@@ -179,10 +184,36 @@ Plans:
 - [x] 08-03-PLAN.md — useRecorder native session (pump, catch-up, committed cursor, detach/resume), Dexie fields, Record copy (wave 2)
 - [x] 08-04-PLAN.md — Recovery of left-behind captures, offline stop paths, storage notices, 08-HUMAN-UAT.md (wave 3)
 
+### Phase 9: Meeting follow-through (shipped as quick tasks)
+**Goal**: After a meeting, the user can turn what was said into tasks, track them, plan the follow-up meeting, and book meetings with others, all from the same app
+**Mode:** quick-task batch (not a planned GSD phase)
+**Status**: Shipped 2026-11-25. Device UAT for the APK parts (Share, update banner, profile install) is pending with APK 1.2.
+**Shipped work** (commit refs):
+- Action items: extract from a meeting with AI, review, then save (`85a237e`)
+- Task tracker at `/tasks`: manual status, owner, due date and notes (`b1220da`)
+- Follow-up agenda: prepare from unfinished tasks (`e7ed81b`)
+- Scheduling: schema and slot engine (`b765a9b`), host settings and booking APIs (`b96183e`), host Schedule page (`9700878`), public booking pages, slot picker and confirmation (`5a2fe66`), schedule a follow-up from the agenda sheet (`20a4fa4`), ICS and name hardening (`f40aff2`), simpler booking setup and page (`71aa698`)
+- Profile page with app version, in-app update and install (`d471bef`), in-app APK update banner (`b3cf396`)
+- Admin usage dashboard at `/admin`, password-protected (`227d9bf`)
+- Rename to Minutely, Android app 1.2 (versionCode 3) (`6e1a198`, `2308491`)
+
+## Backlog
+
+Not scheduled. Captured for a future milestone:
+- Per-account usage limits
+- Booking to recording link (`Booking.meetingId`)
+- Action items for meetings that have not synced yet
+- Laptop tab-audio capture for online calls
+- Reminders (overdue tasks, upcoming bookings)
+- Google Calendar sync
+- Vercel project rename to a minutely URL (needs a new APK, since the APK points at the Vercel URL)
+- Guest time zone in booking emails
+- Per-host email cap for public bookings
+
 ## Progress
 
 **Execution Order:**
-Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel with Phase 3 once Phase 2 is done)
+Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phase 4 may run in parallel with Phase 3 once Phase 2 is done). Phase 9 was shipped as quick tasks after Phase 8.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -191,9 +222,10 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 (Phase 4 may run in parallel 
 | 3. Offline App Shell & Gating | 8/8 | Complete   | 2026-11-21 |
 | 4. On-Device Speaker Separation | 8/8 | Code complete (device UAT pending) | 2026-11-23 |
 | 5. Aurora Ink Redesign & Release | 7/7 | Complete   | 2026-11-23 |
-| 6. UI Polish Leftovers | 0/? | Not started | - |
+| 6. UI Polish Leftovers | 1/1 | Code complete (device UAT pending) | 2026-11-24 |
 | 7. Automatic Speaker Names | 3/3 | Code complete (device UAT pending) | 2026-11-24 |
 | 8. Offline Recording With Screen Locked | 4/4 | Code complete (device UAT pending) | 2026-11-24 |
+| 9. Meeting follow-through (quick tasks) | n/a | Shipped (APK 1.2 device UAT pending) | 2026-11-25 |
 
 ---
 *Roadmap created: 2026-11-20*

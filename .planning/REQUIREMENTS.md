@@ -1,4 +1,4 @@
-# Requirements: Transcriber
+# Requirements: Minutely (formerly Transcriber)
 
 **Defined:** 2026-11-20
 **Core Value:** Record a whole meeting on a phone, anywhere — with or without internet — and come away with a transcript that says who said what, which can be turned into minutes and shared in one tap.
@@ -15,7 +15,7 @@
 
 ### Navigation
 
-- [x] **NAV-01**: Tapping the "Transcriber" brand/logo goes to the home/Record screen from anywhere
+- [x] **NAV-01**: Tapping the app brand/logo goes to the home/Record screen from anywhere
 - [x] **NAV-02**: Every sub-page (meeting page, etc.) has a visible back arrow that returns to its parent (meetings list) even with no history
 - [x] **NAV-03**: Android hardware/gesture back closes open sheets, then goes back, and never exits the app while recording (minimizes instead)
 
@@ -60,11 +60,32 @@
 - [x] **NAME-02**: Online AI name suggestions with evidence, using the existing AI provider chain
 - [x] **NAME-03**: Suggestions are accepted/dismissed by the user; accepted names go through the existing rename path
 
+## v1.1 Requirements
+
+Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
+
+### Meeting follow-through
+
+- [x] **TASK-01**: User can extract action items from a meeting with AI, review them, and save the ones they keep
+- [x] **TASK-02**: User has a task tracker (`/tasks`) with manual status, owner, due date and notes for saved action items
+- [x] **TASK-03**: User can prepare a follow-up agenda from unfinished tasks
+
+### Scheduling
+
+- [x] **SCHED-01**: User can set up a public booking link (`/schedule` host page, `/book` public pages with a slot picker and confirmation)
+- [x] **SCHED-02**: User can schedule a follow-up meeting from the agenda sheet, using the booking flow
+
+### Account & app
+
+- [x] **ADMIN-01**: Admin usage dashboard at `/admin`, protected by a password (stored only as a scrypt hash in an environment variable)
+- [x] **APP-01**: In-app APK update prompt and a profile page (app version, update and install)
+- [x] **BRAND-01**: App renamed to Minutely (formerly Transcriber); Android applicationId and storage keys unchanged
+
 ## v2 Requirements
 
 ### Offline recording with screen locked
 
-- [x] **OFF-V2-01**: On-device (offline) recording continues with the phone locked in the Android app (native capture into a file, transcribed by the page / native ONNX)
+- [x] **OFF-V2-01**: On-device (offline) recording continues with the phone locked in the Android app (native capture into a file, transcribed by the page / native ONNX). Shipped in Phase 8; device UAT pending
 
 ### Speakers
 
@@ -73,6 +94,18 @@
 ### Performance
 
 - **PERF-V2-01**: Multi-threaded ONNX inside the Android WebView (androidx.webkit cross-origin isolation allowlist)
+
+### Backlog (not scheduled)
+
+- **BACK-01**: Per-account usage limits
+- **BACK-02**: Link a booking to its recording (`Booking.meetingId`)
+- **BACK-03**: Action items for meetings that have not synced yet
+- **BACK-04**: Laptop tab-audio capture for online calls
+- **BACK-05**: Reminders (overdue tasks, upcoming bookings)
+- **BACK-06**: Google Calendar sync
+- **BACK-07**: Vercel project rename to a minutely URL (needs a new APK)
+- **BACK-08**: Guest time zone in booking emails
+- **BACK-09**: Per-host email cap for public bookings
 
 ## Out of Scope
 
@@ -113,15 +146,24 @@
 | UI-04 | Phase 5 | Complete |
 | UI-05 | Phase 5 | Complete |
 | REL-01 | Phase 5 | Complete |
-| POL-01..03 | Phase 6 | Complete |
-| NAME-01..03 | Phase 7 | Complete |
+| POL-01..03 | Phase 6 | Complete (device UAT pending) |
+| NAME-01..03 | Phase 7 | Complete (device UAT pending) |
 | OFF-V2-01 | Phase 8 | Complete (device UAT pending) |
+| TASK-01 | Phase 9 (quick tasks) | Complete |
+| TASK-02 | Phase 9 (quick tasks) | Complete |
+| TASK-03 | Phase 9 (quick tasks) | Complete |
+| SCHED-01 | Phase 9 (quick tasks) | Complete |
+| SCHED-02 | Phase 9 (quick tasks) | Complete |
+| ADMIN-01 | Phase 9 (quick tasks) | Complete |
+| APP-01 | Phase 9 (quick tasks) | Complete (device UAT pending) |
+| BRAND-01 | Phase 9 (quick tasks) | Complete |
 
 **Coverage:**
 - v1 requirements: 25 total
 - Mapped to phases: 25
+- v1.1 requirements: 9 total, all complete
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-11-20*
-*Last updated: 2026-11-20 after roadmap creation*
+*Last updated: 2026-11-25 after v1.1 quick-task batch and rename to Minutely*

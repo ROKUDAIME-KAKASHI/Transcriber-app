@@ -1,8 +1,8 @@
-# Transcriber
+# Minutely (formerly Transcriber)
 
 ## What This Is
 
-A meeting transcriber for phones and laptops. A Next.js 16 web app (Neon Postgres, NextAuth, deployed on Vercel at https://transcriber-app-ten.vercel.app) wrapped in a Capacitor 8 Android app whose native foreground service keeps recording with the screen locked. It transcribes on-device for free (Moonshine, Whisper via Transformers.js in a Web Worker) or in the cloud with speaker labels (Deepgram Nova-3), then writes AI Minutes of Meeting / Reports (AICredits GLM Flash or Claude Haiku, fallback Gemini). Used by the owner and people they share the APK with.
+A meeting transcriber for phones and laptops. A Next.js 16 web app (Neon Postgres, NextAuth, deployed on Vercel at https://transcriber-app-ten.vercel.app) wrapped in a Capacitor 8 Android app whose native foreground service keeps recording with the screen locked. It transcribes on-device for free (Moonshine, Whisper via Transformers.js in a Web Worker) or in the cloud with speaker labels (Deepgram Nova-3), then writes AI Minutes of Meeting / Reports (AICredits GLM Flash or Claude Haiku, fallback Gemini). After a meeting it can extract action items for review, keep a task tracker (`/tasks`), prepare a follow-up agenda, and schedule follow-ups and public booking links (`/schedule`, `/book`), with optional email confirmations via Resend. Used by the owner and people they share the APK with.
 
 ## Core Value
 
@@ -18,18 +18,19 @@ Record a whole meeting on a phone, anywhere — with or without internet — and
 - ✓ Per-account meetings (Prisma `Meeting` row per recording, scoped by `userId`), autosave every 5 s with incremental `transcriptTail` PATCH — existing
 - ✓ Pause/resume, timestamps, mic picker, level meter, no-sound warning, 10-hour meeting robustness — existing
 - ✓ AI Minutes / Report with model picker (GLM Flash / Claude Haiku) — existing
-- ✓ Signed release APK (`dist/Transcriber.apk`) — existing
-- ✓ Professional neutral redesign (taste rules: single accent, hairline cards) — existing, but the user now finds it too static/plain black
+- ✓ Signed release APK (`dist/Transcriber.apk`, now Minutely 1.2) — existing
+- ✓ Exports (TXT, Word, PDF) and native share in the APK and on the web — Phase 1
+- ✓ Local-first meetings with idempotent sync, offline shell and feature gating — Phases 2–3
+- ✓ On-device speaker labels, renames and speaker-aware minutes — Phase 4 (device UAT pending)
+- ✓ Aurora Ink redesign, signed APK release — Phase 5
+- ✓ Automatic speaker names from self-introductions — Phase 7 (device UAT pending)
+- ✓ Offline recording with the screen locked in the APK — Phase 8 (device UAT pending)
+- ✓ Action items, task tracker, follow-up agenda, scheduling and booking pages, profile and in-app update, admin usage dashboard — post-roadmap quick tasks
 
 ### Active
 
-- [ ] Exports actually work inside the Android app: PDF currently fails ("Couldn't make the PDF. Try Word or TXT instead."), Word and TXT buttons do nothing (blob/anchor downloads don't work in the Capacitor WebView)
-- [ ] "Share / Export to" opens the native share sheet (Android, and iOS later) with the minutes or transcript as a file or text: WhatsApp, Drive, Telegram, Messages, copy, etc. Also works on web (Web Share API with files, fallback to download)
-- [ ] Offline-first: once the app has loaded once, it opens and records with no internet using the on-device models; meetings are stored locally and synced to the server when online; navigation works offline
-- [ ] Online-only features are gated: Deepgram Cloud recording and AI minutes generation only enabled with internet, clearly disabled/explained offline
-- [ ] Speaker separation (diarization) for the on-device engines (Moonshine, Whisper) so transcripts and minutes attribute speech to Speaker 1/2/…, ideally fully on-device
-- [ ] UI redesign: more alive and active (motion, depth, color, feedback), modern for this generation, attractive yet simple and easy; not "full black and static"; based on research into current design systems/approaches
-- [ ] Navigation: tapping the "Transcriber" brand goes home/record; clear back arrows on sub-pages; Android back button behaves; all nav works offline
+- [ ] Device UAT for Phases 4–8 and APK 1.2 on the Xiaomi phone
+- [ ] Backlog items in ROADMAP.md (usage limits, booking-to-recording link, reminders, Google Calendar sync, tab-audio capture)
 
 ### Out of Scope
 
@@ -40,10 +41,10 @@ Record a whole meeting on a phone, anywhere — with or without internet — and
 
 ## Context
 
-- Repo: `C:\coding\life os\transcriber-app`, remote github.com/ROKUDAIME-KAKASHI/Transcriber-app, pushes to main auto-deploy on Vercel.
-- Key files: `src/components/Recorder.tsx`, `MeetingView.tsx` (exports via `download()` blob anchor + html2pdf.js), `MeetingList.tsx`, `AppShell.tsx`, `TranscriptView.tsx`, `ui.tsx`, `src/hooks/useRecorder.ts`, `useNativeRecorder.ts`, `src/lib/speech/*`, `src/workers/speech.worker.ts`, `src/lib/nativeRecorder.ts`, `android/app/src/main/java/in/transcriber/app/recorder/*`, `capacitor.config.ts` (server.url, `mobile/www` offline fallback page), `public/` (service worker exists with an offline page only).
-- Android app loads the remote site via `server.url`; Capacitor bridge is injected so native plugins work. Offline today → shows `mobile/www/index.html` "Can't reach the server".
-- Testing device: Xiaomi phone over USB (adb). C: drive is nearly full (emulator unusable). Release keystore at `C:/Users/jljga/.android/keystores/transcriber-release.jks` with `android/keystore.properties` (never print passwords).
+- Repo: `C:\coding\life os\transcriber-app`, remote github.com/ROKUDAIME-KAKASHI/Transcriber-app, pushes to main auto-deploy on Vercel. Renamed to Minutely in the UI; the repo name is unchanged.
+- Key files: `src/components/Recorder.tsx`, `MeetingView.tsx`, `MeetingList.tsx`, `AppShell.tsx`, `TranscriptView.tsx`, `ui.tsx`, `src/hooks/useRecorder.ts`, `useNativeRecorder.ts`, `src/lib/speech/*`, `src/workers/speech.worker.ts`, `src/lib/nativeRecorder.ts`, `src/lib/scheduling.ts`, `android/app/src/main/java/in/transcriber/app/recorder/*`, `capacitor.config.ts` (server.url, `mobile/www` offline fallback page), `public/` (service worker).
+- Android app loads the remote site via `server.url`; Capacitor bridge is injected so native plugins work. Offline today → shows `mobile/www/index.html` "Can't reach the server" only before the first successful load.
+- Testing device: Xiaomi phone over USB (adb). C: drive is nearly full (emulator unusable). Release keystore lives outside the repo (secrets never printed).
 - Free plans: Vercel Hobby, Neon free.
 
 ## Constraints
@@ -62,6 +63,11 @@ Record a whole meeting on a phone, anywhere — with or without internet — and
 | Native foreground service for cloud recording in the app | WebView pauses mic when screen locks | ✓ Good |
 | Keys stay on server, APK points at Vercel URL | Security | ✓ Good |
 | GSD workflow, coarse phases, parallel, commits as it goes | User request this milestone | — Pending |
+| APK applicationId stays `in.transcriber.app` through the rename to Minutely | Installed APKs update in place; changing the id would need a fresh install and lose local data | ✓ Good |
+| Storage keys keep the "transcriber" names (per-user Dexie DB `transcriber-{userId}`, localStorage `transcriber.*`) | Renaming would orphan existing offline meetings and settings on devices | ✓ Good |
+| Admin password is stored only as an scrypt hash in the `ADMIN_PASSWORD_HASH` env var | No plaintext secret in the repo or the database | ✓ Good |
+| Booking links are public (no sign-in for the guest) | Guests book with a link, not an account | ✓ Good |
+| Email is optional via Resend (`RESEND_API_KEY`, `BOOKING_FROM_EMAIL`) | The app works without email configured; bookings are still saved | — Pending (keys not yet set) |
 
 ## Evolution
 
@@ -81,4 +87,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-20 after initialization*
+*Last updated: 2026-11-25 after rename to Minutely and the post-roadmap quick-task batch*
