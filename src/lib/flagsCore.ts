@@ -15,6 +15,9 @@ export const FLAG_DEFAULTS = {
   trackerPlus: true,
   followUpPlanning: true,
   tabAudio: true,
+  meetingTabs: true,
+  autoMinutes: false,
+  meetingAsk: false,
 } as const;
 
 export type FlagKey = keyof typeof FLAG_DEFAULTS;
@@ -36,6 +39,9 @@ export const FLAG_LABELS: Record<FlagKey, string> = {
   trackerPlus: "Tracker upgrades: owners from People, timeline, overdue alerts, series progress",
   followUpPlanning: "Plan next meeting: carries unfinished tasks into the next planned meeting",
   tabAudio: "Record online calls from a browser tab (laptops)",
+  meetingTabs: "Meeting page tabs: Transcript, Minutes, Summary, Action items, Ask",
+  autoMinutes: "Write minutes, summary and action items automatically after Stop (one small AI request; costs credits)",
+  meetingAsk: "Ask tab: questions about a meeting, answered with quotes (small AI request per question)",
 };
 
 export function isFlagKey(k: unknown): k is FlagKey {

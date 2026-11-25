@@ -26,7 +26,11 @@ export interface SaveItem {
   sourceQuote: string;
 }
 
-const TEMPLATE = `Extract action items from the meeting transcript below.
+/**
+ * The extraction rules and output shape. The combined minutes request (src/lib/combined.ts) embeds this text
+ * word for word, so any change here changes both paths.
+ */
+export const ACTION_ITEMS_INSTRUCTIONS = `Extract action items from the meeting transcript below.
 
 Rules:
 - Include only explicit commitments or clearly assigned tasks.
@@ -49,7 +53,9 @@ Rules:
 }
 
 If there are no explicit action items, return:
-{"action_items": []}
+{"action_items": []}`;
+
+const TEMPLATE = `${ACTION_ITEMS_INSTRUCTIONS}
 
 Transcript:
 {{transcript}}`;
@@ -119,14 +125,8 @@ export function extractJson(text: string): unknown {
   return null;
 }
 
-/** Lenient parse + validation. Bad entries are skipped; returns [] for anything unusable. */
-export function parseActionItems(text: string): Omit<ExtractedItem, "verified">[] {
-  const json = extractJson(text);
-  const list = Array.isArray(json)
-    ? json
-    : json && typeof json === "object" && Array.isArray((json as { action_items?: unknown }).action_items)
-      ? (json as { action_items: unknown[] }).action_items
-      : [];
+/** Lenient validation of a list of raw items. Bad entries are skipped; the result is capped. */
+export function validateActionItems(list: unknown[]): Omit<ExtractedItem, "verified">[] {
   const out: Omit<ExtractedItem, "verified">[] = [];
   for (const raw of list) {
     const r = RawItem.safeParse(raw);
@@ -142,6 +142,17 @@ export function parseActionItems(text: string): Omit<ExtractedItem, "verified">[
     if (out.length >= MAX_EXTRACTED_ITEMS) break;
   }
   return out;
+}
+
+/** Lenient parse + validation. Bad entries are skipped; returns [] for anything unusable. */
+export function parseActionItems(text: string): Omit<ExtractedItem, "verified">[] {
+  const json = extractJson(text);
+  const list = Array.isArray(json)
+    ? json
+    : json && typeof json === "object" && Array.isArray((json as { action_items?: unknown }).action_items)
+      ? (json as { action_items: unknown[] }).action_items
+      : [];
+  return validateActionItems(list);
 }
 
 export function normalizeForMatch(s: string): string {
