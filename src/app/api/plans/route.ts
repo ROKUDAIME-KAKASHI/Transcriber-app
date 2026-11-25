@@ -3,6 +3,7 @@ import { getUserId, unauthorized } from "@/lib/auth";
 import {
   NO_STORE, PLAN_SELECT, attendeeRows, badRequest, failed, isPlanningMissing, ownsSeries, pausedResponse, planningMissing, toPlanDTO,
 } from "@/lib/planningDb";
+import { ensureAheadForUser } from "@/lib/calendarDb";
 import { PlanCreate } from "@/lib/planning";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ export async function GET(req: Request) {
   const from = dateParam(q.get("from"));
   const to = dateParam(q.get("to"));
   const seriesId = (q.get("seriesId") ?? "").slice(0, 40);
+  // Series set to "keep N planned ahead" top themselves up here. Never throws; a no-op until 6_calendar is applied.
+  await ensureAheadForUser(userId);
   try {
     const rows = await prisma.plannedMeeting.findMany({
       where: {
