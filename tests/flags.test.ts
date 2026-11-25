@@ -5,7 +5,7 @@ import { FLAG_DEFAULTS, FLAG_KEYS, defaultFlags, isFlagKey, mergeFlags, parseFla
 describe("flagsCore", () => {
   test("every flag defaults to on", () => {
     for (const k of FLAG_KEYS) assert.equal(FLAG_DEFAULTS[k], true);
-    for (const k of ["actionItems", "taskTracker", "followUpAgenda", "scheduling", "nameSuggestions", "offlineLockedRecording"]) {
+    for (const k of ["actionItems", "taskTracker", "followUpAgenda", "scheduling", "nameSuggestions", "offlineLockedRecording", "stakeholders"]) {
       assert.ok(isFlagKey(k), k);
     }
   });
