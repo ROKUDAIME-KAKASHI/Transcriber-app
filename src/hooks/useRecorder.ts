@@ -30,6 +30,7 @@ import { isStoppedReply } from "@/lib/recordingState";
 import { useLocalUser } from "@/components/SyncProvider";
 import { useMeetingSync } from "@/hooks/useSync";
 import { takeTitle } from "@/lib/titlePrefill";
+import { linkStartedMeeting } from "@/lib/planLink";
 import {
   DEEPGRAM_SAMPLE_RATE, deepgramUrl, fetchDeepgramToken, floatToPcm16, speakerRuns,
   type DeepgramMessage, type RecordEngine,
@@ -1427,6 +1428,7 @@ export function useRecorder(opts: {
       await acquireWakeLock();
       attachNative(0, newId);
       patch({ isStarting: false, isRecording: true, statusMsg: nativeStatusLine({ paused: false, behindSamples: 0 }) });
+      linkStartedMeeting(uid, newId); // a plan this recording was started from; never blocks recording
     } catch (e) {
       if (e instanceof StartCancelled || startTokenRef.current !== token) return;
       wantRecordingRef.current = false;
@@ -1973,6 +1975,7 @@ export function useRecorder(opts: {
         if (localModeRef.current && uid && rid) void touchRecording(uid, rid);
       }, AUTOSAVE_MS);
       patch({ isStarting: false });
+      if (!useSample) linkStartedMeeting(useLocal ? lu.userId : null, meetingIdRef.current); // never blocks recording
     } catch (e) {
       // Cancelled (or superseded) while starting: cancelStart already cleaned up and set the message.
       if (e instanceof StartCancelled || startTokenRef.current !== token) return;

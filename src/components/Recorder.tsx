@@ -27,6 +27,8 @@ import { RecordingControls, useFloatingBarFlag } from "./RecordingControls";
 import { useToast } from "./Toast";
 import { calmMode, CALM_BOOST_MS } from "@/lib/calmMode";
 import { peekTitlePrefill, setTitlePrefill } from "@/lib/titlePrefill";
+import { peekPlanPrefill, setPlanPrefill } from "@/lib/planLink";
+import { NextUpCard } from "./NextUpCard";
 import { useMotionPref } from "@/lib/motionPref";
 import * as haptics from "@/lib/haptics";
 
@@ -309,6 +311,7 @@ export function Recorder() {
 
   // /?title=... (from Schedule's "Record this meeting") names the next meeting. Keep it, then tidy the address bar.
   const [prefillTitle, setPrefillTitle] = useState<string | null>(null);
+  const [prefillPlan, setPrefillPlan] = useState(false);
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.has("title")) {
@@ -317,10 +320,21 @@ export function Recorder() {
       const rest = q.toString();
       window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
     }
+    // /?plan=<id> (from a planned meeting's Record button) links the recording to that plan once it starts.
+    if (q.has("plan")) {
+      setPlanPrefill(q.get("plan"));
+      q.delete("plan");
+      const rest = q.toString();
+      window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
+    }
     setPrefillTitle(peekTitlePrefill());
+    setPrefillPlan(peekPlanPrefill() !== null);
   }, []);
   useEffect(() => {
-    if (!rec.isRecording && !rec.isStarting) setPrefillTitle(peekTitlePrefill());
+    if (!rec.isRecording && !rec.isStarting) {
+      setPrefillTitle(peekTitlePrefill());
+      setPrefillPlan(peekPlanPrefill() !== null);
+    }
   }, [rec.isRecording, rec.isStarting]);
 
   const hasTranscript = rec.transcriptParts.length > 0;
@@ -390,6 +404,20 @@ export function Recorder() {
           </Link>
         )}
 
+        {!busy && !starting && !prefillPlan && (
+          <NextUpCard
+            disabled={blocked || !gateStart.allowed}
+            onRecord={(plan) => {
+              setTitlePrefill(plan.title);
+              setPlanPrefill(plan.id);
+              setPrefillTitle(peekTitlePrefill());
+              setPrefillPlan(true);
+              haptics.start();
+              rec.start("mic");
+            }}
+          />
+        )}
+
         <div
           className="flex flex-col items-center px-6 py-8 text-center max-lg:min-h-[min(560px,70dvh)] max-lg:justify-center"
           onClick={onHeroClick}
@@ -410,7 +438,9 @@ export function Recorder() {
           </div>
           {prefillTitle && !busy && !starting && (
             <p className="mt-2 max-w-full truncate text-meta text-muted-foreground" title={prefillTitle}>
-              Recording as: <span className="font-semibold text-foreground">{prefillTitle}</span>
+              {prefillPlan ? "Recording: " : "Recording as: "}
+              <span className="font-semibold text-foreground">{prefillTitle}</span>
+              {prefillPlan && " · planned meeting"}
             </p>
           )}
           <div

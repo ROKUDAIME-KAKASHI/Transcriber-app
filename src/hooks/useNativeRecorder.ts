@@ -8,6 +8,7 @@ import { useLocalUser } from "@/components/SyncProvider";
 import { applySyncResult, createLocal, mirrorNative, purge } from "@/lib/local/repo";
 import { newMeetingId } from "@/lib/local/ids";
 import { takeTitle } from "@/lib/titlePrefill";
+import { linkStartedMeeting } from "@/lib/planLink";
 import { markRecording, onRemoteStop } from "@/lib/local/sync";
 
 /** The service autosaves to the server itself; JS only copies its parts to the device at most this often. */
@@ -210,6 +211,7 @@ export function useNativeRecorder(opts: { language: string }) {
       mirroredFinalRef.current = null;
       patch({ meetingId: data.meeting.id, statusMsg: "Starting the microphone…" });
       await MeetingRecorder.start({ meetingId: data.meeting.id, language: opts.language, baseUrl: window.location.origin });
+      linkStartedMeeting(uid, data.meeting.id); // a plan this recording was started from; never blocks recording
       // The poll flips isStarting off once the service reports it's running.
     } catch (e) {
       startingRef.current = false;
