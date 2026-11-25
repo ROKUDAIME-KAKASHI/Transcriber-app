@@ -7,22 +7,40 @@
 // Hindi (@tesseract.js-data/hin, about 1.4 MB) is installed but deliberately not copied: tile names on
 // Meet, Teams and Zoom are overwhelmingly Latin script, and a second language slows every read.
 import { copyFileSync, mkdirSync, existsSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const nm = join(root, "node_modules");
 const dest = join(root, "public", "tesseract");
+const require = createRequire(import.meta.url);
+
+// Resolve each package with require.resolve (not a hoisted node_modules path). tesseract.js-core is a dependency of
+// tesseract.js, so it is looked up from there. A missing package fails the install loudly: a deploy that silently
+// ships without OCR files is worse than a failed one.
+function pkgDir(name, from) {
+  try {
+    return dirname(require.resolve(name + "/package.json", from ? { paths: [from] } : undefined));
+  } catch (err) {
+    console.error("copy-tesseract: cannot resolve " + name + " (" + (err && err.code ? err.code : "error") + "). Run npm install.");
+    process.exit(1);
+  }
+}
+const tess = pkgDir("tesseract.js");
+const core = pkgDir("tesseract.js-core", tess);
+const eng = pkgDir("@tesseract.js-data/eng");
 
 const files = [
-  [join(nm, "tesseract.js", "dist", "worker.min.js"), join(dest, "worker.min.js")],
-  [join(nm, "tesseract.js-core", "tesseract-core-simd-lstm.wasm.js"), join(dest, "tesseract-core-simd-lstm.wasm.js")],
-  [join(nm, "@tesseract.js-data", "eng", "4.0.0_best_int", "eng.traineddata.gz"), join(dest, "lang", "eng.traineddata.gz")],
+  [join(tess, "dist", "worker.min.js"), join(dest, "worker.min.js")],
+  [join(core, "tesseract-core-simd-lstm.wasm.js"), join(dest, "tesseract-core-simd-lstm.wasm.js")],
+  [join(eng, "4.0.0_best_int", "eng.traineddata.gz"), join(dest, "lang", "eng.traineddata.gz")],
 ];
 
-if (!files.every(([src]) => existsSync(src))) {
-  console.warn("copy-tesseract: tesseract.js files not installed, skipping");
-  process.exit(0);
+for (const [src] of files) {
+  if (!existsSync(src)) {
+    console.error("copy-tesseract: missing " + src);
+    process.exit(1);
+  }
 }
 mkdirSync(join(dest, "lang"), { recursive: true });
 for (const [src, out] of files) {

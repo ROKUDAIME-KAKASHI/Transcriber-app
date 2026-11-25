@@ -54,6 +54,12 @@ for (const name of ["index.html", "meetings.html", "meeting.html", "login.html",
   check(`7 shell ${name} is a clean HTML document`, !bad);
 }
 
+// Phase 23: OCR files for reading names off the call screen (gitignored, copied by scripts/copy-tesseract.mjs).
+for (const f of ["worker.min.js", "tesseract-core-simd-lstm.wasm.js", "lang/eng.traineddata.gz"]) {
+  const fp = path.join(root, "public", "tesseract", f);
+  check(`8 public/tesseract/${f} exists and is not empty`, fs.existsSync(fp) && fs.statSync(fp).size > 10_000);
+}
+
 if (failed) {
   console.error(`check-build: ${failed} assertion(s) failed`);
   process.exit(1);
