@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
-  audioTrackCount, buildDisplayMediaOptions, guidedCallAvailable, defaultSource, displayMediaErrorMessage, safeCallUrl, showSourceSelector, tabAudioAvailable,
+  audioTrackCount, buildDisplayMediaOptions, guidedCallAvailable, displayMediaErrorMessage, safeCallUrl, tabAudioAvailable,
   type TabAudioEnv,
 } from "../src/lib/tabAudio.ts";
 
@@ -17,10 +17,6 @@ describe("tabAudioAvailable", () => {
     for (const ua of ["Mozilla/5.0 (Linux; Android 14; Pixel) Chrome/130 Mobile Safari/537.36", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)"]) {
       assert.equal(tabAudioAvailable(env({ userAgent: ua })), false, ua);
     }
-  });
-  test("the switch turns it off", () => {
-    assert.equal(showSourceSelector(false, env()), false);
-    assert.equal(showSourceSelector(true, env()), true);
   });
 });
 
@@ -49,15 +45,6 @@ describe("audioTrackCount", () => {
     assert.equal(audioTrackCount([]), 0);
     assert.equal(audioTrackCount([{ kind: "video" }]), 0);
     assert.equal(audioTrackCount([{ kind: "audio", readyState: "live" }, { kind: "audio", readyState: "ended" }]), 1);
-  });
-});
-
-describe("defaultSource", () => {
-  test("a call link defaults to the tab on laptops", () => assert.equal(defaultSource({ available: true, callUrl: "https://meet.google.com/x", saved: null }), "tab"));
-  test("never the tab when unavailable", () => assert.equal(defaultSource({ available: false, callUrl: "https://meet.google.com/x", saved: "tab" }), "mic"));
-  test("otherwise the saved choice, mic by default", () => {
-    assert.equal(defaultSource({ available: true, callUrl: null, saved: "tab" }), "tab");
-    assert.equal(defaultSource({ available: true, callUrl: null, saved: null }), "mic");
   });
 });
 

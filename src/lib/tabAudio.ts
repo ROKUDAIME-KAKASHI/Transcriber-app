@@ -31,11 +31,6 @@ export function guidedCallAvailable(env: TabAudioEnv): boolean {
   return tabAudioAvailable(env) && CHROMIUM_UA.test(env.userAgent);
 }
 
-/** Whether the selector should show: feature switch on and the browser can do it. */
-export function showSourceSelector(flagOn: boolean, env: TabAudioEnv): boolean {
-  return flagOn && tabAudioAvailable(env);
-}
-
 export type SupportedConstraints = Record<string, unknown> | null | undefined;
 
 /**
@@ -75,26 +70,17 @@ export function audioTrackCount(tracks: ReadonlyArray<TrackLike>): number {
   return tracks.filter((t) => (t.kind ?? "audio") === "audio" && t.readyState !== "ended").length;
 }
 
-export const NO_TAB_AUDIO_MESSAGE = "No tab audio was shared. Choose the call's tab and tick 'Share tab audio'.";
+export const NO_TAB_AUDIO_MESSAGE = "No computer sound was shared. Try again and turn on 'Share audio'.";
 export const SHARING_STOPPED_MESSAGE = "Sharing stopped — recording saved";
-export const TAB_HINT = "Pick the Meet, Zoom or Teams tab and keep “Also share tab audio” on. Use headphones so voices aren't recorded twice.";
-export const TAB_SPEAKER_NOTE = "Speaker labels work best with the Cloud engine.";
 
 /** Message for a failed getDisplayMedia(). A dismissed picker is a normal answer, not an error. */
 export function displayMediaErrorMessage(name: string | undefined): string {
   if (name === "NotAllowedError" || name === "AbortError" || name === "PermissionDeniedError") {
-    return "Sharing was cancelled. Pick the call's tab and tick 'Share tab audio' to record it.";
+    return "Sharing was cancelled. Try again, pick what to share and keep 'Share audio' on.";
   }
-  if (name === "NotSupportedError" || name === "TypeError") return "This browser can't share tab audio. Use Chrome or Edge on a laptop.";
-  if (name === "NotFoundError") return "Nothing to share was found. Open the call in a browser tab and try again.";
-  return "Couldn't capture the tab. Try again, or use the microphone.";
-}
-
-/** The source to start with: a plan with a call link defaults to the tab (when available), otherwise the saved choice. */
-export function defaultSource(opts: { available: boolean; callUrl: string | null | undefined; saved: AudioSourceChoice | null }): AudioSourceChoice {
-  if (!opts.available) return "mic";
-  if (opts.callUrl) return "tab";
-  return opts.saved === "tab" ? "tab" : "mic";
+  if (name === "NotSupportedError" || name === "TypeError") return "This browser can't share computer sound. Use Chrome or Edge on a laptop.";
+  if (name === "NotFoundError") return "Nothing to share was found. Try again.";
+  return "Couldn't capture computer sound. Try again, or turn it off.";
 }
 
 /** A call link safe to open: http(s) only. */

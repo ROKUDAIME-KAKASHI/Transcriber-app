@@ -1,46 +1,5 @@
-// Pure logic for the guided "Record an online call" flow (laptops). Imports only tabAudio so node tests load it directly.
+// Pure logic for recording computer sound next to the mic (laptops): silence warning and call-platform detection. Imports only tabAudio so node tests load it directly.
 import { safeCallUrl } from "./tabAudio.ts";
-
-// ---- What was shared -------------------------------------------------------------------------------------
-
-export type ShareProblemCode = "window" | "screen" | "no-audio" | "cancelled";
-
-/** Where the browser says the share comes from (track.getSettings().displaySurface). */
-export type SurfaceKind = "tab" | "window" | "screen" | "unknown";
-
-export function surfaceKind(displaySurface: unknown): SurfaceKind {
-  if (displaySurface === "browser") return "tab";
-  if (displaySurface === "window") return "window";
-  if (displaySurface === "monitor") return "screen";
-  return "unknown"; // older browsers don't say: trust the audio check instead
-}
-
-/** The first thing wrong with what the user shared, or null when it can be recorded. */
-export function checkShare(input: { displaySurface?: unknown; audioTracks: number }): ShareProblemCode | null {
-  const kind = surfaceKind(input.displaySurface);
-  if (kind === "window") return "window";
-  if (kind === "screen") return "screen";
-  if (input.audioTracks <= 0) return "no-audio";
-  return null;
-}
-
-export interface ShareProblemCopy {
-  title: string;
-  fix: string;
-}
-
-export function shareProblemCopy(code: ShareProblemCode): ShareProblemCopy {
-  switch (code) {
-    case "window":
-      return { title: "That was a window, not a tab", fix: "Choose the “Chrome Tab” (or “Tab”) option at the top, then pick the tab with your call." };
-    case "screen":
-      return { title: "That was your whole screen, not a tab", fix: "Choose the “Chrome Tab” (or “Tab”) option at the top, then pick the tab with your call." };
-    case "no-audio":
-      return { title: "No call sound was shared", fix: "Pick the tab with your call and keep “Also share tab audio” switched on before you click Share." };
-    case "cancelled":
-      return { title: "Sharing was cancelled", fix: "Pick the tab with your call and click Share when you are ready." };
-  }
-}
 
 // ---- Silence while sharing -------------------------------------------------------------------------------
 
@@ -78,7 +37,7 @@ export function stepSilence(state: SilenceState, rms: number, nowMs: number, cfg
 }
 
 export const CALL_SILENT_MESSAGE =
-  "We can't hear the call yet. Check the call isn't muted, or share again and keep “Also share tab audio” on.";
+  "We can't hear the call yet. Check the call isn't muted and that “Share audio” was on when you picked what to share.";
 
 // ---- Call links -------------------------------------------------------------------------------------------
 
@@ -127,31 +86,4 @@ export function detectCallPlatform(raw: string | null | undefined): CallPlatform
     if (p.domains.some((d) => host === d || host.endsWith("." + d))) return { id: p.id, name: p.name, hint: p.hint };
   }
   return null;
-}
-
-// ---- "Don't show the guide again" (per device) ----------------------------------------------------------
-
-export const GUIDE_HIDDEN_KEY = "minutely.callGuideHidden";
-
-export interface KeyValueStore {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-}
-
-export function guideHidden(store: KeyValueStore | null | undefined): boolean {
-  try {
-    return store?.getItem(GUIDE_HIDDEN_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function setGuideHidden(store: KeyValueStore | null | undefined, hidden: boolean): void {
-  try {
-    if (hidden) store?.setItem(GUIDE_HIDDEN_KEY, "1");
-    else store?.removeItem(GUIDE_HIDDEN_KEY);
-  } catch {
-    /* storage blocked: the guide just shows again */
-  }
 }
