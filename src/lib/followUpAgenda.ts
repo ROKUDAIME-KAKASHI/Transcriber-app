@@ -23,7 +23,7 @@ function dayOf(dueDate: string | null): string {
 }
 
 /** "2026-11-24" -> "24 Nov 2026". Fixed format so the draft never depends on the device locale. */
-function prettyDay(day: string): string {
+export function prettyDay(day: string): string {
   const [y, m, d] = day.split("-").map(Number);
   return `${d} ${MONTHS[m - 1]} ${y}`;
 }
@@ -31,14 +31,10 @@ function prettyDay(day: string): string {
 const NEEDS_OWNER = " — needs an owner";
 
 /**
- * A plain-text agenda from the unfinished tasks. Order: blocked, overdue, in progress, not started,
- * then "Any new discussion topics". Done tasks are left out. `today` is "YYYY-MM-DD".
+ * The numbered agenda points for the unfinished tasks, without numbers, title or the closing topics line.
+ * Order: blocked, overdue, in progress, not started. Done tasks are left out. `today` is "YYYY-MM-DD".
  */
-export function buildAgendaDraft(
-  items: AgendaItem[],
-  opts: { meetingTitle?: string | null; today: string }
-): string {
-  const title = opts.meetingTitle?.trim() || "Selected tasks";
+export function agendaPoints(items: AgendaItem[], today: string): string[] {
   const open = items.filter((i) => i.status !== "DONE" && i.task.trim());
   const owner = (i: AgendaItem) => i.owner?.trim() || "";
   const flag = (i: AgendaItem) => (owner(i) ? "" : NEEDS_OWNER);
@@ -47,7 +43,7 @@ export function buildAgendaDraft(
   const rest = open.filter((i) => i.status !== "BLOCKED");
   const isLate = (i: AgendaItem) => {
     const d = dayOf(i.dueDate);
-    return !!d && d < opts.today;
+    return !!d && d < today;
   };
   const overdue = rest.filter(isLate);
   const inProgress = rest.filter((i) => !isLate(i) && i.status === "IN_PROGRESS");
@@ -69,7 +65,22 @@ export function buildAgendaDraft(
     const bits = [owner(i), due ? `due ${due}` : ""].filter(Boolean).join(", ");
     points.push(`Check status of ${i.task.trim()}${bits ? ` (${bits})` : ""}${flag(i)}`);
   }
-  points.push("Any new discussion topics");
+  return points;
+}
+
+export const NEW_TOPICS_LINE = "Any new discussion topics";
+
+/**
+ * A plain-text agenda from the unfinished tasks. Order: blocked, overdue, in progress, not started,
+ * then "Any new discussion topics". Done tasks are left out. `today` is "YYYY-MM-DD".
+ */
+export function buildAgendaDraft(
+  items: AgendaItem[],
+  opts: { meetingTitle?: string | null; today: string }
+): string {
+  const title = opts.meetingTitle?.trim() || "Selected tasks";
+  const open = items.filter((i) => i.status !== "DONE" && i.task.trim());
+  const points = [...agendaPoints(items, opts.today), NEW_TOPICS_LINE];
 
   const lines = [`Follow-up agenda — ${title}`, ""];
   if (open.length === 0) lines.push("All tasks from this meeting are done.", "");

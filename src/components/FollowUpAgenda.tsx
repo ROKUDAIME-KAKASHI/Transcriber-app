@@ -11,6 +11,7 @@ import { agendaFileName, buildAgendaDraft, type AgendaItem } from "@/lib/followU
 import { localToday } from "@/lib/taskTracker";
 import { useFlag } from "@/lib/flagsClient";
 import { useToast } from "./Toast";
+import { PlanNextButton } from "./PlanNextButton";
 import { Button, GateReason, cx, inputCls } from "./ui";
 
 /** Button that asks for the agenda; the parent decides which tasks feed it. */
@@ -352,6 +353,7 @@ export function FollowUpAgendaSheet({
             >
               Schedule follow-up
             </Button>
+            {meetingId && <PlanNextButton meetingId={meetingId} onOpen={() => onCloseRef.current()} />}
             <Button icon={<Copy className="h-4 w-4" aria-hidden />} onClick={() => void copy()} disabled={!text.trim()}>
               Copy
             </Button>

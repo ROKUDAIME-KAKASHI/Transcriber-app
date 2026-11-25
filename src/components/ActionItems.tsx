@@ -11,6 +11,7 @@ import { splitLongPhrases } from "@/lib/actionItems";
 import { matchTask } from "@/lib/dedupe";
 import { useToast } from "./Toast";
 import { AgendaButton, FollowUpAgendaSheet } from "./FollowUpAgenda";
+import { PlanNextButton } from "./PlanNextButton";
 import type { AgendaItem } from "@/lib/followUpAgenda";
 import { Badge, Button, GateReason, Panel, PanelHeader, cx, inputCls } from "./ui";
 
@@ -390,12 +391,15 @@ export function ActionItems({
         <div className="p-5">
           {saved && saved.length > 0 && (
             <div className="mb-4 space-y-2">
-              <AgendaButton
-                onClick={() => void openAgenda()}
-                loading={agendaLoading}
-                disabled={!!loadError}
-                className="w-full sm:w-auto"
-              />
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <AgendaButton
+                  onClick={() => void openAgenda()}
+                  loading={agendaLoading}
+                  disabled={!!loadError}
+                  className="w-full sm:w-auto"
+                />
+                <PlanNextButton meetingId={meetingId} className="w-full sm:w-auto" />
+              </div>
               {agendaError && (
                 <p className="text-meta text-danger" role="alert">
                   {agendaError}

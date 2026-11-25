@@ -8,6 +8,7 @@ import { useConnectivity } from "@/lib/connectivity";
 import { attendeeLine, whenText, type PlanDTO } from "@/lib/planning";
 import { isHttpUrl } from "@/lib/planning";
 import { Panel, cx } from "./ui";
+import { PlanNextButton } from "./PlanNextButton";
 
 /**
  * The plan a recording was started from: agenda, attendees, venue or link. Shown above the tabs on the meeting page.
@@ -18,6 +19,8 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
   const online = useConnectivity() !== "offline";
   const [plan, setPlan] = useState<PlanDTO | null>(null);
   const [open, setOpen] = useState(false);
+  const followOn = useFlag("followUpPlanning");
+  const [previous, setPrevious] = useState<{ meetingId: string; title: string } | null>(null);
   const preworkOn = useFlag("prework");
   const [refs, setRefs] = useState<{ id: string; fileName: string; points: unknown[] | null }[]>([]);
 
@@ -34,6 +37,20 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
       cancelled = true;
     };
   }, [on, online, meetingId]);
+
+  useEffect(() => {
+    if (!on || !followOn || !online) return;
+    let cancelled = false;
+    void fetch(`/api/meetings/${encodeURIComponent(meetingId)}/follow-up`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { previous?: { meetingId: string; title: string } | null } | null) => {
+        if (!cancelled) setPrevious(j?.previous ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [on, followOn, online, meetingId]);
 
   const planId = plan?.id;
   useEffect(() => {
@@ -59,6 +76,14 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
         <div className="min-w-0 flex-1 space-y-1.5">
           <p className="text-meta font-semibold text-muted-foreground">Planned meeting</p>
           <p className="text-ui font-semibold">{plan.title}</p>
+          {followOn && previous && (
+            <p className="text-meta text-muted-foreground">
+              Follow-up of{" "}
+              <Link href={`/meetings/${encodeURIComponent(previous.meetingId)}`} className="font-semibold text-accent underline underline-offset-2">
+                {previous.title}
+              </Link>
+            </p>
+          )}
           <p className="text-meta tabular-nums text-muted-foreground">{whenText(plan)}</p>
           {plan.venue && (
             <p className="flex items-center gap-1.5 text-meta text-muted-foreground">
@@ -107,6 +132,7 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
               </ul>
             </div>
           )}
+          {plan.status === "RECORDED" && <PlanNextButton meetingId={meetingId} className="mt-1" />}
           {hasAgenda && (
             <div>
               <button

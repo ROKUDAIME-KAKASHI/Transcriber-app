@@ -13,6 +13,7 @@ export const FLAG_DEFAULTS = {
   prework: true,
   calendar: true,
   trackerPlus: true,
+  followUpPlanning: true,
 } as const;
 
 export type FlagKey = keyof typeof FLAG_DEFAULTS;
@@ -32,6 +33,7 @@ export const FLAG_LABELS: Record<FlagKey, string> = {
   prework: "Pre-work: reference files and AI agenda points on plans",
   calendar: "Calendar: free/busy sharing, Find a time, series auto-planning, email invites",
   trackerPlus: "Tracker upgrades: owners from People, timeline, overdue alerts, series progress",
+  followUpPlanning: "Plan next meeting: carries unfinished tasks into the next planned meeting",
 };
 
 export function isFlagKey(k: unknown): k is FlagKey {
