@@ -67,8 +67,50 @@ JOB 3 - "action_items". Follow these instructions exactly; the array goes inside
 ${ACTION_ITEMS_INSTRUCTIONS}`;
 }
 
+/** Stops text from closing (or reopening) one of our untrusted-data wrappers: "</transcript>" becomes "‹/transcript>". */
+export function neutralizeWrapperTags(text: string): string {
+  return text.replace(/<(\s*\/?\s*(?:transcript|excerpts))/gi, "‹$1");
+}
+
+/** One line, safe to put after a label in the prompt (titles come from users or from other people's calendars). */
+export function oneLine(text: string): string {
+  return neutralizeWrapperTags(text.replace(/\s+/g, " ").trim());
+}
+
+/**
+ * At most about `maxWords` words of a line-based transcript: the start, the middle and the end, with a marker
+ * where text was left out. Used by the summary-only request so a 10-hour meeting cannot be sent whole.
+ */
+export function capTranscript(text: string, maxWords = COMBINED_MAX_WORDS): string {
+  const lines = text.split("\n");
+  const counts = lines.map((l) => l.split(/\s+/).filter(Boolean).length);
+  if (counts.reduce((a, b) => a + b, 0) <= maxWords) return text;
+  const third = Math.floor(maxWords / 3);
+  const take = (from: number, step: 1 | -1): number[] => {
+    const idx: number[] = [];
+    let used = 0;
+    for (let i = from; i >= 0 && i < lines.length; i += step) {
+      if (used + counts[i] > third && idx.length) break;
+      idx.push(i);
+      used += counts[i];
+      if (used >= third) break;
+    }
+    return idx;
+  };
+  const head = take(0, 1);
+  const tail = take(lines.length - 1, -1);
+  const mid = take(Math.floor(lines.length / 2), 1);
+  const keep = Array.from(new Set([...head, ...mid, ...tail])).sort((a, b) => a - b);
+  const out: string[] = [];
+  keep.forEach((i, n) => {
+    if (n > 0 && i !== keep[n - 1] + 1) out.push("[... part of the meeting left out ...]");
+    out.push(lines[i]);
+  });
+  return out.join("\n");
+}
+
 export function combinedPrompt(header: string, transcriptText: string): string {
-  return `${header}\n\n<transcript>\n${transcriptText}\n</transcript>`;
+  return `${neutralizeWrapperTags(header)}\n\n<transcript>\n${neutralizeWrapperTags(transcriptText)}\n</transcript>`;
 }
 
 const Summary = z.object({

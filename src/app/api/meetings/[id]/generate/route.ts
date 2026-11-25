@@ -11,7 +11,7 @@ import { FailureLimiter } from "@/lib/adminAuthCore";
 import { logServerError } from "@/lib/serverLog";
 import { transcriptToText } from "@/lib/transcript";
 import { labelledLines, loadMeetingForAi } from "@/lib/meetingForAi";
-import { COMBINED_MAX_WORDS, combinedPrompt, combinedSystem, parseCombined, parseSummaryOnly, summarySystem } from "@/lib/combined";
+import { COMBINED_MAX_WORDS, capTranscript, combinedPrompt, oneLine, combinedSystem, parseCombined, parseSummaryOnly, summarySystem } from "@/lib/combined";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = Body.safeParse(await req.json().catch(() => ({})));
   if (!body.success) return Response.json({ error: "Invalid request" }, { status: 400 });
 
-  const key = `${userId}:${id}:${body.data.only ?? "all"}`;
+  const key = `${userId}:${id}:${body.data.only ?? "all"}:${body.data.template}:${body.data.model}:${body.data.force ? 1 : 0}`;
   const running = inflight.get(key);
   if (running) return (await running).clone();
 
@@ -77,7 +77,7 @@ async function run(userId: string, id: string, opts: z.infer<typeof Body>): Prom
 
   const multiSpeaker = new Set(meeting.parts.map((p) => p.speaker)).size > 1;
   const raw = transcriptToText(meeting.parts, { names: meeting.names, multiSpeaker });
-  const header = `Meeting: ${meeting.title}\nLength: ${Math.round(meeting.durationSec / 60)} min`;
+  const header = `Meeting: ${oneLine(meeting.title)}\nLength: ${Math.round(meeting.durationSec / 60)} min`;
   const model = summaryModel(opts.model);
 
   try {
@@ -85,7 +85,7 @@ async function run(userId: string, id: string, opts: z.infer<typeof Body>): Prom
       const r = await generateText({
         model,
         system: summarySystem(),
-        prompt: combinedPrompt(header, raw),
+        prompt: combinedPrompt(header, capTranscript(raw)),
         maxOutputTokens: 1500,
         maxRetries: 1,
         abortSignal: AbortSignal.timeout(90_000),
