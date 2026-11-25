@@ -23,6 +23,14 @@ export function tabAudioAvailable(env: TabAudioEnv): boolean {
   return true;
 }
 
+/** Chromium browsers (Chrome, Edge, Opera, Brave) can share a tab's sound. Firefox and Safari cannot. */
+const CHROMIUM_UA = /(Chrome|Chromium|Edg|OPR)\//;
+
+/** "Record an online call" needs tab audio, so it is only offered where tab audio exists: Chromium on desktop. */
+export function guidedCallAvailable(env: TabAudioEnv): boolean {
+  return tabAudioAvailable(env) && CHROMIUM_UA.test(env.userAgent);
+}
+
 /** Whether the selector should show: feature switch on and the browser can do it. */
 export function showSourceSelector(flagOn: boolean, env: TabAudioEnv): boolean {
   return flagOn && tabAudioAvailable(env);

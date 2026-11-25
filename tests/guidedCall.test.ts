@@ -90,6 +90,11 @@ describe("call links", () => {
     assert.equal(openableCallUrl("not a link"), null);
     assert.equal(openableCallUrl(null), null);
   });
+  test("rejects links with a user name or password", () => {
+    assert.equal(openableCallUrl("https://user:pass@meet.google.com/abc"), null);
+    assert.equal(openableCallUrl("https://meet.google.com@evil.com/abc"), null);
+    assert.equal(openableCallUrl("https://user@zoom.us/j/1"), null);
+  });
   test("recognises Meet, Teams, Zoom", () => {
     assert.equal(detectCallPlatform("https://meet.google.com/abc-defg-hij")?.id, "meet");
     assert.equal(detectCallPlatform("https://teams.microsoft.com/l/meetup-join/xyz")?.id, "teams");

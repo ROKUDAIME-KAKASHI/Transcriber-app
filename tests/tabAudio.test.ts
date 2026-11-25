@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
-  audioTrackCount, buildDisplayMediaOptions, defaultSource, displayMediaErrorMessage, safeCallUrl, showSourceSelector, tabAudioAvailable,
+  audioTrackCount, buildDisplayMediaOptions, guidedCallAvailable, defaultSource, displayMediaErrorMessage, safeCallUrl, showSourceSelector, tabAudioAvailable,
   type TabAudioEnv,
 } from "../src/lib/tabAudio.ts";
 
@@ -69,4 +69,23 @@ describe("safeCallUrl / error messages", () => {
     assert.equal(safeCallUrl(undefined), null);
   });
   test("a dismissed picker reads as cancelled", () => assert.match(displayMediaErrorMessage("NotAllowedError"), /cancelled/));
+});
+
+describe("guidedCallAvailable (needs tab audio: Chromium on desktop only)", () => {
+  const FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0";
+  const SAFARI = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+  const EDGE = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36 Edg/130.0";
+  test("Chrome and Edge on desktop", () => {
+    assert.equal(guidedCallAvailable(env()), true);
+    assert.equal(guidedCallAvailable(env({ userAgent: EDGE })), true);
+  });
+  test("not Firefox or Safari (no tab audio there)", () => {
+    assert.equal(guidedCallAvailable(env({ userAgent: FIREFOX })), false);
+    assert.equal(guidedCallAvailable(env({ userAgent: SAFARI })), false);
+  });
+  test("not in the app, on phones, or without getDisplayMedia", () => {
+    assert.equal(guidedCallAvailable(env({ native: true })), false);
+    assert.equal(guidedCallAvailable(env({ coarsePointer: true })), false);
+    assert.equal(guidedCallAvailable(env({ hasGetDisplayMedia: false })), false);
+  });
 });

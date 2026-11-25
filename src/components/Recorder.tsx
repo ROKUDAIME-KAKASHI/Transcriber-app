@@ -33,7 +33,7 @@ import { peekTitlePrefill, setTitlePrefill } from "@/lib/titlePrefill";
 import { peekPlanPrefill, setPlanPrefill } from "@/lib/planLink";
 import { NextUpCard } from "./NextUpCard";
 import {
-  TAB_HINT, TAB_SPEAKER_NOTE, defaultSource, safeCallUrl, showSourceSelector, type AudioSourceChoice,
+  TAB_HINT, TAB_SPEAKER_NOTE, defaultSource, guidedCallAvailable, safeCallUrl, showSourceSelector, type AudioSourceChoice,
 } from "@/lib/tabAudio";
 import { CALL_SILENT_MESSAGE } from "@/lib/guidedCall";
 import { GuidedCall } from "./GuidedCall";
@@ -143,13 +143,14 @@ export function Recorder() {
   // Online calls on a laptop: record a browser tab's audio (optionally with the mic). Hidden in the app, on phones/tablets and where the browser can't share a tab.
   const tabAudioOn = useFlag("tabAudio");
   const [tabCapable, setTabCapable] = useState(false);
+  const [guidedCapable, setGuidedCapable] = useState(false);
   const [audioSource, setAudioSource] = useState<AudioSourceChoice>("mic");
   const [tabMic, setTabMic] = useState(true);
   const [callUrl, setCallUrl] = useState<string | null>(null);
   const tabSelector = tabAudioOn && tabCapable;
   // "Record an online call": same laptop-only rules as the tab source, plus its own switch.
   const guidedCallOn = useFlag("guidedCall");
-  const guidedEntry = guidedCallOn && tabSelector;
+  const guidedEntry = guidedCallOn && tabSelector && guidedCapable;
   const [reshareNote, setReshareNote] = useState<string | null>(null);
   const [resharing, setResharing] = useState(false);
   const source: AudioSourceChoice = tabSelector ? audioSource : "mic";
@@ -198,6 +199,12 @@ export function Recorder() {
       hasGetDisplayMedia: typeof navigator.mediaDevices?.getDisplayMedia === "function",
     });
     setTabCapable(capable);
+    setGuidedCapable(guidedCallAvailable({
+      native: isNativeApp(),
+      userAgent: navigator.userAgent,
+      coarsePointer: coarse,
+      hasGetDisplayMedia: typeof navigator.mediaDevices?.getDisplayMedia === "function",
+    }));
     try {
       if (capable && localStorage.getItem(SOURCE_KEY) === "tab") setAudioSource("tab");
     } catch {
@@ -406,6 +413,8 @@ export function Recorder() {
   const hasLive = !!rec.interimText || !!rec.liveStatus;
   const busy = rec.isRecording;
   const starting = rec.isStarting;
+  // A guided start records a tab although `source` is "mic": show the tab notes while it runs.
+  const shownSource: AudioSourceChoice = webRec.guidedRun && (busy || starting) && !nativeMode ? "tab" : source;
   /** Settings are locked while starting or recording. */
   const locked = busy || starting;
   useEffect(() => setSessionLocked(locked), [locked]);
@@ -770,7 +779,7 @@ export function Recorder() {
               </div>
               <Segmented<AudioSourceChoice>
                 label="Audio source"
-                value={source}
+                value={shownSource}
                 disabled={locked}
                 onChange={(v) => {
                   setAudioSource(v);
@@ -781,7 +790,7 @@ export function Recorder() {
                   { value: "tab", label: "Call in a browser tab", icon: <MonitorSpeaker className="h-4 w-4" /> },
                 ]}
               />
-              {source === "tab" && (
+              {shownSource === "tab" && (
                 <div className="mt-2">
                   <Switch
                     label="Also record my microphone"

@@ -85,7 +85,15 @@ export const CALL_SILENT_MESSAGE =
 /** A call link that is safe to open from here: https only. */
 export function openableCallUrl(raw: string | null | undefined): string | null {
   const u = safeCallUrl(raw);
-  return u && u.startsWith("https://") ? u : null;
+  if (!u || !u.startsWith("https://")) return null;
+  try {
+    const parsed = new URL(u);
+    // A link with a user name or password is never a real call link (and can disguise the host).
+    if (parsed.username || parsed.password) return null;
+  } catch {
+    return null;
+  }
+  return u;
 }
 
 export interface CallPlatform {

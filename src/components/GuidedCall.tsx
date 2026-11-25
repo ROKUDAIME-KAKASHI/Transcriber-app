@@ -44,16 +44,17 @@ export function GuidedCall({
 
   const begin = () => {
     let opened = false;
-    let blocked = false;
+    const blocked = false;
     if (url) {
       // Opened right here, in the click, so the browser doesn't treat it as an unwanted pop-up.
-      const w = window.open(url, "_blank");
-      if (w) {
-        opened = true;
-        try { w.opener = null; } catch { /* cross-origin already */ }
-      } else {
-        blocked = true;
-      }
+      // Through a link with noopener/noreferrer, so the call page can't reach this page or see its address.
+      // The browser gives no answer about pop-up blocking this way, so the "allow pop-ups" hint stays visible.
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.click();
+      opened = true;
     }
     const hidden = guideHidden(deviceStore());
     // Without a call to open, a switched-off guide goes straight to the share window. Otherwise the user
