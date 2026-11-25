@@ -7,7 +7,7 @@ import { OCR_MIN_GAP_MS, markDone, markStarted, mayRead, newGate } from "../src/
 import {
   PALETTES, findActiveTile, findLargestTile, findRing, labelStrip, rgbToHsv, scaleRect, type ImgLike,
 } from "../src/lib/naming/highlight.ts";
-import { cleanName, matchRoster, resolveName } from "../src/lib/naming/nameClean.ts";
+import { cleanName, matchRoster, resolveName, resolveWithRosters } from "../src/lib/naming/nameClean.ts";
 import {
   addRead, isUserNamed, leader, levelFor, newVotes, planMe, planName, readCounts, type AutoName, type NamingContext,
 } from "../src/lib/naming/nameVote.ts";
@@ -314,6 +314,12 @@ describe("roster matching", () => {
     assert.deepEqual(resolveName("Priya Nalr (Host)", roster), { name: "Priya Nair", roster: true });
     assert.deepEqual(resolveName("Zoltan Kovacs", roster), { name: "Zoltan Kovacs", roster: false });
     assert.equal(resolveName("Conference Room", roster), null);
+  });
+  test("the directory needs a near-exact match, attendees do not", () => {
+    assert.deepEqual(resolveWithRosters("Priya Nalr", ["Priya Nair"], []), { name: "Priya Nair", roster: true });
+    assert.deepEqual(resolveWithRosters("Priya Nalr", [], ["Priya Nair"]), { name: "Priya Nalr", roster: false });
+    assert.deepEqual(resolveWithRosters("Priya Nair (Host)", [], ["Priya Nair"]), { name: "Priya Nair", roster: true });
+    assert.equal(resolveWithRosters("Boardroom 2", ["Priya Nair"], []), null);
   });
   test("a cut-off stranger is dropped", () => assert.equal(resolveName("Zoltan Kov…", roster), null));
 });

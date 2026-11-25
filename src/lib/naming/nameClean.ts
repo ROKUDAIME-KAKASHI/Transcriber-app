@@ -153,3 +153,25 @@ export function resolveName(raw: string | null | undefined, roster: ReadonlyArra
   if (c.truncated) return null; // a cut-off name nobody expected is not worth keeping
   return { name: c.name, roster: false };
 }
+
+/** The directory is large, so a match against it must be nearly exact; plan attendees get the normal bar. */
+export const DIRECTORY_THRESHOLD = 0.92;
+
+/**
+ * Like resolveName, with two lists: the plan's attendees (people we expect in this very meeting) and the
+ * People directory. A name from either list counts as "expected" and is written with the list's spelling.
+ */
+export function resolveWithRosters(
+  raw: string | null | undefined,
+  attendees: ReadonlyArray<string>,
+  directory: ReadonlyArray<string>,
+): ResolvedName | null {
+  const c = cleanName(raw);
+  if (!c) return null;
+  const a = matchRoster(c.name, attendees, c.truncated);
+  if (a) return { name: a.name, roster: true };
+  const d = matchRoster(c.name, directory, c.truncated, DIRECTORY_THRESHOLD);
+  if (d) return { name: d.name, roster: true };
+  if (c.truncated) return null;
+  return { name: c.name, roster: false };
+}
