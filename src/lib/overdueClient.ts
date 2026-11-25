@@ -4,6 +4,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useFlag } from "./flagsClient";
 import { useConnectivity } from "./connectivity";
 import { localToday } from "./taskTracker";
+import { isRecordingActive } from "./recordingFlag";
 import { parseSummary, type OverdueSummary } from "./trackerPlus";
 
 /**
@@ -62,10 +63,16 @@ export function useOverdueReminders(): [boolean, (on: boolean) => void] {
 function refresh(force: boolean): void {
   if (typeof window === "undefined" || inflight) return;
   if (!force && Date.now() - fetchedAt < TTL_MS) return;
-  fetchedAt = Date.now(); // also backs off for 5 minutes after a failure
-  inflight = fetch(`/api/action-items/summary?today=${localToday()}`, { cache: "no-store" })
-    .then(async (r) => {
+  const owner = cachedFor;
+  // Never touch the network while a recording is running; the next resume/edit catches up.
+  inflight = isRecordingActive()
+    .catch(() => true)
+    .then(async (recording) => {
+      if (recording) return;
+      fetchedAt = Date.now(); // also backs off for 5 minutes after a failure
+      const r = await fetch(`/api/action-items/summary?today=${localToday()}`, { cache: "no-store" });
       const next = r.ok ? parseSummary(await r.json().catch(() => null)) : null;
+      if (cachedFor !== owner) return; // a different account signed in meanwhile
       summary = next;
       emit();
     })
