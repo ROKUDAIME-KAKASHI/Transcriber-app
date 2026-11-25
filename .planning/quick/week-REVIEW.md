@@ -15,7 +15,7 @@ Baseline: tsc, 318 tests, build all green before and after fixes. Java unchanged
 - MEDIUM (fixed) AI cost: extract (up to 8 chunks x 4k tokens) and agenda polish had no per-user call cap. Added a best-effort 30/hour limiter per user (429).
 - MEDIUM (fixed) Admin "Recent meetings" exposed every user's meeting titles, contradicting the "aggregates only" comment. Titles removed from query and table.
 - MEDIUM (fixed) TaskTracker optimistic rollback could undo a newer successful edit of the same field when an earlier PATCH failed late. Rollback now only restores a field if it still holds the failed edit's value.
-- LOW (not fixed) Extract body caps phrase text at 5000 chars; one longer phrase makes the fallback client transcript 400.
-- LOW (not fixed) Re-extracting and saving can create duplicate tasks; no per-meeting cap or dedupe on save.
-- LOW (not fixed) useSignOut swallows failure silently (no toast); admin login limiter is per-instance memory; agenda polish overwrites edits typed while it runs; follow-up sheet has no focus trap.
+- LOW (fixed in Phase 11) Extract body caps phrase text at 5000 chars; one longer phrase makes the fallback client transcript 400.
+- LOW (fixed in Phase 11) Re-extracting and saving can create duplicate tasks; no per-meeting cap or dedupe on save.
+- LOW (fixed in Phase 11: sign-out toast, agenda polish lock + Undo, focus trap) useSignOut swallowed failure silently; agenda polish overwrote edits; follow-up sheet had no focus trap. Still open: admin login limiter is per-instance memory.
 - INFO Transcriber.apk and Minutely.apk are identical 3.6 MB blobs committed twice.
