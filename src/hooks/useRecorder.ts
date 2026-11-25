@@ -32,6 +32,10 @@ import { useMeetingSync } from "@/hooks/useSync";
 import { takeTitle } from "@/lib/titlePrefill";
 import { linkStartedMeeting } from "@/lib/planLink";
 import {
+  NO_TAB_AUDIO_MESSAGE, SHARING_STOPPED_MESSAGE, audioTrackCount, buildDisplayMediaOptions, displayMediaErrorMessage,
+  type AudioSourceChoice,
+} from "@/lib/tabAudio";
+import {
   DEEPGRAM_SAMPLE_RATE, deepgramUrl, fetchDeepgramToken, floatToPcm16, speakerRuns,
   type DeepgramMessage, type RecordEngine,
 } from "@/lib/speech/deepgram";
@@ -164,6 +168,10 @@ export function useRecorder(opts: {
   language: string;
   /** Microphone to use (from enumerateDevices); empty = browser default. */
   deviceId?: string;
+  /** "tab" records a browser tab's audio (an online call) instead of just the microphone. Default "mic". */
+  source?: AudioSourceChoice;
+  /** With source "tab": also mix in the microphone (default true). */
+  tabMic?: boolean;
 }) {
   const [state, setState] = useState<RecorderState>({
     isRecording: false,
@@ -1691,6 +1699,38 @@ export function useRecorder(opts: {
     detachBarrier = barrier;
   };
 
+  /**
+   * Asks the browser to share a tab and returns an audio-only stream of it. The picture is not needed,
+   * so the video track is stopped at once. Throws a TabAudioError with a plain message when no audio came.
+   */
+  const getTabAudio = async (): Promise<MediaStream> => {
+    const md = navigator.mediaDevices;
+    const fail = (message: string) => Object.assign(new Error(message), { name: "TabAudioError" });
+    let disp: MediaStream;
+    try {
+      disp = await md.getDisplayMedia(buildDisplayMediaOptions(md.getSupportedConstraints?.() as unknown as Record<string, unknown>) as DisplayMediaStreamOptions);
+    } catch (e) {
+      const name = (e as { name?: string })?.name;
+      if (name === "TypeError") {
+        // An option this browser rejects: retry with the plain request.
+        try {
+          disp = await md.getDisplayMedia({ video: true, audio: true });
+        } catch (e2) {
+          throw fail(displayMediaErrorMessage((e2 as { name?: string })?.name));
+        }
+      } else {
+        throw fail(displayMediaErrorMessage(name));
+      }
+    }
+    disp.getVideoTracks().forEach((t) => t.stop());
+    const audio = disp.getAudioTracks();
+    if (audioTrackCount(audio) === 0) {
+      disp.getTracks().forEach((t) => t.stop());
+      throw fail(NO_TAB_AUDIO_MESSAGE);
+    }
+    return new MediaStream(audio);
+  };
+
   /** Builds a MediaStream from the sample clip; it's also played out loud so you can follow along. */
   const createSampleStream = async (ctx: AudioContext): Promise<MediaStream> => {
     const res = await fetch(SAMPLE_AUDIO_URL);
@@ -1883,10 +1923,19 @@ export function useRecorder(opts: {
     }
 
     try {
-      let mic: MediaStream;
+      let mic: MediaStream | null = null;
+      let tabAudio: MediaStream | null = null;
+      const tabMode = !useSample && opts.source === "tab";
+      if (tabMode) {
+        // Asked first, while the tap's permission to open the picker is still fresh.
+        patch({ statusMsg: "Choose the call's tab…" });
+        tabAudio = await getTabAudio();
+        streamsRef.current.push(tabAudio);
+        check();
+      }
       if (useSample) {
         mic = await createSampleStream(ctx);
-      } else {
+      } else if (!tabMode || opts.tabMic !== false) {
         const constraints = micConstraints(opts.engine, opts.deviceId);
         mic = await navigator.mediaDevices.getUserMedia({ audio: constraints }).catch((err: DOMException) => {
           // Chosen mic unplugged, or a setting this device can't do: retry with the default mic.
@@ -1898,12 +1947,30 @@ export function useRecorder(opts: {
         // Getting the mic changes the phone's audio session; resume again so iOS doesn't leave it suspended.
         ctx.resume().catch(() => {});
       }
-      streamsRef.current.push(mic);
+      if (mic) streamsRef.current.push(mic);
       check();
 
-      let recordStream: MediaStream = mic;
+      let recordStream: MediaStream;
+      if (tabAudio) {
+        // Tab audio (+ the mic, if on) mixed into one stream that every engine reads like a mic stream.
+        const dest = ctx.createMediaStreamDestination();
+        ctx.createMediaStreamSource(tabAudio).connect(dest);
+        if (mic) ctx.createMediaStreamSource(mic).connect(dest);
+        recordStream = dest.stream;
+        tabAudio.getAudioTracks().forEach((t) =>
+          t.addEventListener("ended", () => {
+            // The user clicked "Stop sharing" (or closed the tab): finish and save as a normal stop.
+            if (!wantRecordingRef.current) return;
+            void stopRef.current().then(() => {
+              setState((st) => (st.saveState === "error" ? st : { ...st, statusMsg: SHARING_STOPPED_MESSAGE }));
+            });
+          })
+        );
+      } else {
+        recordStream = mic as MediaStream;
+      }
       // System audio (Zoom/Teams tab) only exists on desktop browsers.
-      if (!useSample && opts.captureSystemAudio && navigator.mediaDevices.getDisplayMedia) {
+      if (!useSample && !tabAudio && opts.captureSystemAudio && navigator.mediaDevices.getDisplayMedia) {
         const sys = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).catch(() => null);
         if (sys && sys.getAudioTracks().length > 0) {
           streamsRef.current.push(sys);
@@ -1911,7 +1978,7 @@ export function useRecorder(opts: {
           const ac = new Ctx();
           audioCtxRef.current = ac;
           const dest = ac.createMediaStreamDestination();
-          ac.createMediaStreamSource(mic).connect(dest);
+          ac.createMediaStreamSource(mic as MediaStream).connect(dest);
           ac.createMediaStreamSource(new MediaStream(sys.getAudioTracks())).connect(dest);
           recordStream = dest.stream;
         }
@@ -1986,7 +2053,9 @@ export function useRecorder(opts: {
       discardEmptyLocal();
       const err = e as { name?: string; message?: string };
       const msg =
-        err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
+        err?.name === "TabAudioError"
+          ? err.message
+          : err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
           ? "Microphone access was denied. Allow microphone permission for this site in the browser settings, or tap “Try with sample audio”."
           : err?.name === "NotReadableError"
             ? "Another app is using the microphone (a call or voice recorder?). Close it and try again."
@@ -1998,7 +2067,7 @@ export function useRecorder(opts: {
       if (startTokenRef.current === token) startingRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.captureSystemAudio, opts.deviceId, opts.engine, opts.language, save]);
+  }, [opts.captureSystemAudio, opts.deviceId, opts.engine, opts.language, opts.source, opts.tabMic, save]);
 
   // Save whatever we have if the page is closed mid-recording.
   useEffect(() => {

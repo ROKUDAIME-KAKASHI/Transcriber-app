@@ -14,6 +14,7 @@ export const FLAG_DEFAULTS = {
   calendar: true,
   trackerPlus: true,
   followUpPlanning: true,
+  tabAudio: true,
 } as const;
 
 export type FlagKey = keyof typeof FLAG_DEFAULTS;
@@ -34,6 +35,7 @@ export const FLAG_LABELS: Record<FlagKey, string> = {
   calendar: "Calendar: free/busy sharing, Find a time, series auto-planning, email invites",
   trackerPlus: "Tracker upgrades: owners from People, timeline, overdue alerts, series progress",
   followUpPlanning: "Plan next meeting: carries unfinished tasks into the next planned meeting",
+  tabAudio: "Record online calls from a browser tab (laptops)",
 };
 
 export function isFlagKey(k: unknown): k is FlagKey {
