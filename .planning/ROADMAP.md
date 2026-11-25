@@ -215,7 +215,7 @@ Phases 10-20 map to Steps 0-10 of the v2.0 plan.
 - [ ] **Phase 19: Privacy basics (Step 9)** - Recording consent notice, privacy page, delete account and data
 - [ ] **Phase 20: New web address migration (Step 10)** - Move to a new address sync-first, keep the old one working, ship a new APK
 - [x] **Phase 21: Meeting page tabs + auto minutes + Ask (Step 8.1)** (code complete 2026-11-25, UAT pending) - Transcript/Minutes/Summary/Action items/Ask tabs; minutes auto-generate on stop with a "ready in" estimate; one combined small-model request
-- [ ] **Phase 22: Guided online-call recording (Step 8.2)** - One-click "Record an online call" with picture guidance, no-audio warning, open the meeting from Minutely
+- [x] **Phase 22: Guided online-call recording (Step 8.2)** (code complete 2026-11-25, UAT pending) - One-click "Record an online call" with picture guidance, no-audio warning, open the meeting from Minutely
 - [ ] **Phase 23: Screenshot + voice naming (Step 8.3)** - On laptop tab capture, read the highlighted speaker's name from a frame when a new voice starts and attach it to that voice (Mirage or Tesseract.js, on-device, Rs 0); accuracy test on real calls first
 
 ### Phase 10: Safety foundations
