@@ -28,6 +28,11 @@ const nextConfig: NextConfig = {
     },
   },
 
+  async redirects() {
+    // The app used to be called Transcriber; keep old download links working without a second 3.6 MB copy.
+    return [{ source: "/downloads/Transcriber.apk", destination: "/downloads/Minutely.apk", permanent: false }];
+  },
+
   async headers() {
     return [
       {
@@ -42,17 +47,9 @@ const nextConfig: NextConfig = {
         ],
       },
       // The installable APK: force a download with the right type, never serve a stale build.
-      // Old links to Transcriber.apk keep working (same file under both names).
+      // Old links to Transcriber.apk are redirected to Minutely.apk (see redirects() below).
       {
         source: "/downloads/Minutely.apk",
-        headers: [
-          { key: "Content-Type", value: "application/vnd.android.package-archive" },
-          { key: "Content-Disposition", value: 'attachment; filename="Minutely.apk"' },
-          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
-        ],
-      },
-      {
-        source: "/downloads/Transcriber.apk",
         headers: [
           { key: "Content-Type", value: "application/vnd.android.package-archive" },
           { key: "Content-Disposition", value: 'attachment; filename="Minutely.apk"' },

@@ -17,6 +17,7 @@ import {
   createLocal, getEmbeddings, getMeta, getParts, purge, putEmbeddings, putParts, releaseStaleNativeClaims, setSpeakerNames, touchRecording,
 } from "@/lib/local/repo";
 import { MeetingRecorder, isNativeApp, nativeCapabilities, type NativeReadAudioResult } from "@/lib/nativeRecorder";
+import { getFlagNow } from "@/lib/flagsClient";
 import {
   RateMeter, committedCursor, frameBlock, isCatchingUp, pcm16Base64ToFloat32, readSizeFor, NATIVE_SAMPLE_RATE,
 } from "@/lib/speech/nativeFeed";
@@ -1793,7 +1794,8 @@ export function useRecorder(opts: {
       startingRef.current = true;
       let capable = false;
       try {
-        capable = (await nativeCapabilities()).localCapture;
+        // The owner can switch screen-locked capture off; recovery of earlier captures still runs.
+        capable = (await nativeCapabilities()).localCapture && getFlagNow("offlineLockedRecording");
       } finally {
         startingRef.current = false;
       }

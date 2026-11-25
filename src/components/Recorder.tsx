@@ -9,6 +9,7 @@ import {
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
 import { isNativeApp, nativeCapabilities } from "@/lib/nativeRecorder";
+import { useFlag } from "@/lib/flagsClient";
 import { setWebRecording } from "@/lib/recordingFlag";
 import { formatDuration } from "@/lib/transcript";
 import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
@@ -142,7 +143,9 @@ export function Recorder() {
       alive = false;
     };
   }, []);
-  const nativeLocal = inApp && localCapture && onDevice !== null;
+  const lockedRecordingOn = useFlag("offlineLockedRecording");
+  const nameSuggestionsOn = useFlag("nameSuggestions");
+  const nativeLocal = inApp && localCapture && (lockedRecordingOn || nativeRec.isRecording || nativeRec.isStarting) && onDevice !== null;
   const nativeMode = inApp && (effective === "deepgram" || nativeRec.isRecording || nativeRec.isStarting);
   const rec = nativeMode ? nativeRec : webRec;
   useEffect(() => {
@@ -808,7 +811,7 @@ export function Recorder() {
                   meetingId={rec.meetingId}
                   parts={rec.transcriptParts}
                   names={rec.speakerNames}
-                  enabled
+                  enabled={nameSuggestionsOn}
                   onRename={webRec.renameSpeaker}
                 />
               </div>

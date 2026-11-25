@@ -197,6 +197,125 @@ Plans:
 - Admin usage dashboard at `/admin`, password-protected (`227d9bf`)
 - Rename to Minutely, Android app 1.2 (versionCode 3) (`6e1a198`, `2308491`)
 
+## Milestone v2.0 — Full meeting lifecycle
+
+**Process rule (applies to every change in this milestone):** Every change: branch -> CI -> Vercel preview on a Neon branch DB -> owner approval -> merge to main. Nothing reaches `main` (production) without the owner trying it on the preview first. See `.planning/RELEASE.md` and `.planning/PREVIEW-SETUP.md`.
+
+Phases 10-20 map to Steps 0-10 of the v2.0 plan.
+
+- [ ] **Phase 10: Safety foundations (Step 0)** - Preview deploys on a separate database, tracked migrations, CI, error log, feature switches, release script
+- [ ] **Phase 11: Duplicate guards + change history (Step 1)** - No accidental duplicates; edits are recorded; small review leftovers fixed
+- [ ] **Phase 12: Stakeholders directory (Step 2)** - People the user meets, with designation, area of involvement and email
+- [ ] **Phase 13: Planned meetings + series (Step 3)** - Meetings planned ahead with time, venue/link, attendees and agenda; Record starts from a plan
+- [ ] **Phase 14: Pre-work (Step 4)** - Reference files are summarised by AI into agenda points
+- [ ] **Phase 15: Calendar blocking (Step 5)** - Common free slots for internal users, recurring series, invites
+- [ ] **Phase 16: Tracker upgrades (Step 6)** - Task owners are stakeholders; timeline, overdue alerts, series progress
+- [ ] **Phase 17: Follow-up (Step 7)** - "Plan next meeting" carries unfinished tasks
+- [ ] **Phase 18: Online calls (Step 8)** - Laptop tab capture first, then a meeting bot for phone and laptop
+- [ ] **Phase 19: Privacy basics (Step 9)** - Recording consent notice, privacy page, delete account and data
+- [ ] **Phase 20: New web address migration (Step 10)** - Move to a new address sync-first, keep the old one working, ship a new APK
+
+### Phase 10: Safety foundations
+**Goal**: Every later change can be tried safely before real users see it, and problems are visible and switchable
+**Depends on**: Phase 9
+**Requirements**: SAFE-01, SAFE-02, SAFE-03, SAFE-04, SAFE-05, SAFE-06
+**Success Criteria** (what must be TRUE):
+  1. A pull request gets a Vercel preview that talks to a Neon branch database, never the live one
+  2. Schema changes are tracked migration folders (baseline `0_init`, then `1_safety`), applied with `prisma migrate deploy`, never `db push` on production
+  3. CI (typecheck, tests, build) runs on every pull request and push to main
+  4. Browser and API errors land in an admin "Errors" list; the owner can turn each new feature on or off from the admin "Feature switches" without a deploy
+  5. One script bumps the app version in both places, builds the APK and puts it where the site serves it
+
+### Phase 11: Duplicate guards + change history
+**Goal**: Nothing is saved twice by accident, and the user can see what changed and when
+**Depends on**: Phase 10
+**Requirements**: DUP-01, DUP-02, HIST-01
+**Success Criteria** (what must be TRUE):
+  1. Saving the same action items, bookings or agendas twice does not create duplicates
+  2. Edits to tasks and meetings keep a visible change history (what and when)
+  3. The small LOW findings in `.planning/quick/week-REVIEW.md` (long-phrase extract cap, re-extract duplicates, silent sign-out failure) are closed
+
+### Phase 12: Stakeholders directory
+**Goal**: The user keeps a directory of the people they meet, reused everywhere a person is picked
+**Depends on**: Phase 11
+**Requirements**: STK-01, STK-02
+**Success Criteria** (what must be TRUE):
+  1. User can add, edit and delete a stakeholder with name, designation, area of involvement and email
+  2. The directory is searchable, and failures show a clear message with no data loss
+  3. Deleting a stakeholder never deletes meetings or tasks that mention them
+
+### Phase 13: Planned meetings + series
+**Goal**: A meeting exists before it happens: time, venue or link, attendees and agenda, and Record starts from it
+**Depends on**: Phase 12
+**Requirements**: PLAN-01, PLAN-02, PLAN-03
+**Success Criteria** (what must be TRUE):
+  1. User can plan a meeting with time, venue or link, attendees (stakeholders) and an agenda, singly or as a series
+  2. Tapping Record on a planned meeting starts the recording already linked to it (title, attendees, agenda prefilled)
+  3. Planned meetings show on an upcoming list and move to history once held
+
+### Phase 14: Pre-work
+**Goal**: Reference files attached to a planned meeting become short agenda points automatically
+**Depends on**: Phase 13
+**Requirements**: PRE-01, PRE-02
+**Success Criteria** (what must be TRUE):
+  1. User can attach reference files (text-based) to a planned meeting
+  2. AI proposes summary points that the user edits and adds to the agenda in one tap
+  3. File contents are only sent to AI on explicit tap and never written to logs
+
+### Phase 15: Calendar blocking
+**Goal**: Internal users find common free time, block it and send invites, including recurring series
+**Depends on**: Phase 13
+**Requirements**: CAL-01, CAL-02, CAL-03
+**Success Criteria** (what must be TRUE):
+  1. For selected internal users the app shows common free slots from their availability and existing plans
+  2. Choosing a slot blocks it for all of them and sends invites (ICS)
+  3. A recurring series blocks every occurrence and handles a cancelled single occurrence
+
+### Phase 16: Tracker upgrades
+**Goal**: The task tracker shows who owns what, when, and what is late
+**Depends on**: Phase 12
+**Requirements**: TRK-01, TRK-02, TRK-03
+**Success Criteria** (what must be TRUE):
+  1. A task owner is picked from stakeholders (free text still works for old tasks)
+  2. A timeline view orders tasks by due date and flags overdue ones
+  3. Overdue alerts reach the user and series progress shows done vs open per series
+
+### Phase 17: Follow-up
+**Goal**: Finishing a meeting leads straight to planning the next one with unfinished work carried over
+**Depends on**: Phase 13, Phase 16
+**Requirements**: FUP-01, FUP-02
+**Success Criteria** (what must be TRUE):
+  1. "Plan next meeting" opens a planned meeting prefilled with attendees and the agenda
+  2. Unfinished tasks from the previous meeting are carried into the new agenda, finished ones are not
+  3. The new meeting is linked to the previous one as part of the same series
+
+### Phase 18: Online calls
+**Goal**: Online calls (Meet, Teams, Zoom) can be captured on a laptop first, then by a meeting bot for phone and laptop
+**Depends on**: Phase 13
+**Requirements**: CALL-01, CALL-02
+**Success Criteria** (what must be TRUE):
+  1. On a laptop, the user can capture a browser tab's audio plus the mic and get a normal transcript
+  2. A meeting bot can join a call link for phone and laptop users and returns a transcript into the same meeting
+  3. Participants are told a recording or bot is present (links to the Phase 19 consent notice)
+
+### Phase 19: Privacy basics
+**Goal**: People are told when they are recorded and can remove their data
+**Depends on**: Phase 10
+**Requirements**: PRIV-01, PRIV-02, PRIV-03
+**Success Criteria** (what must be TRUE):
+  1. A recording consent notice is shown (and shareable) before recording starts
+  2. A public privacy page says what is stored, where, and which providers see audio or text
+  3. A signed-in user can delete their account and all their data from the profile page
+
+### Phase 20: New web address migration
+**Goal**: The app moves to a proper Minutely address without stranding installed apps
+**Depends on**: Phase 10, Phase 19
+**Requirements**: ADDR-01, ADDR-02
+**Success Criteria** (what must be TRUE):
+  1. The new address serves the full app; the old address keeps working (redirect or mirror) until the owner removes it
+  2. Data and sessions survive the move: unsynced local meetings sync before the switch (sync-first)
+  3. A new APK pointing at the new address is built with the release script and installed over the old one
+
 ## Backlog
 
 Not scheduled. Captured for a future milestone:
@@ -226,6 +345,8 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phase 4 may r
 | 7. Automatic Speaker Names | 3/3 | Code complete (device UAT pending) | 2026-11-24 |
 | 8. Offline Recording With Screen Locked | 4/4 | Code complete (device UAT pending) | 2026-11-24 |
 | 9. Meeting follow-through (quick tasks) | n/a | Shipped (APK 1.2 device UAT pending) | 2026-11-25 |
+| 10. Safety foundations | 0/? | In progress | - |
+| 11-20 (v2.0 Steps 1-10) | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-11-20*

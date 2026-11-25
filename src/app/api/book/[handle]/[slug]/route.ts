@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { after } from "next/server";
 import { z } from "zod";
+import { isFlagOn } from "@/lib/flags";
 import { prisma } from "@/lib/prisma";
 import { FailureLimiter } from "@/lib/adminAuthCore";
 import { isSlotAvailable } from "@/lib/scheduling";
@@ -32,6 +33,7 @@ class TooMany extends Error {}
 
 /** Create a booking. Public: abuse is limited by IP, honeypot and a per-guest cap. */
 export async function POST(req: Request, ctx: { params: Promise<{ handle: string; slug: string }> }) {
+  if (!(await isFlagOn("scheduling"))) return Response.json({ error: "Booking is turned off" }, { status: 503, headers: NO_STORE });
   const { handle, slug } = await ctx.params;
   const ip = clientIp(req);
   if (ipLimiter.blocked(ip)) {

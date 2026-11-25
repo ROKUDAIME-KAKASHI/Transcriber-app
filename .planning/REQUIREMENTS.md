@@ -107,6 +107,45 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 - **BACK-08**: Guest time zone in booking emails
 - **BACK-09**: Per-host email cap for public bookings
 
+## v2.0 Requirements (Full meeting lifecycle)
+
+### Safety foundations (Phase 10)
+
+- [ ] **SAFE-01**: Pull requests get a Vercel preview on a separate Neon branch database
+- [ ] **SAFE-02**: Schema changes are tracked Prisma migrations (baseline plus safety tables), not `db push` on production
+- [ ] **SAFE-03**: CI runs typecheck, tests and build on every pull request and push to main
+- [ ] **SAFE-04**: Client and server errors are logged and shown in an admin Errors list
+- [ ] **SAFE-05**: Features can be turned on or off from the admin panel without a deploy
+- [ ] **SAFE-06**: One release script bumps the version in both places, builds and publishes the APK
+
+### Later steps
+
+- [ ] **DUP-01**: Saving action items, bookings and agendas twice never creates duplicates (Phase 11)
+- [ ] **DUP-02**: Review leftovers from week-REVIEW.md closed (Phase 11)
+- [ ] **HIST-01**: Edits to tasks and meetings keep a visible change history (Phase 11)
+- [ ] **STK-01**: User keeps a stakeholders directory: name, designation, area of involvement, email (Phase 12)
+- [ ] **STK-02**: Stakeholders are searchable and reusable wherever a person is picked (Phase 12)
+- [ ] **PLAN-01**: User can plan a meeting with time, venue or link, attendees and agenda (Phase 13)
+- [ ] **PLAN-02**: Meetings can repeat as a series (Phase 13)
+- [ ] **PLAN-03**: Record starts from a planned meeting, prefilled and linked (Phase 13)
+- [ ] **PRE-01**: Reference files can be attached to a planned meeting (Phase 14)
+- [ ] **PRE-02**: AI turns reference files into editable agenda points (Phase 14)
+- [ ] **CAL-01**: Common free slots are shown for selected internal users (Phase 15)
+- [ ] **CAL-02**: Chosen slots are blocked for everyone and invites are sent (Phase 15)
+- [ ] **CAL-03**: Recurring series block every occurrence (Phase 15)
+- [ ] **TRK-01**: Task owners are picked from stakeholders (Phase 16)
+- [ ] **TRK-02**: Timeline view and overdue alerts for tasks (Phase 16)
+- [ ] **TRK-03**: Series progress shows done vs open (Phase 16)
+- [ ] **FUP-01**: "Plan next meeting" opens a prefilled planned meeting (Phase 17)
+- [ ] **FUP-02**: Unfinished tasks are carried into the next agenda (Phase 17)
+- [ ] **CALL-01**: Laptop tab-audio capture for online calls (Phase 18)
+- [ ] **CALL-02**: Meeting bot for online calls on phone and laptop (Phase 18)
+- [ ] **PRIV-01**: Recording consent notice before recording (Phase 19)
+- [ ] **PRIV-02**: Public privacy page (Phase 19)
+- [ ] **PRIV-03**: User can delete their account and data (Phase 19)
+- [ ] **ADDR-01**: App served from a new web address with the old one kept working (Phase 20)
+- [ ] **ADDR-02**: Sync-first migration and a new APK for the new address (Phase 20)
+
 ## Out of Scope
 
 | Feature | Reason |
@@ -157,6 +196,18 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 | ADMIN-01 | Phase 9 (quick tasks) | Complete |
 | APP-01 | Phase 9 (quick tasks) | Complete (device UAT pending) |
 | BRAND-01 | Phase 9 (quick tasks) | Complete |
+| SAFE-01..06 | Phase 10 | Pending |
+| DUP-01..02 | Phase 11 | Pending |
+| HIST-01 | Phase 11 | Pending |
+| STK-01..02 | Phase 12 | Pending |
+| PLAN-01..03 | Phase 13 | Pending |
+| PRE-01..02 | Phase 14 | Pending |
+| CAL-01..03 | Phase 15 | Pending |
+| TRK-01..03 | Phase 16 | Pending |
+| FUP-01..02 | Phase 17 | Pending |
+| CALL-01..02 | Phase 18 | Pending |
+| PRIV-01..03 | Phase 19 | Pending |
+| ADDR-01..02 | Phase 20 | Pending |
 
 **Coverage:**
 - v1 requirements: 25 total

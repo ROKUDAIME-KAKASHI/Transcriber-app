@@ -143,3 +143,32 @@ model AgendaDraft {
 
   @@index([userId, createdAt])
 }
+
+/// Browser and API errors, one row per fingerprint (kind + message + top frame). No transcript text or form values.
+model ClientError {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  /// Signed-in user, if any. No foreign key on purpose: the log must never block deleting a user.
+  userId      String?
+  /// error | unhandledrejection | boundary | api
+  kind        String
+  message     String
+  stack       String?  @db.Text
+  url         String?
+  userAgent   String?
+  appVersion  String?
+  fingerprint String
+  count       Int      @default(1)
+  lastSeenAt  DateTime
+
+  @@index([fingerprint])
+  @@index([createdAt])
+}
+
+/// Admin-controlled feature switches. A missing row means "use the default in src/lib/flags.ts".
+model FeatureFlag {
+  key       String   @id
+  enabled   Boolean
+  note      String?
+  updatedAt DateTime @updatedAt
+}

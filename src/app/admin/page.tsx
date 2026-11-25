@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { adminConfigured, isAdminAuthed } from "@/lib/adminAuth";
 import { loadAdminData, type AdminData } from "@/lib/adminData";
+import { loadErrorRows } from "@/lib/errorLogDb";
+import { clearFlagsCache, getFlagsState } from "@/lib/flags";
+import { FLAG_KEYS, FLAG_LABELS } from "@/lib/flagsCore";
 import { DEEPGRAM_USD_PER_MIN, engineKind, estimateDeepgramUsd, fmtDuration, fmtHours } from "@/lib/adminStats";
-import { AdminLogin, AdminLogout, AdminUsersTable, type UserRowView } from "@/components/AdminClient";
+import { AdminErrors, AdminFlags, AdminLogin, AdminLogout, AdminUsersTable, type ErrorRowView, type FlagRowView, type UserRowView } from "@/components/AdminClient";
 import { Badge, Notice, Panel, PanelHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -72,7 +75,18 @@ export default async function AdminPage() {
     );
   }
 
-  const d = await loadAdminData();
+  clearFlagsCache();
+  const [d, errs, flagState] = await Promise.all([loadAdminData(), loadErrorRows(), getFlagsState()]);
+  const flagRows: FlagRowView[] = FLAG_KEYS.map((k) => ({ key: k, label: FLAG_LABELS[k], enabled: flagState.flags[k] }));
+  const errorRows: ErrorRowView[] = errs.rows.map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    message: e.message,
+    count: e.count,
+    last: fmtDateTime(e.lastSeenAt),
+    appVersion: e.appVersion ?? "-",
+    path: e.url ? e.url.replace(/^https?:\/\/[^/]+/, "") || "/" : "-",
+  }));
   const m = d.meetings;
   const cloudCost = estimateDeepgramUsd(m.cloudSec);
   const cost30 = estimateDeepgramUsd(d.daily.reduce((a, p) => a + p.cloudSec, 0));
@@ -150,6 +164,8 @@ export default async function AdminPage() {
           </table>
         </div>
       </Panel>
+      <AdminFlags rows={flagRows} available={flagState.available} />
+      <AdminErrors rows={errorRows} available={errs.available} />
     </Shell>
   );
 }

@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import { logServerError } from "@/lib/serverLog";
 import { z } from "zod";
 import { summaryModel } from "@/lib/ai";
 import { aiFailure } from "@/lib/aiErrors";
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
     const suggestions = validateAiSuggestions(parseAiNames(result.text), lines, named);
     return Response.json({ suggestions });
   } catch (error) {
-    console.error("Speaker names error:", error);
+    logServerError("POST /api/speaker-names", error);
     const { message, status } = aiFailure(error);
     return Response.json({ error: message }, { status });
   }

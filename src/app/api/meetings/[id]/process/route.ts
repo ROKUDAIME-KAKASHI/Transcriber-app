@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import { logServerError } from "@/lib/serverLog";
 import { z } from "zod";
 import { summaryModel } from "@/lib/ai";
 import { aiFailure, unwrapFence } from "@/lib/aiErrors";
@@ -206,7 +207,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     await prisma.meeting.update({ where: { id }, data: { document, template } });
     return Response.json({ document, template });
   } catch (error) {
-    console.error("Process error:", error);
+    logServerError("POST /api/meetings/[id]/process", error);
     const { message, status } = aiFailure(error);
     return Response.json({ error: message }, { status });
   }

@@ -21,7 +21,8 @@ progress:
 See: .planning/PROJECT.md (updated 2026-11-25)
 
 **Core value:** Record a whole meeting on a phone, anywhere — with or without internet — and come away with a transcript that says who said what, which can be turned into minutes and shared in one tap.
-**Current focus:** Device testing of Phases 4–8 on the Xiaomi phone (Minutely 1.2 APK)
+**Current focus:** Phase 10 — Safety foundations (v2.0 Step 0). Device testing of Phases 4–8 on the Xiaomi phone continues in parallel.
+**Process rule:** Every change: branch → CI → Vercel preview on a Neon branch DB → owner approval → merge to main.
 
 ## Current Position
 

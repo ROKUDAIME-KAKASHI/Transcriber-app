@@ -14,6 +14,7 @@ import { prefersReducedMotion } from "@/lib/motionPref";
 import { useBackgroundRecording } from "@/hooks/useBackgroundRecording";
 import { RecordingPill } from "./RecordingPill";
 import { AppUpdateBanner } from "./AppUpdateBanner";
+import { useFlag } from "@/lib/flagsClient";
 
 const NAV = [
   { href: "/", label: "Record", icon: Mic },
@@ -47,6 +48,9 @@ function Logo() {
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const tasksOn = useFlag("taskTracker");
+  const scheduleOn = useFlag("scheduling");
+  const navItems = NAV.filter((n) => (n.href === "/tasks" ? tasksOn : n.href === "/schedule" ? scheduleOn : true));
   const { user, cachedUser } = useAuth();
   const offline = useConnectivity() === "offline";
   const email = user?.email ?? cachedUser?.email ?? "";
@@ -84,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <ConnectivityPill className="mt-1" />
         </div>
         <nav className="mt-6 flex flex-col gap-0.5" aria-label="Main">
-          {NAV.map(({ href, label, icon: Icon }) => {
+          {navItems.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
               <Link
@@ -171,8 +175,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="glass fixed inset-x-4 bottom-[calc(12px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-20 mx-auto h-16 max-w-md rounded-full shadow-float lg:hidden"
         aria-label="Main"
       >
-        <div className="grid h-full grid-cols-4 items-center px-1.5">
-          {NAV.map(({ href, label, icon: Icon }) => {
+        <div className="grid h-full items-center px-1.5" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
+          {navItems.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
               <Link
