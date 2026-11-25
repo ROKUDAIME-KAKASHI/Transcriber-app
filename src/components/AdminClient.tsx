@@ -127,3 +127,78 @@ export function AdminUsersTable({ rows }: { rows: UserRowView[] }) {
     </Panel>
   );
 }
+
+export type ErrorRowView = {
+  id: string;
+  kind: string;
+  message: string;
+  count: number;
+  last: string;
+  appVersion: string;
+  path: string;
+};
+
+export function AdminErrors({ rows, available }: { rows: ErrorRowView[]; available: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function clearAll() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/admin/errors", { method: "DELETE" });
+      if (res.ok) {
+        window.location.reload();
+        return;
+      }
+      setErr("Could not clear the log.");
+    } catch {
+      setErr("Could not reach the server.");
+    }
+    setBusy(false);
+  }
+  return (
+    <Panel>
+      <PanelHeader title="Errors" meta={available ? `latest ${rows.length} (grouped)` : "not set up"}>
+        {rows.length > 0 && (
+          <Button variant="secondary" loading={busy} onClick={clearAll}>
+            Clear all
+          </Button>
+        )}
+      </PanelHeader>
+      {!available && (
+        <div className="p-4">
+          <Notice tone="warning" title="Error log table missing">Apply the database migrations (see .planning/DB-MIGRATIONS.md).</Notice>
+        </div>
+      )}
+      {err && <div className="p-4"><Notice tone="danger">{err}</Notice></div>}
+      {available && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-meta">
+            <thead className="text-muted-foreground">
+              <tr className="border-b border-border/70">
+                {["Message", "Kind", "Count", "Last seen (UTC)", "App", "Page"].map((h) => (
+                  <th key={h} className="whitespace-nowrap px-4 py-2 font-semibold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {rows.map((r) => (
+                <tr key={r.id} className="border-b border-border/40 last:border-0">
+                  <td className="max-w-[320px] break-words px-4 py-2">{r.message}</td>
+                  <td className="px-4 py-2">{r.kind}</td>
+                  <td className="px-4 py-2">{r.count}</td>
+                  <td className="whitespace-nowrap px-4 py-2">{r.last}</td>
+                  <td className="whitespace-nowrap px-4 py-2">{r.appVersion}</td>
+                  <td className="px-4 py-2">{r.path}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-4 text-muted-foreground">No errors recorded.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}

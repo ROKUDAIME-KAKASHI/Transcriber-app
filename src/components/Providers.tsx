@@ -7,6 +7,7 @@ import { NavTracker } from "./NavTracker";
 import { NativeBackHandler } from "./NativeBackHandler";
 import { ServiceWorkerManager } from "./ServiceWorkerManager";
 import { ToastProvider } from "./Toast";
+import { ErrorBoundary, ErrorReporter } from "./ErrorReporter";
 import { cleanupOldExports } from "@/lib/native";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -21,7 +22,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <NavTracker />
           <NativeBackHandler />
           <ServiceWorkerManager />
-          {children}
+          <ErrorReporter />
+          <ErrorBoundary>{children}</ErrorBoundary>
         </ToastProvider>
       </SyncProvider>
     </AuthProvider>

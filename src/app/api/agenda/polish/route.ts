@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import { logServerError } from "@/lib/serverLog";
 import { summaryModel } from "@/lib/ai";
 import { aiFailure } from "@/lib/aiErrors";
 import { getUserId, unauthorized } from "@/lib/auth";
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
     if (!text) return Response.json({ error: "The AI returned nothing. Try again." }, { status: 502 });
     return Response.json({ text });
   } catch (error) {
-    console.error("Agenda polish error:", error);
+    logServerError("POST /api/agenda/polish", error);
     const { message, status } = aiFailure(error);
     return Response.json({ error: message }, { status });
   }
