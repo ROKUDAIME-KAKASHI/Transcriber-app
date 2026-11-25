@@ -14,6 +14,7 @@ import { useLocalUser } from "./SyncProvider";
 import { Search, ChevronRight, Mic, Loader2 } from "lucide-react";
 import { formatDuration } from "@/lib/transcript";
 import { dateGroup } from "@/lib/dateGroup";
+import { findDuplicateMeetings } from "@/lib/dedupe";
 import { useToast } from "./Toast";
 import { Badge, Button, LiveDot, Panel, cx, inputCls } from "./ui";
 
@@ -104,6 +105,9 @@ export function MeetingList() {
     }
     return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }, [local]);
+
+  // Tag only: two meetings with the same title, start and length are probably one recording saved twice.
+  const dupIds = useMemo(() => findDuplicateMeetings(merged), [merged]);
 
   const toast = useToast();
   const router = useRouter();
@@ -289,6 +293,7 @@ export function MeetingList() {
                         <span className="flex flex-col items-end gap-1.5">
                           <StatusChip m={m} stale={stale} />
                           <SyncChip m={m} syncing={sync.state === "syncing"} />
+                          {dupIds.has(m.id) && <Badge tone="warning">Possible duplicate</Badge>}
                         </span>
                         <ChevronRight className="hidden h-4 w-4 text-muted-foreground lg:block" />
                       </span>

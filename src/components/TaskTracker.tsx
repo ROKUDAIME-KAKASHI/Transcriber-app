@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ChevronDown, CloudOff, ListChecks } from "lucide-react";
+import { AlertTriangle, ChevronDown, CloudOff, Copy, ListChecks, Trash2 } from "lucide-react";
 import { useConnectivity } from "@/lib/connectivity";
 import { useToast } from "./Toast";
 import { AgendaButton, FollowUpAgendaSheet } from "./FollowUpAgenda";
@@ -13,6 +13,8 @@ import {
   distinctMeetings, distinctOwners, dueDay, filterTasks, isOverdue, localToday, parseStatusFilter, sortTasks, statusCounts,
   type StatusFilter, type TaskRow, type TaskStatus,
 } from "@/lib/taskTracker";
+import { findTaskDuplicates } from "@/lib/dedupe";
+import { HISTORY_PAGE, describeEvent, type HistoryEvent } from "@/lib/taskHistory";
 
 type Patch = Partial<Pick<TaskRow, "status" | "owner" | "dueDate" | "note" | "task">>;
 
@@ -38,15 +40,69 @@ function formatDue(day: string): string {
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
+function whenText(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
+/** Change history of one task. Hidden when the database has no history table yet or the request fails. */
+function TaskHistory({ id, rev }: { id: string; rev: number }) {
+  const [events, setEvents] = useState<HistoryEvent[] | null>(null);
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/action-items/${id}/history`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { events?: HistoryEvent[] | null } | null) => {
+        if (live) setEvents(d?.events ?? null);
+      })
+      .catch(() => {
+        if (live) setEvents(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [id, rev]);
+  if (!events) return null;
+  const shown = more ? events : events.slice(0, HISTORY_PAGE);
+  return (
+    <div>
+      <p className="mb-1 text-meta font-semibold text-muted-foreground">History</p>
+      {events.length === 0 ? (
+        <p className="text-meta text-muted-foreground">No changes recorded yet.</p>
+      ) : (
+        <ul className="space-y-1">
+          {shown.map((e) => (
+            <li key={e.id} className="break-words text-meta text-muted-foreground">
+              <span className="text-foreground">{describeEvent(e)}</span> · {whenText(e.createdAt)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!more && events.length > HISTORY_PAGE && (
+        <Button variant="ghost" className="mt-1" onClick={() => setMore(true)}>
+          Show more
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function TaskItem({
-  item, today, onPatch, wide,
+  item, today, onPatch, onDelete, dupOf, onJump, rev, wide,
 }: {
   item: TaskRow;
   today: string;
   onPatch: (id: string, p: Patch) => void;
+  onDelete: (id: string) => void;
+  /** Another task in the same meeting that looks like this one. */
+  dupOf?: string;
+  onJump: (id: string) => void;
+  rev: number;
   wide: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [owner, setOwner] = useState(item.owner ?? "");
   const [note, setNote] = useState(item.note ?? "");
   useEffect(() => setOwner(item.owner ?? ""), [item.owner]);
@@ -64,7 +120,7 @@ function TaskItem({
   };
 
   return (
-    <li className="px-4 py-3">
+    <li id={`task-${item.id}`} tabIndex={-1} className="px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-accent">
       <div className={cx("grid gap-3", wide)}>
         <div className="flex min-w-0 items-start gap-2">
           <button
@@ -76,9 +132,18 @@ function TaskItem({
           >
             <ChevronDown className={cx("h-4 w-4 transition-transform duration-[var(--dur-2)]", open && "rotate-180")} aria-hidden />
           </button>
-          <p className={cx("min-w-0 break-words pt-2.5 text-ui font-semibold lg:pt-1.5", done && "text-muted-foreground line-through")}>
-            {item.task}
-          </p>
+          <div className="min-w-0 pt-2.5 lg:pt-1.5">
+            <p className={cx("break-words text-ui font-semibold", done && "text-muted-foreground line-through")}>{item.task}</p>
+            {dupOf && (
+              <button
+                type="button"
+                onClick={() => onJump(dupOf)}
+                className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-chip bg-warning-soft px-2 text-meta font-semibold text-warning hover:opacity-90"
+              >
+                <Copy className="h-3 w-3" aria-hidden /> Possible duplicate. Show the other
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="min-w-0">
@@ -178,12 +243,29 @@ function TaskItem({
               <span className="font-semibold">Source: </span>&ldquo;{item.sourceQuote}&rdquo;
             </p>
           )}
-          <Link
-            href={`/meeting?id=${encodeURIComponent(item.meeting.id)}`}
-            className="inline-flex min-h-11 items-center rounded-btn border border-border/70 bg-card px-4 text-ui font-semibold shadow-card hover:bg-muted"
-          >
-            Open meeting
-          </Link>
+          <TaskHistory id={item.id} rev={rev} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/meeting?id=${encodeURIComponent(item.meeting.id)}`}
+              className="inline-flex min-h-11 items-center rounded-btn border border-border/70 bg-card px-4 text-ui font-semibold shadow-card hover:bg-muted"
+            >
+              Open meeting
+            </Link>
+            {confirmDelete ? (
+              <>
+                <Button variant="danger-solid" onClick={() => onDelete(item.id)}>
+                  Confirm delete
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+                  Keep
+                </Button>
+              </>
+            ) : (
+              <Button variant="danger" icon={<Trash2 className="h-4 w-4" aria-hidden />} onClick={() => setConfirmDelete(true)}>
+                Delete task
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </li>
@@ -248,6 +330,7 @@ function TaskTrackerInner() {
           body: JSON.stringify(toBody(p)),
         });
         if (!res.ok) throw new Error("update failed");
+        bump(id);
       } catch {
         // Put back only the fields this edit touched.
         setItems((cur) => {
@@ -265,7 +348,37 @@ function TaskTrackerInner() {
     [toast]
   );
 
+  const [revs, setRevs] = useState<Record<string, number>>({});
+  const bump = (id: string) => setRevs((r) => ({ ...r, [id]: (r[id] ?? 0) + 1 }));
+
+  const remove = useCallback(
+    async (id: string) => {
+      const before = itemsRef.current;
+      setItems((cur) => (cur ? cur.filter((i) => i.id !== id) : cur));
+      try {
+        const res = await fetch(`/api/action-items/${id}`, { method: "DELETE" });
+        if (!res.ok && res.status !== 404) throw new Error("delete failed");
+        toast("Task deleted", "success");
+      } catch {
+        setItems(before ?? null);
+        toast("Couldn't delete the task. Try again.", "danger");
+      }
+    },
+    [toast]
+  );
+
+  const jumpTo = (id: string) => {
+    const el = document.getElementById(`task-${id}`);
+    if (!el) {
+      toast("The other task is hidden by the current filters.", "neutral");
+      return;
+    }
+    el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+    el.focus({ preventScroll: true });
+  };
+
   const all = useMemo(() => items ?? [], [items]);
+  const dups = useMemo(() => findTaskDuplicates(all), [all]);
   const owners = useMemo(() => distinctOwners(all), [all]);
   const meetings = useMemo(() => distinctMeetings(all), [all]);
   const hasUnassigned = useMemo(() => all.some((t) => !t.owner?.trim()), [all]);
@@ -385,7 +498,17 @@ function TaskTrackerInner() {
             ) : (
               <ul className={cx("divide-y divide-border/70", offline && "pointer-events-none opacity-60")}>
                 {shown.map((t) => (
-                  <TaskItem key={t.id} item={t} today={today} onPatch={(id, p) => void patch(id, p)} wide={wide} />
+                  <TaskItem
+                    key={t.id}
+                    item={t}
+                    today={today}
+                    onPatch={(id, p) => void patch(id, p)}
+                    onDelete={(id) => void remove(id)}
+                    dupOf={dups.get(t.id)}
+                    onJump={jumpTo}
+                    rev={revs[t.id] ?? 0}
+                    wide={wide}
+                  />
                 ))}
               </ul>
             )}
