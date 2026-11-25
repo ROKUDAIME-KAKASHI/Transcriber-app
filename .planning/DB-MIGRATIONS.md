@@ -10,6 +10,7 @@ Until now the schema was applied with `prisma db push`. From now on every schema
 | `prisma/migrations/1_safety` | New Step-0 tables: `ClientError` (error log) and `FeatureFlag` (feature switches) |
 | `prisma/migrations/2_history` | Phase 11: `ActionItem.deletedAt` (soft delete) and the `ActionItemEvent` change-history table |
 | `prisma/migrations/3_stakeholders` | Phase 12: the `Stakeholder` table (People directory) |
+| `prisma/migrations/4_planned_meetings` | Phase 13: `MeetingSeries`, `PlannedMeeting` and `PlannedAttendee` tables |
 | `prisma/migrations/migration_lock.toml` | Says the provider is postgresql |
 
 ## Step 0 (read-only): check the live database really matches `0_init`
@@ -63,9 +64,19 @@ Additive only: one new table (`Stakeholder`, soft-deleted via `deletedAt`) with 
 
 Until it is applied the app still works: the People page and its API routes answer "Stakeholders need a database update" (503), the pickers fall back to plain text, and every other feature is unaffected. The feature can also be switched off any time in Admin, Feature switches ("People directory").
 
+## Apply 4_planned_meetings (Phase 13)
+
+Additive only: three new tables (`MeetingSeries`, `PlannedMeeting`, `PlannedAttendee`) with indexes, two unique indexes (`PlannedMeeting.meetingId`, `PlannedMeeting.bookingId`) and cascade or set-null foreign keys. The `Meeting` table and every existing column are untouched.
+
+1. On a Neon preview branch first: `npx prisma migrate deploy` with that branch's `DATABASE_URL` / `DATABASE_URL_UNPOOLED`.
+2. After the pull request is merged, the same command against production.
+3. `npm run db:status` should say "Database schema is up to date".
+
+Until it is applied the app still works: the plan routes answer "Planning needs a database update" (503), the Upcoming list, the Next up card and the Planned meeting card stay hidden, a new booking is still created (its plan is skipped), and AI minutes use the old prompt. The feature can also be switched off any time in Admin, Feature switches ("Planned meetings and series"): the routes answer "Planning is paused" and the entry points disappear.
+
 ### Brand new databases (for example a fresh Neon preview branch)
 
-A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, then `3_stakeholders`).
+A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, then `4_planned_meetings`).
 
 ## From now on
 
