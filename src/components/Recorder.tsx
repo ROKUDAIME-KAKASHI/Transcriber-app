@@ -22,6 +22,7 @@ import { TranscriptView } from "./TranscriptView";
 import { NameSuggestions } from "./NameSuggestions";
 import { Badge, Button, FieldLabel, LiveDot, GateReason, Notice, Panel, PanelHeader, Segmented, Switch, cx, selectCls } from "./ui";
 import { Orb } from "./Orb";
+import { OverdueLine } from "./OverdueReminder";
 import { Waveform } from "./Waveform";
 import { RecordingControls, useFloatingBarFlag } from "./RecordingControls";
 import { useToast } from "./Toast";
@@ -575,6 +576,8 @@ export function Recorder() {
             </div>
           )}
         </div>
+
+        {!busy && !starting && <OverdueLine />}
 
         <div className="space-y-5 border-t border-border/70 px-4 py-4">
           <div>

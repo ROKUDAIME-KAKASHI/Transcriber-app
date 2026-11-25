@@ -10,6 +10,7 @@ import { useOfflineReadiness } from "@/components/OfflineModelControl";
 import { useConnectivity } from "@/lib/connectivity";
 import { useMotionPref } from "@/lib/motionPref";
 import { useFlag } from "@/lib/flagsClient";
+import { useOverdueReminders } from "@/lib/overdueClient";
 import { useCalendarReady } from "@/lib/calendarClient";
 import { useSignOut } from "@/hooks/useSignOut";
 import { LATEST_APK } from "@/lib/appRelease";
@@ -374,6 +375,9 @@ function CalendarSection({ offline }: { offline: boolean }) {
 /* ---------- Preferences ---------- */
 function PreferencesSection() {
   const { pref, setPref } = useMotionPref();
+  const tasksOn = useFlag("taskTracker");
+  const plusOn = useFlag("trackerPlus");
+  const [remind, setRemind] = useOverdueReminders();
   return (
     <Panel aria-label="Preferences">
       <PanelHeader title="Preferences" />
@@ -384,6 +388,14 @@ function PreferencesSection() {
           checked={pref === "reduced"}
           onChange={(on) => setPref(on ? "reduced" : "auto")}
         />
+        {tasksOn && plusOn && (
+          <Switch
+            label="Remind me about overdue tasks"
+            description="A count on Tasks, a message once a day when you open the app, and a line on Record. This device only."
+            checked={remind}
+            onChange={setRemind}
+          />
+        )}
       </div>
     </Panel>
   );

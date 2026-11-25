@@ -28,6 +28,8 @@ interface Row {
   checked: boolean;
   task: string;
   owner: string;
+  /** Set when the owner was picked from People; typing free text clears it. */
+  ownerId: string | null;
   deadline: string;
   quote: string;
   verified: boolean;
@@ -134,6 +136,7 @@ export function ActionItems({
           checked: matchTask(i.task, savedTasks)?.kind !== "same",
           task: i.task,
           owner: i.owner ?? "",
+          ownerId: null,
           deadline: i.deadlineText ?? "",
           quote: i.sourceQuote,
           verified: i.verified,
@@ -152,7 +155,7 @@ export function ActionItems({
   const add = () =>
     setRows((rs) => [
       ...(rs ?? []),
-      { key: keyRef.current++, checked: true, task: "", owner: "", deadline: "", quote: "", verified: true },
+      { key: keyRef.current++, checked: true, task: "", owner: "", ownerId: null, deadline: "", quote: "", verified: true },
     ]);
 
   const approved = (rows ?? []).filter((r) => r.checked && r.task.trim());
@@ -169,6 +172,7 @@ export function ActionItems({
           items: approved.map((r) => ({
             task: r.task.trim().slice(0, 300),
             owner: r.owner.trim() || null,
+            ownerStakeholderId: r.owner.trim() ? r.ownerId : null,
             deadlineText: r.deadline.trim() || null,
             sourceQuote: r.quote,
           })),
@@ -308,7 +312,8 @@ export function ActionItems({
                             id={`ai-owner-${r.key}`}
                             maxLength={100}
                             value={r.owner}
-                            onChange={(v) => update(r.key, { owner: v })}
+                            onChange={(v) => update(r.key, { owner: v, ownerId: null })}
+                            onCommit={(name, personId) => update(r.key, { owner: name, ownerId: personId ?? null })}
                             className={inputCls}
                             placeholder="Unassigned"
                           />

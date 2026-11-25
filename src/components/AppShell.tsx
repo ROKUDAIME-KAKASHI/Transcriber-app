@@ -15,6 +15,7 @@ import { useBackgroundRecording } from "@/hooks/useBackgroundRecording";
 import { RecordingPill } from "./RecordingPill";
 import { AppUpdateBanner } from "./AppUpdateBanner";
 import { useFlag } from "@/lib/flagsClient";
+import { OverdueBadge, OverdueReminder, useOverdueCount } from "./OverdueReminder";
 
 const NAV = [
   { href: "/", label: "Record", icon: Mic },
@@ -52,6 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const scheduleOn = useFlag("scheduling");
   const navItems = NAV.filter((n) => (n.href === "/tasks" ? tasksOn : n.href === "/schedule" ? scheduleOn : true));
   const peopleOn = useFlag("stakeholders");
+  const overdue = useOverdueCount();
   const { user, cachedUser } = useAuth();
   const offline = useConnectivity() === "offline";
   const email = user?.email ?? cachedUser?.email ?? "";
@@ -106,6 +108,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Icon className={cx("h-4 w-4", active && "text-accent")} />
                 {label}
+                {href === "/tasks" && <OverdueBadge count={overdue} className="ml-auto" />}
               </Link>
             );
           })}
@@ -206,7 +209,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               >
                 {active && <span className="pop-in absolute inset-0 rounded-full bg-accent-soft" aria-hidden />}
-                <Icon className={cx("relative h-5 w-5", active && "text-accent")} />
+                <span className="relative">
+                  <Icon className={cx("h-5 w-5", active && "text-accent")} />
+                  {href === "/tasks" && <OverdueBadge count={overdue} className="absolute -right-2.5 -top-1.5 ring-2 ring-card" />}
+                </span>
                 <span className="relative">{label}</span>
               </Link>
             );
@@ -214,6 +220,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
+      <OverdueReminder />
       {pathname !== "/" && <RecordingPill state={bg} />}
     </div>
   );

@@ -4,20 +4,26 @@ import { PersonPicker } from "./PersonPicker";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ChevronDown, CloudOff, Copy, ListChecks, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, CloudOff, Copy, Link2, ListChecks, Trash2 } from "lucide-react";
 import { useConnectivity } from "@/lib/connectivity";
 import { useToast } from "./Toast";
 import { AgendaButton, FollowUpAgendaSheet } from "./FollowUpAgenda";
-import { Badge, Button, Notice, Panel, cx, selectCls } from "./ui";
+import { Badge, Button, Notice, Panel, Segmented, cx, selectCls } from "./ui";
+import { TaskTimeline } from "./TaskTimeline";
+import { useFlag } from "@/lib/flagsClient";
+import { usePeople, invalidatePeople } from "@/lib/stakeholdersClient";
+import { invalidateOverdue } from "@/lib/overdueClient";
 import {
   STATUSES, STATUS_FILTERS, STATUS_FILTER_LABEL, STATUS_LABEL, UNASSIGNED,
-  distinctMeetings, distinctOwners, dueDay, filterTasks, isOverdue, localToday, parseStatusFilter, sortTasks, statusCounts,
+  distinctMeetings, dueDay, filterTasks, isOverdue, localToday, parseStatusFilter, sortTasks, statusCounts,
   type StatusFilter, type TaskRow, type TaskStatus,
 } from "@/lib/taskTracker";
+import { distinctSeries, matchOwnersToPeople, ownerOptions } from "@/lib/trackerPlus";
 import { findTaskDuplicates } from "@/lib/dedupe";
 import { HISTORY_PAGE, describeEvent, type HistoryEvent } from "@/lib/taskHistory";
 
-type Patch = Partial<Pick<TaskRow, "status" | "owner" | "dueDate" | "note" | "task">>;
+type Patch = Partial<Pick<TaskRow, "status" | "owner" | "ownerStakeholderId" | "dueDate" | "note" | "task">>;
+type View = "list" | "timeline";
 
 const STATUS_TONE: Record<TaskStatus, string> = {
   NOT_STARTED: "bg-muted text-foreground",
@@ -90,7 +96,7 @@ function TaskHistory({ id, rev }: { id: string; rev: number }) {
 }
 
 function TaskItem({
-  item, today, onPatch, onDelete, dupOf, onJump, rev, wide,
+  item, today, onPatch, onDelete, dupOf, onJump, onSeries, rev, wide,
 }: {
   item: TaskRow;
   today: string;
@@ -99,6 +105,7 @@ function TaskItem({
   /** Another task in the same meeting that looks like this one. */
   dupOf?: string;
   onJump: (id: string) => void;
+  onSeries: (id: string) => void;
   rev: number;
   wide: string;
 }) {
@@ -147,7 +154,7 @@ function TaskItem({
           </div>
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0" title={item.ownerDesignation ? `${item.owner} · ${item.ownerDesignation}` : undefined}>
           <label className="mb-1 block text-meta font-semibold text-muted-foreground lg:sr-only" htmlFor={`owner-${item.id}`}>
             Owner
           </label>
@@ -157,8 +164,11 @@ function TaskItem({
             value={owner}
             placeholder="Unassigned"
             onChange={setOwner}
-            onCommit={(name) => {
-              if (name !== (item.owner ?? "")) onPatch(item.id, { owner: name || null });
+            onCommit={(name, personId) => {
+              // A picked person links the task to People as well as naming the owner.
+              if (name !== (item.owner ?? "") || (personId ?? null) !== (item.ownerStakeholderId ?? null)) {
+                onPatch(item.id, { owner: name || null, ownerStakeholderId: personId ?? null });
+              }
             }}
             onBlur={saveOwner}
             onKeyDown={(e) => {
@@ -217,11 +227,28 @@ function TaskItem({
             {item.meeting.title}
           </Link>
           <span className="block">{new Date(item.meeting.createdAt).toLocaleDateString()}</span>
+          {item.series && (
+            <button
+              type="button"
+              onClick={() => onSeries(item.series!.id)}
+              aria-label={`Show tasks from the series ${item.series.title}`}
+              className="mt-1 inline-flex h-6 max-w-full items-center rounded-full bg-accent-soft px-2 text-meta font-semibold text-accent hover:opacity-90"
+            >
+              <span className="truncate">{item.series.title}</span>
+            </button>
+          )}
         </div>
       </div>
 
       {open && (
         <div className="mt-3 space-y-3 border-t border-border/70 pt-3 lg:pl-9">
+          {item.ownerStakeholderId && (
+            <p className="break-words text-meta text-muted-foreground">
+              <span className="font-semibold">Owner: </span>
+              {item.owner}
+              {item.ownerDesignation ? ` · ${item.ownerDesignation}` : ""} · from People
+            </p>
+          )}
           <div>
             <label className="mb-1 block text-meta font-semibold text-muted-foreground" htmlFor={`note-${item.id}`}>
               Progress note
@@ -286,6 +313,16 @@ function TaskTrackerInner() {
   const [status, setStatus] = useState<StatusFilter>(() => parseStatusFilter(search.get("status")));
   const [owner, setOwner] = useState(() => search.get("owner") ?? "");
   const [meetingId, setMeetingId] = useState(() => search.get("meetingId") ?? "");
+  const plusOn = useFlag("trackerPlus");
+  const [view, setView] = useState<View>(() => (search.get("view") === "timeline" ? "timeline" : "list"));
+  const [seriesId, setSeriesId] = useState(() => search.get("series") ?? "");
+  const [showDone, setShowDone] = useState(false);
+  const timeline = plusOn && view === "timeline";
+  const directory = usePeople(plusOn);
+  const peopleRef = useRef(directory.people);
+  useEffect(() => {
+    peopleRef.current = directory.people;
+  }, [directory.people]);
 
   const itemsRef = useRef<TaskRow[] | null>(null);
   useEffect(() => {
@@ -319,14 +356,20 @@ function TaskTrackerInner() {
     if (status !== "open") q.set("status", status);
     if (owner) q.set("owner", owner);
     if (meetingId) q.set("meetingId", meetingId);
+    if (seriesId) q.set("series", seriesId);
+    if (timeline) q.set("view", "timeline");
     const s = q.toString();
     window.history.replaceState(window.history.state, "", s ? `/tasks?${s}` : "/tasks");
-  }, [status, owner, meetingId]);
+  }, [status, owner, meetingId, seriesId, timeline]);
 
   const patch = useCallback(
     async (id: string, p: Patch) => {
       const before = itemsRef.current?.find((i) => i.id === id);
-      setItems((cur) => (cur ? sortTasks(cur.map((i) => (i.id === id ? { ...i, ...p } : i))) : cur));
+      // Typing a different owner as plain text unlinks the person.
+      if ("owner" in p && !("ownerStakeholderId" in p) && before?.ownerStakeholderId) p = { ...p, ownerStakeholderId: null };
+      const designation = p.ownerStakeholderId ? (peopleRef.current.find((x) => x.id === p.ownerStakeholderId)?.designation ?? null) : null;
+      const extra: Partial<TaskRow> = "ownerStakeholderId" in p ? { ownerDesignation: designation } : {};
+      setItems((cur) => (cur ? sortTasks(cur.map((i) => (i.id === id ? { ...i, ...p, ...extra } : i))) : cur));
       try {
         const res = await fetch(`/api/action-items/${id}`, {
           method: "PATCH",
@@ -335,6 +378,7 @@ function TaskTrackerInner() {
         });
         if (!res.ok) throw new Error("update failed");
         bump(id);
+        if ("status" in p || "dueDate" in p) invalidateOverdue();
       } catch {
         // Put back only the fields this edit touched.
         setItems((cur) => {
@@ -344,7 +388,8 @@ function TaskTrackerInner() {
           const now = cur.find((i) => i.id === id);
           // Skip a field a newer edit has since changed, so a late failure can't undo it.
           for (const k of Object.keys(p) as (keyof Patch)[]) if (now && now[k] === p[k]) (restore as Record<string, unknown>)[k] = old[k];
-          return sortTasks(cur.map((i) => (i.id === id ? { ...i, ...restore } : i)));
+          const back: Partial<TaskRow> = "ownerStakeholderId" in restore ? { ownerDesignation: old.ownerDesignation ?? null } : {};
+          return sortTasks(cur.map((i) => (i.id === id ? { ...i, ...restore, ...back } : i)));
         });
         toast("Couldn't update the task. Try again.", "danger");
       }
@@ -363,6 +408,7 @@ function TaskTrackerInner() {
         const res = await fetch(`/api/action-items/${id}`, { method: "DELETE" });
         if (!res.ok && res.status !== 404) throw new Error("delete failed");
         toast("Task deleted", "success");
+        invalidateOverdue();
       } catch {
         setItems(before ?? null);
         toast("Couldn't delete the task. Try again.", "danger");
@@ -383,11 +429,54 @@ function TaskTrackerInner() {
 
   const all = useMemo(() => items ?? [], [items]);
   const dups = useMemo(() => findTaskDuplicates(all), [all]);
-  const owners = useMemo(() => distinctOwners(all), [all]);
+  const owners = useMemo(() => ownerOptions(all), [all]);
+  const seriesList = useMemo(() => distinctSeries(all), [all]);
+  // Only offered once 7_tracker is applied (the server then sends ownerStakeholderId on every task, null when unlinked).
+  const migrated = useMemo(() => all.some((t) => t.ownerStakeholderId !== undefined), [all]);
+  const linkPlan = useMemo(
+    () => (plusOn && migrated && directory.status === "ready" ? matchOwnersToPeople(all, directory.people) : null),
+    [plusOn, migrated, directory.status, directory.people, all]
+  );
   const meetings = useMemo(() => distinctMeetings(all), [all]);
   const hasUnassigned = useMemo(() => all.some((t) => !t.owner?.trim()), [all]);
-  const counts = useMemo(() => statusCounts(all, { owner, meetingId }), [all, owner, meetingId]);
-  const shown = useMemo(() => filterTasks(all, { status, owner, meetingId }), [all, status, owner, meetingId]);
+  const counts = useMemo(() => statusCounts(all, { owner, meetingId, seriesId }), [all, owner, meetingId, seriesId]);
+  // The timeline has its own "Show done" switch instead of the status chips.
+  const shown = useMemo(
+    () => filterTasks(all, { status: timeline ? "all" : status, owner, meetingId, seriesId }),
+    [all, status, owner, meetingId, seriesId, timeline]
+  );
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const linkOwners = async () => {
+    if (!linkPlan || linking) return;
+    setLinking(true);
+    try {
+      const res = await fetch("/api/action-items/link-owners", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personIds: linkPlan.matches.map((m) => m.personId) }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: string } | null;
+        toast(j?.error ?? "Couldn't link the owners. Try again.", "danger");
+        return;
+      }
+      const j = (await res.json()) as { linked?: number };
+      toast(`Linked ${j.linked ?? 0} ${j.linked === 1 ? "task" : "tasks"} to People`, "success");
+      setLinkOpen(false);
+      invalidatePeople();
+      await load();
+    } catch {
+      toast("Couldn't reach the server. Try again.", "danger");
+    } finally {
+      setLinking(false);
+    }
+  };
+  const openInList = (id: string) => {
+    setView("list");
+    setStatus("all");
+    window.setTimeout(() => jumpTo(id), 60);
+  };
   const today = localToday();
   const [agendaOpen, setAgendaOpen] = useState(false);
   const agendaTitle = meetingId ? (meetings.find((m) => m.id === meetingId)?.title ?? null) : null;
@@ -395,9 +484,23 @@ function TaskTrackerInner() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-        <p className="mt-1 text-ui text-muted-foreground">Action items from your meetings. Update them by hand as work moves.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
+          <p className="mt-1 text-ui text-muted-foreground">Action items from your meetings. Update them by hand as work moves.</p>
+        </div>
+        {plusOn && items && items.length > 0 && (
+          <Segmented<View>
+            label="View"
+            value={view}
+            onChange={setView}
+            className="w-full sm:w-60"
+            options={[
+              { value: "list", label: "List" },
+              { value: "timeline", label: "Timeline" },
+            ]}
+          />
+        )}
       </div>
 
       {offline && (
@@ -428,7 +531,43 @@ function TaskTrackerInner() {
         )
       ) : (
         <>
+          {linkPlan && linkPlan.matches.length > 0 && !offline && (
+            <Notice tone="accent" icon={<Link2 className="h-4 w-4" aria-hidden />} title="Link owners to People">
+              <p className="text-meta">
+                {linkPlan.matches.reduce((n, m) => n + m.taskIds.length, 0)} tasks have an owner whose name matches someone in People. Linking means a rename
+                in People shows up here too.
+              </p>
+              {linkOpen ? (
+                <div className="mt-2 space-y-2">
+                  <ul className="space-y-0.5 text-meta">
+                    {linkPlan.matches.map((m) => (
+                      <li key={m.personId}>
+                        <span className="font-semibold">{m.name}</span> · {m.taskIds.length} {m.taskIds.length === 1 ? "task" : "tasks"}
+                      </li>
+                    ))}
+                  </ul>
+                  {linkPlan.ambiguous.length > 0 && (
+                    <p className="text-meta text-muted-foreground">Left alone (two people share the name): {linkPlan.ambiguous.join(", ")}.</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="primary" loading={linking} onClick={() => void linkOwners()}>
+                      Confirm and link
+                    </Button>
+                    <Button variant="ghost" onClick={() => setLinkOpen(false)} disabled={linking}>
+                      Not now
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <Button onClick={() => setLinkOpen(true)}>Review matches</Button>
+                </div>
+              )}
+            </Notice>
+          )}
+
           <div className="space-y-3">
+            {!timeline && (
             <div className="flex flex-wrap gap-2" role="group" aria-label="Status">
               {STATUS_FILTERS.map((s) => {
                 const on = s === status;
@@ -449,7 +588,8 @@ function TaskTrackerInner() {
                 );
               })}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:max-w-2xl">
+            )}
+            <div className={cx("grid gap-3 sm:grid-cols-2", seriesList.length > 0 && plusOn ? "lg:max-w-4xl lg:grid-cols-3" : "lg:max-w-2xl")}>
               <div>
                 <label className="mb-1 block text-meta font-semibold" htmlFor="filter-owner">
                   Owner
@@ -458,11 +598,11 @@ function TaskTrackerInner() {
                   <option value="">Everyone</option>
                   {hasUnassigned && <option value={UNASSIGNED}>Unassigned</option>}
                   {owners.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
+                    <option key={o.value} value={o.value}>
+                      {o.label}
                     </option>
                   ))}
-                  {owner && owner !== UNASSIGNED && !owners.includes(owner) && <option value={owner}>{owner}</option>}
+                  {owner && owner !== UNASSIGNED && !owners.some((o) => o.value === owner) && <option value={owner}>{owner.startsWith("p:") ? "This person" : owner}</option>}
                 </select>
               </div>
               <div>
@@ -479,6 +619,22 @@ function TaskTrackerInner() {
                   {meetingId && !meetings.some((m) => m.id === meetingId) && <option value={meetingId}>This meeting</option>}
                 </select>
               </div>
+              {plusOn && (seriesList.length > 0 || seriesId) && (
+                <div>
+                  <label className="mb-1 block text-meta font-semibold" htmlFor="filter-series">
+                    Series
+                  </label>
+                  <select id="filter-series" value={seriesId} onChange={(e) => setSeriesId(e.target.value)} className={selectCls}>
+                    <option value="">All series</option>
+                    {seriesList.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.title}
+                      </option>
+                    ))}
+                    {seriesId && !seriesList.some((x) => x.id === seriesId) && <option value={seriesId}>This series</option>}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -486,6 +642,11 @@ function TaskTrackerInner() {
             <AgendaButton onClick={() => setAgendaOpen(true)} disabled={shown.length === 0} className="w-full sm:w-auto" />
           </div>
 
+          {timeline ? (
+            <div className={cx(offline && "pointer-events-none opacity-60")}>
+              <TaskTimeline items={shown} today={today} showDone={showDone} onShowDone={setShowDone} onOpen={openInList} />
+            </div>
+          ) : (
           <Panel aria-label="Tasks">
             <div
               className={cx("hidden gap-3 border-b border-border/70 px-4 py-2 text-meta font-semibold text-muted-foreground lg:grid", wide)}
@@ -510,6 +671,7 @@ function TaskTrackerInner() {
                     onDelete={(id) => void remove(id)}
                     dupOf={dups.get(t.id)}
                     onJump={jumpTo}
+                    onSeries={setSeriesId}
                     rev={revs[t.id] ?? 0}
                     wide={wide}
                   />
@@ -517,6 +679,7 @@ function TaskTrackerInner() {
               </ul>
             )}
           </Panel>
+          )}
         </>
       )}
       <FollowUpAgendaSheet
