@@ -214,7 +214,7 @@ Phases 10-20 map to Steps 0-10 of the v2.0 plan.
 - [ ] **Phase 18: Online calls (Step 8)** - Laptop tab capture first (part A done, needs UAT), then a meeting bot for phone and laptop (part B pending)
 - [ ] **Phase 19: Privacy basics (Step 9)** - Recording consent notice, privacy page, delete account and data
 - [ ] **Phase 20: New web address migration (Step 10)** - Move to a new address sync-first, keep the old one working, ship a new APK
-- [ ] **Phase 21: Meeting page tabs + auto minutes + Ask (Step 8.1)** - Transcript/Minutes/Summary/Action items/Ask tabs; minutes auto-generate on stop with a "ready in" estimate; one combined small-model request
+- [x] **Phase 21: Meeting page tabs + auto minutes + Ask (Step 8.1)** (code complete 2026-11-25, UAT pending) - Transcript/Minutes/Summary/Action items/Ask tabs; minutes auto-generate on stop with a "ready in" estimate; one combined small-model request
 - [ ] **Phase 22: Guided online-call recording (Step 8.2)** - One-click "Record an online call" with picture guidance, no-audio warning, open the meeting from Minutely
 - [ ] **Phase 23: Screenshot + voice naming (Step 8.3)** - On laptop tab capture, read the highlighted speaker's name from a frame when a new voice starts and attach it to that voice (Mirage or Tesseract.js, on-device, Rs 0); accuracy test on real calls first
 
@@ -376,6 +376,7 @@ Phases run in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phase 4 may r
 | 8. Offline Recording With Screen Locked | 4/4 | Code complete (device UAT pending) | 2026-11-24 |
 | 9. Meeting follow-through (quick tasks) | n/a | Shipped (APK 1.2 device UAT pending) | 2026-11-25 |
 | 10. Safety foundations | 0/? | In progress | - |
+| 21. Meeting tabs + auto minutes + Ask | n/a | Code complete (UAT pending) | 2026-11-25 |
 | 11-20 (v2.0 Steps 1-10) | 0/? | Not started | - |
 
 ---
