@@ -1,4 +1,5 @@
 import { extractJson, normalizeForMatch } from "./actionItems.ts";
+import { neutralizeWrapperTags, oneLine } from "./combined.ts";
 
 /**
  * Pure helpers for "Ask this meeting": split the transcript into timed chunks, pick the ones relevant to a
@@ -35,7 +36,7 @@ const STOP = new Set(
 
 export function tokenize(s: string): string[] {
   return normalizeForMatch(s)
-    .split(/[^\p{L}\p{N}]+/u)
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
     .filter((w) => w.length > 1 && !STOP.has(w));
 }
 
@@ -154,7 +155,7 @@ export function askPrompt(opts: { title: string; question: string; context: stri
   const hist = opts.history.length
     ? `Earlier in this chat:\n${opts.history.map((h) => `Q: ${h.q}\nA: ${h.a}`).join("\n")}\n\n`
     : "";
-  return `Meeting: ${opts.title}\n\n<excerpts>\n${opts.context}\n</excerpts>\n\n${hist}Question: ${opts.question}`;
+  return `Meeting: ${oneLine(opts.title)}\n\n<excerpts>\n${neutralizeWrapperTags(opts.context)}\n</excerpts>\n\n${hist}Question: ${opts.question}`;
 }
 
 export interface AskQuote {
@@ -179,7 +180,8 @@ function str(v: unknown, max: number): string | null {
 /** Quote check: the words must appear in the transcript, ignoring case and spacing (and a trailing ellipsis). */
 export function quoteVerified(quote: string, transcriptText: string): boolean {
   const q = normalizeForMatch(quote.replace(/^[\s.…]+|[\s.…]+$/g, ""));
-  if (q.length < 3) return false;
+  // Too short to prove anything ("the" is in every transcript): at least 12 characters or 3 words.
+  if (q.length < 12 && q.split(" ").filter(Boolean).length < 3) return false;
   return normalizeForMatch(transcriptText).includes(q);
 }
 
