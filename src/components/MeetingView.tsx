@@ -33,6 +33,7 @@ import { ShareMenu } from "./ShareMenu";
 import type { ExportKind, ExportMeeting } from "@/lib/export/types";
 import { TranscriptView } from "./TranscriptView";
 import { ActionItems } from "./ActionItems";
+import { LinkedPlanCard } from "./LinkedPlanCard";
 import { useFlag } from "@/lib/flagsClient";
 import { useFeatureGate } from "@/lib/featureGate";
 import { Badge, Button, FieldLabel, GateReason, LiveDot, OptionList, Panel, PanelHeader, Segmented, cx, inputCls } from "./ui";
@@ -702,6 +703,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
         {nothingToExport && <p className="mt-2 text-meta text-muted-foreground">This meeting has nothing to export yet.</p>}
         {exportNote && <p className="mt-2 text-meta text-danger" role="alert">{exportNote.text}</p>}
       </section>
+
+      <LinkedPlanCard meetingId={meeting.id} className="mb-4" />
 
       {/* ---------- Tabs ---------- */}
       <Segmented

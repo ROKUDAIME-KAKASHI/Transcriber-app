@@ -254,8 +254,11 @@ export interface IcsInput {
   organizerName: string;
   /** Used for ORGANIZER; calendars need a mailto value. */
   organizerEmail: string;
-  attendeeName: string;
-  attendeeEmail: string;
+  attendeeName?: string;
+  attendeeEmail?: string;
+  /** More guests (planned meetings). Each needs an address; callers drop people without one. */
+  attendees?: { name: string; email: string }[];
+  location?: string | null;
   url?: string;
   now?: Date;
   cancelled?: boolean;
@@ -276,10 +279,12 @@ export function buildIcs(i: IcsInput): string {
     `SUMMARY:${icsEscape(i.title)}`,
   ];
   if (i.description) lines.push(`DESCRIPTION:${icsEscape(i.description)}`);
+  if (i.location) lines.push(`LOCATION:${icsEscape(i.location)}`);
   if (i.url) lines.push(`URL:${i.url}`);
   lines.push(
     `ORGANIZER;CN=${icsParam(i.organizerName)}:mailto:${i.organizerEmail}`,
-    `ATTENDEE;CN=${icsParam(i.attendeeName)};ROLE=REQ-PARTICIPANT:mailto:${i.attendeeEmail}`,
+    ...(i.attendeeName && i.attendeeEmail ? [`ATTENDEE;CN=${icsParam(i.attendeeName)};ROLE=REQ-PARTICIPANT:mailto:${i.attendeeEmail}`] : []),
+    ...(i.attendees ?? []).map((a) => `ATTENDEE;CN=${icsParam(a.name)};ROLE=REQ-PARTICIPANT:mailto:${a.email.replace(/[^\x21-\x7e]|[<>"]/g, "")}`),
     `STATUS:${i.cancelled ? "CANCELLED" : "CONFIRMED"}`,
     "END:VEVENT",
     "END:VCALENDAR"

@@ -8,6 +8,7 @@ import { isSlotAvailable } from "@/lib/scheduling";
 import { sendBookingEmails } from "@/lib/bookingEmail";
 import { NO_STORE, clientIp, findAgendaFor, findPublicEvent, isSchedulingMissing, schedulingMissing } from "@/lib/schedulingDb";
 import { MAX_AGENDA_CHARS } from "@/lib/followUpAgenda";
+import { createPlanForBooking } from "@/lib/planningDb";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +116,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ handle: string
         },
         select: { id: true },
       });
+    });
+
+    // The host's calendar gets a planned meeting too. Never fails the booking (table missing, feature off: skipped).
+    await createPlanForBooking({
+      bookingId: booking.id, hostUserId: host.id, eventTitle: event.title, guestName: b.name, guestEmail: b.email,
+      agenda, startAt: start, durationMin: event.durationMin, hostTimeZone: host.timeZone,
     });
 
     const origin = new URL(req.url).origin;

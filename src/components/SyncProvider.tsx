@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { LAST_EMAIL_KEY, LAST_USER_KEY, useAuth } from "./AuthProvider";
 import { setAuthStatus } from "@/lib/authStore";
+import { flushPlanLinks } from "@/lib/planLink";
 import { localAvailable, recoverOrphans, requestPersist } from "@/lib/local/repo";
 import { PAGE_LOADED_AT, getSyncSnapshot, isRecordingId, poke, resumeAuth, startSync, stopSync, subscribeSync } from "@/lib/local/sync";
 
@@ -72,6 +73,22 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     void recoverOrphans(userId, isRecordingId, PAGE_LOADED_AT).then(() => poke());
     return () => stopSync();
   }, [userId, available]);
+
+  // Plan links saved while offline (recording from a plan) are sent on start, when back online and on resume.
+  useEffect(() => {
+    if (!userId || !available || status !== "authenticated") return;
+    const run = () => void flushPlanLinks(userId);
+    run();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") run();
+    };
+    window.addEventListener("online", run);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("online", run);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [userId, available, status]);
 
   useEffect(() => {
     if (status === "authenticated") resumeAuth();

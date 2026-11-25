@@ -5,6 +5,8 @@ import { summaryModel } from "@/lib/ai";
 import { aiFailure, unwrapFence } from "@/lib/aiErrors";
 import { DEFAULT_SUMMARY_MODEL } from "@/lib/aiModels";
 import { prisma } from "@/lib/prisma";
+import { isFlagOn } from "@/lib/flags";
+import { planPromptBlock } from "@/lib/planning";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { withLegacyFallback } from "@/lib/meetingSelect";
 import { parseTranscript, transcriptToText } from "@/lib/transcript";
@@ -173,6 +175,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const includeFullTranscript = words <= FULL_TRANSCRIPT_MAX_WORDS;
   if (!raw.trim()) return Response.json({ error: "This meeting has no transcript yet." }, { status: 400 });
 
+  // A meeting recorded from a plan carries its agenda and attendees into the prompt. No plan, table missing or
+  // feature off: nothing is added and the prompt is exactly what it was.
+  let planBlock = "";
+  try {
+    if (await isFlagOn("plannedMeetings")) {
+      const plan = await prisma.plannedMeeting.findFirst({
+        where: { meetingId: id, userId, deletedAt: null },
+        select: { title: true, venue: true, agenda: true, attendees: { select: { name: true, designation: true } } },
+      });
+      planBlock = planPromptBlock(plan);
+    }
+  } catch {
+    planBlock = "";
+  }
+
   try {
     const header = `Meeting: ${meeting.title}\nLength: ${Math.round(meeting.durationSec / 60)} min`;
     let prompt = `${header}\n\nRaw transcript:\n\n${raw}`;
@@ -198,7 +215,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       maxOutputTokens: 16000,
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(240_000),
-      system: PROMPTS[template] + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
+      system: PROMPTS[template] + planBlock + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
       prompt,
     });
     const document = unwrapFence(result.text);

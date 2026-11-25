@@ -125,9 +125,9 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 - [x] **HIST-01**: Edits to tasks and meetings keep a visible change history (Phase 11)
 - [x] **STK-01**: User keeps a stakeholders directory: name, designation, area of involvement, email (Phase 12)
 - [x] **STK-02**: Stakeholders are searchable and reusable wherever a person is picked (Phase 12)
-- [ ] **PLAN-01**: User can plan a meeting with time, venue or link, attendees and agenda (Phase 13)
-- [ ] **PLAN-02**: Meetings can repeat as a series (Phase 13)
-- [ ] **PLAN-03**: Record starts from a planned meeting, prefilled and linked (Phase 13)
+- [x] **PLAN-01**: User can plan a meeting with time, venue or link, attendees and agenda (Phase 13)
+- [x] **PLAN-02**: Meetings can repeat as a series (Phase 13)
+- [x] **PLAN-03**: Record starts from a planned meeting, prefilled and linked (Phase 13)
 - [ ] **PRE-01**: Reference files can be attached to a planned meeting (Phase 14)
 - [ ] **PRE-02**: AI turns reference files into editable agenda points (Phase 14)
 - [ ] **CAL-01**: Common free slots are shown for selected internal users (Phase 15)
@@ -200,7 +200,7 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 | DUP-01..02 | Phase 11 | Complete (needs UAT) |
 | HIST-01 | Phase 11 | Complete (needs UAT, apply 2_history) |
 | STK-01..02 | Phase 12 | Complete (needs UAT, apply 3_stakeholders) |
-| PLAN-01..03 | Phase 13 | Pending |
+| PLAN-01..03 | Phase 13 | Complete (needs UAT, apply 4_planned_meetings) |
 | PRE-01..02 | Phase 14 | Pending |
 | CAL-01..03 | Phase 15 | Pending |
 | TRK-01..03 | Phase 16 | Pending |

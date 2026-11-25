@@ -10,6 +10,7 @@ import { stopRecordingRemotely } from "@/lib/local/stopRemote";
 import { canStopFromList, isStaleRecording, stopConfirmText, type MeetingOrigin } from "@/lib/recordingState";
 import { getSyncSnapshot, isRecordingId, subscribeSync } from "@/lib/local/sync";
 import { MeetingSkeleton } from "./MeetingLoader";
+import { UpcomingPlans } from "./UpcomingPlans";
 import { useLocalUser } from "./SyncProvider";
 import { Search, ChevronRight, Mic, Loader2 } from "lucide-react";
 import { formatDuration } from "@/lib/transcript";
@@ -203,6 +204,7 @@ export function MeetingList() {
     return (
       <>
         {header}
+        <UpcomingPlans className="mb-6" />
         <Panel as="div" className="px-6 py-12 text-center">
           <div aria-hidden className="relative mx-auto h-40 w-40">
             <div
@@ -229,6 +231,7 @@ export function MeetingList() {
 
   return (
     <div className="space-y-6">
+      <UpcomingPlans />
       <label className="relative block">
         <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <span className="sr-only">Search meetings</span>
