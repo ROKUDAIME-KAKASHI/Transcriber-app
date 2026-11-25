@@ -112,3 +112,15 @@ test("shouldRunNow needs flag, online, signed in and not recording", () => {
   for (const k of ["flagOn", "online", "signedIn"] as const) assert.equal(shouldRunNow({ ...ok, [k]: false }), false);
   assert.equal(shouldRunNow({ ...ok, recording: true }), false);
 });
+
+test("book is per account: another user never sees, claims or burns the entry", () => {
+  const kv = mem();
+  assert.equal(enqueue(kv, "m1", 100, 1000, "userA"), true);
+  assert.deepEqual(queuedIds(kv, 1000, "userA"), ["m1"]);
+  assert.deepEqual(queuedIds(kv, 1000, "userB"), []);
+  assert.equal(claim(kv, "m1", 1000, "t1", "userB"), false);
+  assert.equal(entryFor(kv, "m1", 1000)?.state, "queued");
+  assert.equal(claim(kv, "m1", 1000, "t2", "userA"), true);
+  settle(kv, "m1", "queued", 1001);
+  assert.equal(entryFor(kv, "m1", 1001)?.userId, "userA");
+});

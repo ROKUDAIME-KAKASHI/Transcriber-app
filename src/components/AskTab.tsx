@@ -15,22 +15,25 @@ interface Turn {
   quotes: AskQuote[];
 }
 
-const key = (id: string) => `minutely.ask.${id}`;
+const key = (userId: string, id: string) => `minutely.ask.${userId}.${id}`;
 const MAX_KEPT = 30;
 
-function load(id: string): Turn[] {
+function load(userId: string | null, id: string): Turn[] {
+  if (!userId) return [];
   try {
-    const v = JSON.parse(localStorage.getItem(key(id)) ?? "[]");
+    const raw = JSON.parse(localStorage.getItem(key(userId, id)) ?? "[]");
+    const v = Array.isArray(raw) ? raw : raw?.turns;
     return Array.isArray(v) ? (v as Turn[]).filter((t) => t && typeof t.q === "string" && typeof t.a === "string").slice(-MAX_KEPT) : [];
   } catch {
     return [];
   }
 }
 
-function save(id: string, turns: Turn[]) {
+function save(userId: string | null, id: string, turns: Turn[]) {
+  if (!userId) return;
   try {
-    if (turns.length) localStorage.setItem(key(id), JSON.stringify(turns.slice(-MAX_KEPT)));
-    else localStorage.removeItem(key(id));
+    if (turns.length) localStorage.setItem(key(userId, id), JSON.stringify({ at: Date.now(), turns: turns.slice(-MAX_KEPT) }));
+    else localStorage.removeItem(key(userId, id));
   } catch {
     /* storage full or blocked: the chat just isn't remembered */
   }
@@ -48,10 +51,10 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
   const nextId = useRef(1);
 
   useEffect(() => {
-    const t = load(meetingId);
+    const t = load(userId, meetingId);
     nextId.current = t.reduce((n, x) => Math.max(n, x.id), 0) + 1;
     setTurns(t);
-  }, [meetingId]);
+  }, [meetingId, userId]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: "nearest" });
@@ -87,7 +90,7 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
       }
       const next = [...turns, { id: nextId.current++, q, a: data.answer, quotes: Array.isArray(data.quotes) ? data.quotes : [] }].slice(-MAX_KEPT);
       setTurns(next);
-      save(meetingId, next);
+      save(userId, meetingId, next);
       setText("");
     } catch {
       setError("Couldn't reach the server. Check the connection and try again.");
@@ -108,7 +111,7 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
             icon={<Trash2 className="h-4 w-4" aria-hidden />}
             onClick={() => {
               setTurns([]);
-              save(meetingId, []);
+              save(userId, meetingId, []);
             }}
           >
             Clear chat

@@ -63,6 +63,8 @@ export interface Entry {
   state: JobState;
   words: number;
   at: number;
+  /** Account that queued it. Another account on the same device never runs or burns it. */
+  userId?: string;
   /** Who holds the "running" state; used to confirm a claim won the race between tabs. */
   token?: string;
 }
@@ -101,20 +103,21 @@ function write(kv: KV, book: Book): void {
 }
 
 /** Remember a meeting that should be written up. A meeting already in the book (any state) is never queued again. */
-export function enqueue(kv: KV, id: string, words: number, now: number): boolean {
+export function enqueue(kv: KV, id: string, words: number, now: number, userId?: string): boolean {
   if (words < AUTO_MIN_WORDS) return false;
   const book = readBook(kv, now);
   if (book[id]) return false;
-  book[id] = { state: "queued", words, at: now };
+  book[id] = { state: "queued", words, at: now, ...(userId ? { userId } : {}) };
   write(kv, book);
   return true;
 }
 
 /** Take the job. True for exactly one caller; others see running/done/failed and get false. */
-export function claim(kv: KV, id: string, now: number, token: string): boolean {
+export function claim(kv: KV, id: string, now: number, token: string, userId?: string): boolean {
   const book = readBook(kv, now);
   const e = book[id];
   if (!e) return false;
+  if (userId !== undefined && e.userId !== userId) return false;
   const free = e.state === "queued" || (e.state === "running" && now - e.at > STALE_RUNNING_MS);
   if (!free) return false;
   book[id] = { ...e, state: "running", at: now, token };
@@ -127,12 +130,13 @@ export function settle(kv: KV, id: string, state: "done" | "failed" | "queued", 
   const book = readBook(kv, now);
   const e = book[id];
   if (!e) return;
-  book[id] = { state, words: e.words, at: now };
+  book[id] = { state, words: e.words, at: now, ...(e.userId ? { userId: e.userId } : {}) };
   write(kv, book);
 }
 
-export function queuedIds(kv: KV, now: number): string[] {
+export function queuedIds(kv: KV, now: number, userId?: string): string[] {
   return Object.entries(readBook(kv, now))
+    .filter(([, e]) => userId === undefined || e.userId === userId)
     .filter(([, e]) => e.state === "queued" || (e.state === "running" && now - e.at > STALE_RUNNING_MS))
     .map(([id]) => id);
 }

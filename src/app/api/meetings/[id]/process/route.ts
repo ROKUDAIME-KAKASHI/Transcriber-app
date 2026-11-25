@@ -26,6 +26,8 @@ const FULL_TRANSCRIPT_MAX_WORDS = 3500;
 const Body = z.object({
   template: z.enum(["MOM", "Report"]).default("MOM"),
   model: z.enum(["glm", "haiku"]).default(DEFAULT_SUMMARY_MODEL),
+  /** Set by the automatic run after Stop: if minutes were written meanwhile (another device), return them instead of overwriting. */
+  onlyIfEmpty: z.boolean().optional(),
 });
 
 /**
@@ -107,6 +109,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return Response.json({ error: "The database is waking up. Try again in a few seconds." }, { status: 503 });
   }
   if (!meeting) return Response.json({ error: "Meeting not found" }, { status: 404 });
+  if (parsed.data.onlyIfEmpty) {
+    try {
+      const now = await prisma.meeting.findFirst({ where: { id, userId }, select: { document: true, template: true } });
+      if (now?.document) return Response.json({ document: now.document, template: now.template ?? template });
+    } catch {
+      /* carry on and write the minutes */
+    }
+  }
 
   const parts = parseTranscript(meeting.transcript);
   const sn = meeting.speakerNames;

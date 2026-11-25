@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import { useFeatureGate } from "@/lib/featureGate";
 import { useFlag } from "@/lib/flagsClient";
 import { generateSummaryOnly } from "@/lib/minutesJob";
+import { useLocalUser } from "./SyncProvider";
 import { useExtras, writeExtras } from "@/lib/meetingExtras";
 import { Button, GateReason, Panel, PanelHeader } from "./ui";
 
@@ -28,7 +29,8 @@ function List({ title, items, empty }: { title: string; items: string[]; empty?:
 
 /** "How the meeting went": purpose, key points, decisions, open questions and tone. Kept on this device. */
 export function SummaryTab({ meetingId, hasTranscript, model }: { meetingId: string; hasTranscript: boolean; model: string }) {
-  const { summary } = useExtras(meetingId);
+  const { userId } = useLocalUser();
+  const { summary } = useExtras(userId, meetingId);
   const gate = useFeatureGate("ai");
   const aiOn = useFlag("autoMinutes");
   const [busy, setBusy] = useState(false);
@@ -38,7 +40,7 @@ export function SummaryTab({ meetingId, hasTranscript, model }: { meetingId: str
     setBusy(true);
     setError(null);
     try {
-      writeExtras(meetingId, { summary: await generateSummaryOnly(meetingId, model) });
+      writeExtras(userId, meetingId, { summary: await generateSummaryOnly(meetingId, model) });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't write the summary. Try again.");
     } finally {

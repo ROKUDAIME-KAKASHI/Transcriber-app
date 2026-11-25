@@ -58,8 +58,8 @@ async function extractSeparately(meetingId: string): Promise<ExtractedItem[] | n
 }
 
 /** Existing minutes route (also handles very long meetings in chunks). */
-async function processSeparately(meetingId: string, template: string, model: string): Promise<{ document: string; template: string }> {
-  const res = await post(`/api/meetings/${meetingId}/process`, { template, model });
+async function processSeparately(meetingId: string, template: string, model: string, onlyIfEmpty = false): Promise<{ document: string; template: string }> {
+  const res = await post(`/api/meetings/${meetingId}/process`, { template, model, ...(onlyIfEmpty ? { onlyIfEmpty: true } : {}) });
   const data = await readJson<{ document?: string; template?: string; error?: string }>(res);
   if (res.ok && data?.document) return { document: data.document, template: data.template ?? template };
   if (!data) throw new GenError("The server sent an unreadable reply.", { network: true, status: res.status });
@@ -98,13 +98,14 @@ export async function generateAll(
       return { document: data.document, template: data.template ?? opts.template, summary: data.summary ?? null, items, alreadyDone };
     }
     // 404 = the switch is off on the server; any `fallback` = the reply could not be used or the meeting is very long.
-    const useFallback = !!data?.fallback || res.status === 404;
+    // A 404 that says "Meeting not found" is a real answer (wrong account), not the switch being off.
+    const useFallback = !!data?.fallback || (res.status === 404 && data?.error !== "Meeting not found");
     if (!useFallback) {
       if (!data) throw new GenError("The server sent an unreadable reply.", { network: true, status: res.status });
       throw new GenError(data.error || "Processing failed. Please try again.", { status: res.status });
     }
   }
-  const doc = await processSeparately(meetingId, opts.template, opts.model);
+  const doc = await processSeparately(meetingId, opts.template, opts.model, !opts.force);
   return { ...doc, summary: null, items: await extractSeparately(meetingId), alreadyDone: false };
 }
 
@@ -193,8 +194,8 @@ const book: KV = {
 };
 
 /** Called when a recording has stopped and been saved. Returns false for a meeting already queued or done, or too short. */
-export function enqueueAuto(meetingId: string, words: number): boolean {
-  const ok = enqueue(book, meetingId, words, Date.now());
+export function enqueueAuto(userId: string, meetingId: string, words: number): boolean {
+  const ok = enqueue(book, meetingId, words, Date.now(), userId);
   if (ok) {
     setJob(meetingId, { phase: "waiting", etaSec: etaFor(words), startedAt: 0, error: null, document: null, template: null });
     window.dispatchEvent(new Event("minutely:autominutes"));
@@ -202,8 +203,8 @@ export function enqueueAuto(meetingId: string, words: number): boolean {
   return ok;
 }
 
-export function pendingAutoIds(): string[] {
-  return queuedIds(book, Date.now());
+export function pendingAutoIds(userId: string): string[] {
+  return queuedIds(book, Date.now(), userId);
 }
 
 const token = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -211,7 +212,7 @@ const token = () => Math.random().toString(36).slice(2) + Date.now().toString(36
 /** Run one queued meeting. Safe to call from several places: only the caller that wins the claim does the work. */
 export async function runAuto(userId: string, meetingId: string): Promise<void> {
   const tok = token();
-  if (!claim(book, meetingId, Date.now(), tok)) return;
+  if (!claim(book, meetingId, Date.now(), tok, userId)) return;
   const words = (() => {
     try {
       const e = JSON.parse(localStorage.getItem(BOOK_KEY) ?? "{}")[meetingId];
@@ -256,7 +257,7 @@ export async function runAuto(userId: string, meetingId: string): Promise<void> 
 export async function applyOutcome(userId: string | null, meetingId: string, out: GenOutcome): Promise<void> {
   if (userId) await setServerDocument(userId, meetingId, out.document, out.template);
   if (out.alreadyDone) return;
-  writeExtras(meetingId, { summary: out.summary, ...(out.items !== null ? { items: out.items } : {}) });
+  if (userId) writeExtras(userId, meetingId, { summary: out.summary, ...(out.items !== null ? { items: out.items } : {}) });
 }
 
 /** "Try again" after a failed automatic run: runs now, outside the once-only book (the user asked for it). */

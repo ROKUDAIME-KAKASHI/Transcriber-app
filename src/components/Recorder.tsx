@@ -11,6 +11,7 @@ import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecor
 import { isNativeApp, nativeCapabilities } from "@/lib/nativeRecorder";
 import { useFlag } from "@/lib/flagsClient";
 import { enqueueAuto } from "@/lib/minutesJob";
+import { useLocalUser } from "./SyncProvider";
 import { setWebRecording } from "@/lib/recordingFlag";
 import { formatDuration } from "@/lib/transcript";
 import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
@@ -408,12 +409,13 @@ export function Recorder() {
 
   // Stop -> write the minutes for this meeting once (queued; the runner waits for internet and sign-in).
   const autoMinutesOn = useFlag("autoMinutes");
+  const { userId: autoUserId } = useLocalUser();
   const queuedMeeting = useRef<string | null>(null);
   useEffect(() => {
-    if (!finished || !autoMinutesOn || !rec.meetingId || queuedMeeting.current === rec.meetingId) return;
-    queuedMeeting.current = rec.meetingId;
-    enqueueAuto(rec.meetingId, words);
-  }, [finished, autoMinutesOn, rec.meetingId, words]);
+    if (!finished || !autoMinutesOn || !autoUserId || !rec.meetingId || queuedMeeting.current === rec.meetingId) return;
+    // Remembered only once queued, so late final phrases that push the count past the minimum still get a run.
+    if (enqueueAuto(autoUserId, rec.meetingId, words)) queuedMeeting.current = rec.meetingId;
+  }, [finished, autoMinutesOn, autoUserId, rec.meetingId, words]);
 
   const mode = calmMode({
     recording: busy,

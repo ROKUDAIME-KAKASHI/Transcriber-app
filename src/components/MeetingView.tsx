@@ -78,7 +78,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const askOn = useFlag("meetingAsk");
   const combinedOn = useFlag("autoMinutes");
   const tabs = visibleTabs({ tabs: tabsOn, actions: actionItemsOn, ask: askOn });
-  const extras = useExtras(meeting.id);
+  const extras = useExtras(userId, meeting.id);
   const job = useJob(meeting.id);
   const nameSuggestionsOn = useFlag("nameSuggestions");
   const [busy, setBusy] = useState(false);
@@ -111,7 +111,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   }, []);
   const tabInit = useRef(false);
   useEffect(() => {
-    if (tabInit.current) return;
+    // With the tabs switch off the page opens as it always did (document, else transcript): no saved tab, no ?tab=.
+    if (tabInit.current || !tabsOn) return;
     tabInit.current = true;
     let saved: string | null = null;
     try {
@@ -122,7 +123,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     const param = new URLSearchParams(window.location.search).get("tab");
     setTabState(pickInitialTab({ param, saved, hasDoc: !!meeting.document, visible: tabs }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tabsOn]);
   // If a switch hides the open tab (or the flags load late), move to one that is shown.
   useEffect(() => {
     if (!tabs.includes(tab)) setTabState(tabs[0]);
@@ -858,7 +859,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
             names={names}
             hasTranscript={hasTranscript}
             seed={extras.items}
-            onSaved={() => writeExtras(meeting.id, { items: null })}
+            onSaved={() => writeExtras(userId, meeting.id, { items: null })}
           />
         ) : tab === "summary" ? (
           <SummaryTab meetingId={meeting.id} hasTranscript={hasTranscript} model={model} />
