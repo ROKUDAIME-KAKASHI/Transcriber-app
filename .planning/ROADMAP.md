@@ -204,7 +204,7 @@ Plans:
 Phases 10-20 map to Steps 0-10 of the v2.0 plan.
 
 - [ ] **Phase 10: Safety foundations (Step 0)** - Preview deploys on a separate database, tracked migrations, CI, error log, feature switches, release script
-- [ ] **Phase 11: Duplicate guards + change history (Step 1)** - No accidental duplicates; edits are recorded; small review leftovers fixed
+- [x] **Phase 11: Duplicate guards + change history (Step 1)** - No accidental duplicates; edits are recorded; small review leftovers fixed
 - [ ] **Phase 12: Stakeholders directory (Step 2)** - People the user meets, with designation, area of involvement and email
 - [ ] **Phase 13: Planned meetings + series (Step 3)** - Meetings planned ahead with time, venue/link, attendees and agenda; Record starts from a plan
 - [ ] **Phase 14: Pre-work (Step 4)** - Reference files are summarised by AI into agenda points

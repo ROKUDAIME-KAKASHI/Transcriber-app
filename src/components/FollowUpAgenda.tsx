@@ -66,6 +66,9 @@ export function FollowUpAgendaSheet({
   const [error, setError] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  /** The text as it was just before the last AI polish, so "Undo polish" can bring it back. */
+  const [beforePolish, setBeforePolish] = useState<string | null>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -76,6 +79,7 @@ export function FollowUpAgendaSheet({
     if (open) {
       setText(draft);
       setError(null);
+      setBeforePolish(null);
     }
   }, [open, draft]);
 
@@ -93,7 +97,34 @@ export function FollowUpAgendaSheet({
     if (!open) return;
     const unregister = pushOverlay(() => onCloseRef.current());
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      // Keep Tab inside the sheet: wrap from the last control to the first and back.
+      const box = dialogRef.current;
+      if (!box) return;
+      const focusable = Array.from(
+        box.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')
+      );
+      if (!focusable.length) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const current = document.activeElement as HTMLElement | null;
+      if (!current || !box.contains(current)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && current === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && current === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -200,6 +231,7 @@ export function FollowUpAgendaSheet({
     if (!text.trim() || polishing) return;
     setError(null);
     setPolishing(true);
+    const snapshot = text;
     try {
       const res = await fetch("/api/agenda/polish", {
         method: "POST",
@@ -211,6 +243,7 @@ export function FollowUpAgendaSheet({
         setError(data?.error || "Couldn't polish the agenda. Try again.");
         return;
       }
+      setBeforePolish(snapshot);
       setText(data.text);
       toast("Agenda polished. Check it before sharing.", "success");
     } catch {
@@ -234,6 +267,7 @@ export function FollowUpAgendaSheet({
       />
       <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center lg:items-center lg:p-6">
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="agenda-title"
@@ -261,6 +295,7 @@ export function FollowUpAgendaSheet({
               value={text}
               onChange={(e) => setText(e.target.value)}
               maxLength={8000}
+              disabled={polishing}
               spellCheck
               className={cx(inputCls, "min-h-40 resize-none overflow-hidden py-3 leading-6")}
             />
@@ -269,7 +304,7 @@ export function FollowUpAgendaSheet({
                 {error}
               </p>
             )}
-            <div>
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 loading={polishing}
                 disabled={!aiGate.enabled || !text.trim()}
@@ -279,6 +314,18 @@ export function FollowUpAgendaSheet({
               >
                 {polishing ? "Polishing…" : "Polish with AI"}
               </Button>
+              {beforePolish !== null && !polishing && (
+                <Button
+                  variant="ghost"
+                  icon={<RotateCcw className="h-4 w-4" aria-hidden />}
+                  onClick={() => {
+                    setText(beforePolish);
+                    setBeforePolish(null);
+                  }}
+                >
+                  Undo polish
+                </Button>
+              )}
               <GateReason id="agenda-gate" reason={gateReason} />
             </div>
           </div>

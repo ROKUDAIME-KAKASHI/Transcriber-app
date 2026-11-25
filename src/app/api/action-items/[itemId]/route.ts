@@ -1,7 +1,10 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { actionItemsMissing, isActionItemsMissing } from "@/lib/actionItemsDb";
 import { PatchBody } from "@/lib/taskTracker";
+import { recordEvents, withLive } from "@/lib/actionItemHistory";
+import { diffTask, historyValue, type EventDraft } from "@/lib/taskHistory";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -12,9 +15,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ itemId
   const parsed = PatchBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Invalid update" }, { status: 400, headers: NO_STORE });
   try {
-    // Scoped to the owner: updating someone else's (or a missing) id is a 404.
-    const { count } = await prisma.actionItem.updateMany({ where: { id: itemId, userId }, data: parsed.data });
+    // The values before the edit, for the change history. If this lookup fails the edit still goes ahead.
+    const before = await withLive((live) =>
+      prisma.actionItem.findFirst({ where: { id: itemId, userId, ...live }, select: { status: true, owner: true, dueDate: true, note: true, task: true } })
+    ).catch(() => null);
+    // Scoped to the owner: updating someone else's (or a missing, or deleted) id is a 404.
+    const { count } = await withLive((live) => prisma.actionItem.updateMany({ where: { id: itemId, userId, ...live }, data: parsed.data }));
     if (!count) return Response.json({ error: "Task not found" }, { status: 404, headers: NO_STORE });
+    if (before) await recordEvents(userId, diffTask(before, parsed.data).map((draft) => ({ actionItemId: itemId, draft })));
     const item = await prisma.actionItem.findFirst({
       where: { id: itemId, userId },
       select: { id: true, task: true, owner: true, deadlineText: true, dueDate: true, status: true, note: true, updatedAt: true },
@@ -32,9 +40,21 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ item
   if (!userId) return unauthorized();
   const { itemId } = await params;
   try {
-    // Scoped to the owner: deleting someone else's (or a missing) id is a 404.
-    const { count } = await prisma.actionItem.deleteMany({ where: { id: itemId, userId } });
+    // Soft delete keeps the task's history. Before migration 2_history there is no deletedAt column: delete for real.
+    const task = await withLive((live) =>
+      prisma.actionItem.findFirst({ where: { id: itemId, userId, ...live }, select: { task: true } })
+    ).catch(() => null);
+    let count: number;
+    try {
+      ({ count } = await prisma.actionItem.updateMany({ where: { id: itemId, userId, deletedAt: null }, data: { deletedAt: new Date() } }));
+    } catch (err) {
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2022")) throw err;
+      ({ count } = await prisma.actionItem.deleteMany({ where: { id: itemId, userId } }));
+      return count ? Response.json({ ok: true }) : Response.json({ error: "Task not found" }, { status: 404 });
+    }
     if (!count) return Response.json({ error: "Task not found" }, { status: 404 });
+    const draft: EventDraft = { action: "deleted", field: null, oldValue: historyValue("task", task?.task ?? null)?.slice(0, 300) ?? null, newValue: null };
+    await recordEvents(userId, [{ actionItemId: itemId, draft }]);
     return Response.json({ ok: true });
   } catch (err) {
     if (isActionItemsMissing(err)) return actionItemsMissing();

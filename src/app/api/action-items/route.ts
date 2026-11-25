@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { actionItemsMissing, isActionItemsMissing } from "@/lib/actionItemsDb";
+import { withLive } from "@/lib/actionItemHistory";
 import { UNASSIGNED, isTaskStatus, sortTasks, type TaskStatus } from "@/lib/taskTracker";
 
 export const dynamic = "force-dynamic";
@@ -24,8 +25,8 @@ export async function GET(req: Request) {
   else if (owner) where.owner = { equals: owner, mode: "insensitive" };
 
   try {
-    const rows = await prisma.actionItem.findMany({
-      where,
+    const rows = await withLive((live) => prisma.actionItem.findMany({
+      where: { ...where, ...live },
       orderBy: { createdAt: "desc" },
       take: 1000,
       select: {
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
         status: true, note: true, createdAt: true,
         meeting: { select: { id: true, title: true, createdAt: true } },
       },
-    });
+    }));
     const items = sortTasks(
       rows.map((r) => ({
         ...r,

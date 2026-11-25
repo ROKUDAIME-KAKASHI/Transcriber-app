@@ -206,3 +206,26 @@ export const SaveBody = z.object({
     .min(1)
     .max(MAX_SAVE_ITEMS),
 });
+
+/** The extract route accepts phrases up to this long. */
+export const MAX_PHRASE_CHARS = 5000;
+
+/** Split any phrase longer than the limit at word boundaries, so the fallback transcript is never rejected as too long. */
+export function splitLongPhrases<T extends { text: string }>(parts: readonly T[], max = MAX_PHRASE_CHARS): T[] {
+  const out: T[] = [];
+  for (const p of parts) {
+    if (p.text.length <= max) {
+      out.push(p);
+      continue;
+    }
+    let rest = p.text;
+    while (rest.length > max) {
+      let cut = rest.lastIndexOf(" ", max);
+      if (cut < max / 2) cut = max;
+      out.push({ ...p, text: rest.slice(0, cut).trimEnd() });
+      rest = rest.slice(cut).trimStart();
+    }
+    if (rest) out.push({ ...p, text: rest });
+  }
+  return out;
+}

@@ -6,13 +6,14 @@ import { CalendarClock, ChevronDown, CloudOff, Copy, Mic, Share2 } from "lucide-
 import { useAuth } from "./AuthProvider";
 import { useConnectivity } from "@/lib/connectivity";
 import { copyText, shareText } from "@/lib/export/deliver";
+import { findRepeatBookings } from "@/lib/dedupe";
 import { DURATIONS, formatInZone, validateHandle, type AvailabilityRange } from "@/lib/scheduling";
 import {
   DEFAULT_DAYS, DEFAULT_END, DEFAULT_OPTIONS, DEFAULT_START, WEEK, applyLengths, availabilityFromSimple, handleWithDigits,
   lengthsFromEvents, optionsFromEvents, simpleHoursFromAvailability, suggestHandle, type EventLike, type MoreOptions,
 } from "@/lib/scheduleSimple";
 import { useToast } from "./Toast";
-import { Button, FieldLabel, Notice, Panel, PanelHeader, cx, inputCls, selectCls } from "./ui";
+import { Badge, Button, FieldLabel, Notice, Panel, PanelHeader, cx, inputCls, selectCls } from "./ui";
 
 interface BookingRow {
   id: string;
@@ -249,6 +250,7 @@ export function ScheduleSettings() {
   };
 
   const hostTz = savedHandle ? tz : browserTz;
+  const repeatGuests = useMemo(() => findRepeatBookings(bookings ?? [], hostTz), [bookings, hostTz]);
 
   return (
     <div className="space-y-6">
@@ -501,6 +503,7 @@ export function ScheduleSettings() {
                         className="flex min-h-12 w-full items-center gap-2 px-4 py-3 text-left hover:bg-muted"
                       >
                         <span className="min-w-0 flex-1 text-ui font-semibold">{bookingWhen(b, hostTz)}</span>
+                        {repeatGuests.has(b.id) && <Badge tone="warning">Same guest booked twice</Badge>}
                         <ChevronDown className={cx("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} aria-hidden />
                       </button>
                       {open && (

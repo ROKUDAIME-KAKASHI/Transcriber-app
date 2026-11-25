@@ -120,9 +120,9 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 
 ### Later steps
 
-- [ ] **DUP-01**: Saving action items, bookings and agendas twice never creates duplicates (Phase 11)
-- [ ] **DUP-02**: Review leftovers from week-REVIEW.md closed (Phase 11)
-- [ ] **HIST-01**: Edits to tasks and meetings keep a visible change history (Phase 11)
+- [x] **DUP-01**: Saving action items, bookings and agendas twice never creates duplicates (Phase 11)
+- [x] **DUP-02**: Review leftovers from week-REVIEW.md closed (Phase 11)
+- [x] **HIST-01**: Edits to tasks and meetings keep a visible change history (Phase 11)
 - [ ] **STK-01**: User keeps a stakeholders directory: name, designation, area of involvement, email (Phase 12)
 - [ ] **STK-02**: Stakeholders are searchable and reusable wherever a person is picked (Phase 12)
 - [ ] **PLAN-01**: User can plan a meeting with time, venue or link, attendees and agenda (Phase 13)
@@ -197,8 +197,8 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 | APP-01 | Phase 9 (quick tasks) | Complete (device UAT pending) |
 | BRAND-01 | Phase 9 (quick tasks) | Complete |
 | SAFE-01..06 | Phase 10 | Pending |
-| DUP-01..02 | Phase 11 | Pending |
-| HIST-01 | Phase 11 | Pending |
+| DUP-01..02 | Phase 11 | Complete (needs UAT) |
+| HIST-01 | Phase 11 | Complete (needs UAT, apply 2_history) |
 | STK-01..02 | Phase 12 | Pending |
 | PLAN-01..03 | Phase 13 | Pending |
 | PRE-01..02 | Phase 14 | Pending |

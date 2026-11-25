@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ListChecks, Plus, Trash2, X } from "lucide-react";
 import { useFeatureGate } from "@/lib/featureGate";
 import type { SpeakerNames, TranscriptPart } from "@/lib/transcript";
 import Link from "next/link";
 import { STATUS_LABEL, type TaskStatus } from "@/lib/taskTracker";
+import { splitLongPhrases } from "@/lib/actionItems";
+import { matchTask } from "@/lib/dedupe";
 import { useToast } from "./Toast";
 import { AgendaButton, FollowUpAgendaSheet } from "./FollowUpAgenda";
 import type { AgendaItem } from "@/lib/followUpAgenda";
@@ -61,6 +63,7 @@ export function ActionItems({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const keyRef = useRef(0);
+  const savedTasks = useMemo(() => (saved ?? []).map((s) => s.task), [saved]);
   const [agendaItems, setAgendaItems] = useState<AgendaItem[] | null>(null);
   const [agendaLoading, setAgendaLoading] = useState(false);
   const [agendaError, setAgendaError] = useState<string | null>(null);
@@ -112,7 +115,7 @@ export function ActionItems({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // The server reads its own copy; this is only used when that copy is still empty.
-        body: JSON.stringify({ transcript: parts.length <= 20_000 ? parts : undefined, speakerNames: names ?? null }),
+        body: JSON.stringify({ transcript: parts.length <= 20_000 ? splitLongPhrases(parts) : undefined, speakerNames: names ?? null }),
       });
       if (!res.ok) {
         setError(await readError(res, "Couldn't extract action items. Try again."));
@@ -126,7 +129,8 @@ export function ActionItems({
       setRows(
         data.items.map((i) => ({
           key: keyRef.current++,
-          checked: true,
+          // Something already saved for this meeting starts unchecked, so saving again can't repeat it.
+          checked: matchTask(i.task, savedTasks)?.kind !== "same",
           task: i.task,
           owner: i.owner ?? "",
           deadline: i.deadlineText ?? "",
@@ -173,10 +177,11 @@ export function ActionItems({
         setError(await readError(res, "Couldn't save the tasks. Try again."));
         return;
       }
-      const data = (await res.json()) as { items: SavedItem[]; saved: number };
+      const data = (await res.json()) as { items: SavedItem[]; saved: number; skipped?: number };
       setSaved(data.items);
       setRows(null);
-      toast(`Saved ${data.saved} ${data.saved === 1 ? "task" : "tasks"}`, "success");
+      const n = `${data.saved} ${data.saved === 1 ? "task" : "tasks"}`;
+      toast(data.skipped ? `Saved ${n} · ${data.skipped} ${data.skipped === 1 ? "duplicate" : "duplicates"} skipped` : `Saved ${n}`, "success");
     } catch {
       setError("Couldn't reach the server. Check the connection and try again.");
     } finally {
@@ -258,7 +263,9 @@ export function ActionItems({
               </div>
             )}
             <ul className="space-y-3">
-              {rows.map((r, n) => (
+              {rows.map((r, n) => {
+                const dup = matchTask(r.task, savedTasks)?.kind ?? null;
+                return (
                 <li
                   key={r.key}
                   className={cx(
@@ -329,6 +336,11 @@ export function ActionItems({
                       <X className="h-4 w-4" aria-hidden />
                     </Button>
                   </div>
+                  {dup && (
+                    <div className="mt-2 pl-10">
+                      <Badge tone={dup === "same" ? "neutral" : "warning"}>{dup === "same" ? "Already saved" : "Possible duplicate"}</Badge>
+                    </div>
+                  )}
                   {(r.quote || !r.verified) && (
                     <div className="mt-2 space-y-1 pl-10">
                       {r.quote && (
@@ -340,7 +352,8 @@ export function ActionItems({
                     </div>
                   )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Button icon={<Plus className="h-4 w-4" aria-hidden />} onClick={add} className="sm:w-auto">
