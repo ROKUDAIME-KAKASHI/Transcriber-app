@@ -14,6 +14,8 @@ import * as haptics from "@/lib/haptics";
 import { useToast } from "./Toast";
 import { SpeakerChip } from "./SpeakerChip";
 import { RenameSpeakerSheet } from "./RenameSpeakerSheet";
+import { NamingReport } from "./NamingReport";
+import { recordNamingRename } from "@/lib/naming/client";
 import { NameSuggestions } from "./NameSuggestions";
 import { DEFAULT_SUMMARY_MODEL, SUMMARY_MODELS, type SummaryModel } from "@/lib/aiModels";
 import { navBack } from "@/lib/navStack";
@@ -173,6 +175,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
       else delete next[k];
     }
     namesRef.current = next;
+    // Screen naming report: a name you type over an automatic one counts as a change (device-only counts).
+    if (userId) await recordNamingRename(userId, meeting.id, Object.fromEntries(Object.entries(updates).map(([k, v]) => [Number(k), v.trim()])));
     try {
       if (userId && (await setSpeakerNames(userId, meeting.id, next))) {
         poke(meeting.id);
@@ -867,6 +871,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
           <AskTab meetingId={meeting.id} hasTranscript={hasTranscript} />
         ) : (
           <Panel className="px-5 py-6 sm:px-8 sm:py-8">
+            <NamingReport userId={userId} meetingId={meeting.id} names={names} />
             {hasTranscript ? (
               <TranscriptView parts={meeting.transcript} window="head" speakerNames={names} onRenameSpeaker={renameSpeaker} renameHint />
             ) : (

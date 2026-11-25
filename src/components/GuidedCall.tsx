@@ -5,7 +5,9 @@ import { ExternalLink, MonitorSpeaker, TriangleAlert } from "lucide-react";
 import {
   detectCallPlatform, guideHidden, openableCallUrl, setGuideHidden, shareProblemCopy, type ShareProblemCode,
 } from "@/lib/guidedCall";
+import type { PlatformId } from "@/lib/naming/highlight";
 import { CallGuide } from "./CallGuide";
+import { ScreenNamingToggle } from "./ScreenNamingToggle";
 import { Button, FieldLabel, Notice, inputCls } from "./ui";
 
 /** The browser's saved-settings store, or null when it is blocked. */
@@ -32,7 +34,8 @@ export function GuidedCall({
   startUrl: string | null;
   /** What was wrong with the last share, if anything. */
   problem: ShareProblemCode | null;
-  onStart: () => void;
+  /** Starts the recording. Gets the call's platform when the pasted link shows it (used to find the speaker's tile). */
+  onStart: (platform: PlatformId | null) => void;
 }) {
   const [typed, setTyped] = useState<string | null>(null);
   const [guide, setGuide] = useState<null | { opened: boolean; blocked: boolean }>(null);
@@ -60,7 +63,7 @@ export function GuidedCall({
     // Without a call to open, a switched-off guide goes straight to the share window. Otherwise the user
     // has to come back to this tab first, so a click here is needed anyway.
     if (hidden && !url) {
-      onStart();
+      onStart(platform?.id ?? null);
       return;
     }
     setGuide({ opened, blocked });
@@ -76,7 +79,7 @@ export function GuidedCall({
           <Notice tone="warning" icon={<TriangleAlert className="h-4 w-4" />} title={copy.title}>
             {copy.fix}
           </Notice>
-          <Button className="mt-2 w-full" disabled={disabled} onClick={onStart}>Try again</Button>
+          <Button className="mt-2 w-full" disabled={disabled} onClick={() => onStart(platform?.id ?? null)}>Try again</Button>
         </div>
       )}
 
@@ -116,6 +119,8 @@ export function GuidedCall({
         <p className="mt-1.5 text-meta text-muted-foreground">If nothing opens, allow pop-ups for this site and press again.</p>
       )}
 
+      <ScreenNamingToggle className="mt-3" />
+
       {guide && (
         <CallGuide
           platform={platform}
@@ -126,7 +131,7 @@ export function GuidedCall({
           onContinue={(dontShow) => {
             if (dontShow) setGuideHidden(deviceStore(), true);
             setGuide(null);
-            onStart();
+            onStart(platform?.id ?? null);
           }}
         />
       )}

@@ -37,6 +37,9 @@ import {
 } from "@/lib/tabAudio";
 import { CALL_SILENT_MESSAGE } from "@/lib/guidedCall";
 import { GuidedCall } from "./GuidedCall";
+import { NamingStrip } from "./NamingStrip";
+import { useScreenNamingOptIn } from "@/lib/naming/client";
+import { usePeople } from "@/lib/stakeholdersClient";
 import { useMotionPref } from "@/lib/motionPref";
 import * as haptics from "@/lib/haptics";
 
@@ -147,10 +150,16 @@ export function Recorder() {
   const [audioSource, setAudioSource] = useState<AudioSourceChoice>("mic");
   const [tabMic, setTabMic] = useState(true);
   const [callUrl, setCallUrl] = useState<string | null>(null);
+  /** Names of the people planned for this meeting (from the plan the recording is linked to). */
+  const [planAttendees, setPlanAttendees] = useState<string[]>([]);
   const tabSelector = tabAudioOn && tabCapable;
   // "Record an online call": same laptop-only rules as the tab source, plus its own switch.
   const guidedCallOn = useFlag("guidedCall");
   const guidedEntry = guidedCallOn && tabSelector && guidedCapable;
+  // Screen naming (beta): the People directory helps match names read from the call screen. Only fetched when it can be used.
+  const [namingOptIn] = useScreenNamingOptIn();
+  const peopleDir = usePeople(guidedEntry && namingOptIn);
+  const directoryNames = useMemo(() => peopleDir.people.map((p) => p.name).filter(Boolean).slice(0, 2000), [peopleDir.people]);
   const [reshareNote, setReshareNote] = useState<string | null>(null);
   const [resharing, setResharing] = useState(false);
   const source: AudioSourceChoice = tabSelector ? audioSource : "mic";
@@ -397,7 +406,10 @@ export function Recorder() {
     let cancelled = false;
     fetch(`/api/plans/${encodeURIComponent(id)}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { plan?: { callUrl?: string | null } } | null) => {
+      .then((j: { plan?: { callUrl?: string | null; attendees?: { name?: string }[] } } | null) => {
+        if (!cancelled && Array.isArray(j?.plan?.attendees)) {
+          setPlanAttendees(j.plan.attendees.map((a) => (typeof a?.name === "string" ? a.name : "")).filter(Boolean));
+        }
         const url = safeCallUrl(j?.plan?.callUrl);
         if (cancelled || !url) return;
         setCallUrl((cur) => cur ?? url);
@@ -496,6 +508,7 @@ export function Recorder() {
               setPlanPrefill(plan.id);
               const planUrl = safeCallUrl(plan.callUrl);
               setCallUrl(planUrl);
+              setPlanAttendees((plan.attendees ?? []).map((a) => a.name).filter(Boolean));
               if (tabSelector && planUrl) setAudioSource("tab");
               setPrefillTitle(peekTitlePrefill());
               setPrefillPlan(true);
@@ -694,9 +707,12 @@ export function Recorder() {
             disabled={blocked || !gateStart.allowed}
             startUrl={callUrl}
             problem={webRec.shareProblem ?? null}
-            onStart={() => {
+            onStart={(platform) => {
               haptics.start();
-              void webRec.start("mic", { guided: true });
+              void webRec.start("mic", {
+                guided: true,
+                naming: { platform, attendees: planAttendees, directory: directoryNames },
+              });
             }}
           />
         )}
@@ -960,6 +976,11 @@ export function Recorder() {
           {busy && rec.noSound && (
             <div className="mb-4 lg:hidden" role="alert">
               <NoSoundNotice />
+            </div>
+          )}
+          {busy && !nativeMode && webRec.screenNaming && (
+            <div className="mb-4">
+              <NamingStrip state={webRec.screenNaming} names={rec.speakerNames} onRename={webRec.renameSpeaker} />
             </div>
           )}
           {!hasTranscript && !hasLive ? (

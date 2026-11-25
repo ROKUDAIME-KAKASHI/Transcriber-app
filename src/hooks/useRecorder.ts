@@ -38,6 +38,10 @@ import {
 import {
   CALL_SILENCE, checkShare, initialSilence, shareProblemCopy, stepSilence, type ShareProblemCode, type SilenceState,
 } from "@/lib/guidedCall";
+import { recordNamingRename, saveNamingStats, screenNamingAllowedNow } from "@/lib/naming/client";
+import type { NamerState, PhraseInfo, ScreenNamer } from "@/lib/naming/screenNamer";
+import type { PlatformId } from "@/lib/naming/highlight";
+import { remapStats, type NamingStats } from "@/lib/naming/stats";
 import {
   DEEPGRAM_SAMPLE_RATE, deepgramUrl, fetchDeepgramToken, floatToPcm16, speakerRuns,
   type DeepgramMessage, type RecordEngine,
@@ -106,6 +110,17 @@ export interface RecorderState {
   shareProblem?: ShareProblemCode | null;
   /** The current/last start came from "Record an online call" (it records a tab although `source` is "mic"). */
   guidedRun?: boolean;
+  /** Reading names from the call screen (Phase 23): null when it is not running. */
+  screenNaming?: NamerState | null;
+}
+
+/** What the screen needs to know to read names for a guided call. */
+export interface NamingStartOptions {
+  platform: PlatformId | null;
+  /** People expected in this meeting. */
+  attendees: string[];
+  /** The People directory, names only. */
+  directory: string[];
 }
 
 /**
@@ -202,6 +217,7 @@ export function useRecorder(opts: {
     callSilent: false,
     shareProblem: null,
     guidedRun: false,
+    screenNaming: null,
   });
 
   const { userId, available } = useLocalUser();
@@ -260,6 +276,16 @@ export function useRecorder(opts: {
   const tabDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const tabSilenceRef = useRef<SilenceState>(initialSilence());
   const tabMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Screen naming (Phase 23). All null/empty unless a guided tab recording runs with it on.
+  const namerRef = useRef<ScreenNamer | null>(null);
+  /** The shared tab's video track, kept (not recorded) so single frames can be read. Stopped with the recording. */
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
+  /** getTabAudio's hand-over of the video track it kept. */
+  const pendingVideoRef = useRef<MediaStreamTrack | null>(null);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const phraseWhoRef = useRef<Map<number, PhraseInfo>>(new Map());
+  const namingStatsRef = useRef<NamingStats | null>(null);
+  const refineMapRef = useRef<{ live: number[]; final: number[] } | null>(null);
   /** Parts the server has confirmed; autosave sends only the rest. */
   const savedPartsRef = useRef(0);
   const savingRef = useRef<Promise<boolean> | null>(null);
@@ -487,13 +513,13 @@ export function useRecorder(opts: {
     }
   };
 
-  const applyVector = (idx: number, vec: Float32Array) => {
+  const applyVector = (idx: number, vec: Float32Array): number | null => {
     const online = onlineRef.current;
-    if (!online) return;
+    if (!online) return null;
     const k = assignOnline(online, vec);
     vectorsRef.current.set(idx, vec);
     const parts = partsRef.current;
-    if (!parts[idx]) return;
+    if (!parts[idx]) return k;
     let next: TranscriptPart[] | null = null;
     if (parts[idx].speaker !== k) {
       next = parts.slice();
@@ -512,6 +538,7 @@ export function useRecorder(opts: {
       dirtyRef.current = true;
       patch({ transcriptParts: next });
     }
+    return k;
   };
 
   const handleEmbedding = (e: EmbeddingEvent) => {
@@ -526,11 +553,14 @@ export function useRecorder(opts: {
       awaitingPartsRef.current.delete(idx);
       awaitingJobsRef.current.delete(e.id);
       if (e.vector) {
-        applyVector(idx, e.vector);
+        const k = applyVector(idx, e.vector);
+        const who = phraseWhoRef.current.get(e.id);
+        if (k !== null && who) namerRef.current?.noteSpeech(k, who); // screen naming: this phrase belongs to voice k
         embedBufferRef.current.push({ part: idx, vec: e.vector, dur: phraseSecRef.current.get(e.id) ?? 0 });
         if (embedBufferRef.current.length >= 10) flushEmbedBuffer();
       }
       phraseSecRef.current.delete(e.id);
+      phraseWhoRef.current.delete(e.id);
       updateSpeakerStatus();
     } catch {
       /* silent: transcription carries on */
@@ -581,6 +611,8 @@ export function useRecorder(opts: {
     relabelNamesRef.current = null;
     relabelDoneRef.current = false;
     pendingRelabelRef.current = null;
+    phraseWhoRef.current.clear();
+    refineMapRef.current = null;
   };
 
   /** Stop-time: drain queued embeddings, re-cluster everything, keep names on the same people. */
@@ -600,6 +632,7 @@ export function useRecorder(opts: {
         const live = parts.map((p) => p.speaker);
         const vectors = parts.map((_, i) => vectorsRef.current.get(i) ?? null);
         const final = compactLabels(mapToLive(refine(vectors, { live }), live));
+        refineMapRef.current = { live, final };
         const names = remapNames(speakerNamesRef.current, live, final);
         if (final.some((l, i) => l !== live[i])) {
           partsRef.current = parts.map((p, i) => (p.speaker === final[i] ? p : { ...p, speaker: final[i] }));
@@ -627,9 +660,38 @@ export function useRecorder(opts: {
     }
   };
 
+  /** After Stop: moves the naming numbers onto the final voice numbers and keeps them on this device for the report. */
+  const finishNamingStats = async () => {
+    try {
+      let st = namingStatsRef.current;
+      if (!st) return;
+      const map = refineMapRef.current;
+      if (map) st = remapStats(st, map.live, map.final);
+      st = { ...st, clusters: new Set(partsRef.current.map((p) => p.speaker)).size };
+      namingStatsRef.current = st;
+      const uid = localUserRef.current.userId;
+      const id = meetingIdRef.current;
+      if (uid && id) await saveNamingStats(uid, id, st);
+    } catch {
+      /* the report is best effort */
+    }
+  };
+
   /** Rename a speaker during (or right after) recording. */
   const renameSpeaker = async (n: number, raw: string): Promise<boolean> => {
     const name = raw.trim().slice(0, 40);
+    // A name typed by the user always wins over one read from the call screen, now and for the rest of the call.
+    if (namerRef.current) namerRef.current.userRenamed(n, name);
+    else {
+      const uid = localUserRef.current.userId;
+      const mid = meetingIdRef.current;
+      if (uid && mid && namingStatsRef.current) void recordNamingRename(uid, mid, { [n]: name });
+    }
+    return writeSpeakerName(n, name);
+  };
+
+  /** Stores one speaker name (an empty name clears it) on the device and the server. Used by the user and by screen naming. */
+  const writeSpeakerName = async (n: number, name: string): Promise<boolean> => {
     const next = { ...(speakerNamesRef.current ?? {}) };
     if (name) next[String(n)] = name;
     else delete next[String(n)];
@@ -753,6 +815,12 @@ export function useRecorder(opts: {
     const wantEmbed = diarizeOnRef.current && audio.length >= 16000;
     const phraseSec = audio.length / 16000;
     const { id: jobId, text: textP } = transcribeFinal(audio, { embed: wantEmbed, batch: nativeRef.current && catchingUpRef.current });
+    if (wantEmbed && namerRef.current) {
+      // Screen naming: who was loud right now, the mic or the call? Kept until the phrase gets its voice.
+      const m = phraseWhoRef.current;
+      m.set(jobId, namerRef.current.classify(phraseSec));
+      if (m.size > 64) m.delete(m.keys().next().value as number);
+    }
     // Native session: this phrase holds the committed cursor back until its text is stored.
     if (nativeRef.current) inFlightRef.current.set(jobId, firstSample);
     if (wantEmbed) {
@@ -820,7 +888,9 @@ export function useRecorder(opts: {
     const words = msg.channel?.alternatives?.[0]?.words ?? [];
     const offsetSec = socketOffsetRef.current / DEEPGRAM_SAMPLE_RATE;
     let parts = partsRef.current;
+    let lastSpeaker: number | null = null;
     for (const run of speakerRuns(words)) {
+      lastSpeaker = run.speaker;
       const last = parts[parts.length - 1];
       if (openBubbleRef.current && last && last.speaker === run.speaker && last.text.length < MAX_BUBBLE_CHARS) {
         parts = [...parts.slice(0, -1), { ...last, text: `${last.text} ${run.text}` }];
@@ -830,6 +900,8 @@ export function useRecorder(opts: {
       openBubbleRef.current = true;
     }
     if (msg.speech_final) openBubbleRef.current = false;
+    // Screen naming: these words were just said by this voice.
+    if (lastSpeaker !== null && namerRef.current) namerRef.current.noteSpeech(lastSpeaker, namerRef.current.classify(3));
     if (parts !== partsRef.current) {
       partsRef.current = parts;
       dirtyRef.current = true;
@@ -1003,7 +1075,20 @@ export function useRecorder(opts: {
   };
 
   // ---- Start / stop ------------------------------------------------------
+  /** Screen naming: stop the namer (frees the OCR worker), drop every frame source and stop the kept video track. */
+  const disposeNaming = () => {
+    try { namerRef.current?.dispose(); } catch { /* silent */ }
+    namerRef.current = null;
+    try { videoTrackRef.current?.stop(); } catch { /* silent */ }
+    videoTrackRef.current = null;
+    try { pendingVideoRef.current?.stop(); } catch { /* silent */ }
+    pendingVideoRef.current = null;
+    micAnalyserRef.current = null;
+    phraseWhoRef.current.clear();
+  };
+
   const cleanupMedia = () => {
+    disposeNaming();
     if (keepAliveRef.current) clearInterval(keepAliveRef.current);
     keepAliveRef.current = null;
     queueRef.current = [];
@@ -1075,6 +1160,7 @@ export function useRecorder(opts: {
     if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: "Finalize" }));
     openBubbleRef.current = false;
     pausedAtRef.current = Date.now();
+    namerRef.current?.setPaused(true);
     patch({ isPaused: true, micLevel: 0, noSound: false, statusMsg: "Paused — nothing is being transcribed." });
     save();
   };
@@ -1089,6 +1175,7 @@ export function useRecorder(opts: {
     pausedAtRef.current = null;
     quietSinceRef.current = null;
     chunkerRef.current?.resume();
+    namerRef.current?.setPaused(false);
     patch({ isPaused: false, statusMsg: "Recording…" });
   };
 
@@ -1107,12 +1194,16 @@ export function useRecorder(opts: {
       patch({ statusMsg: "Finishing transcription…" });
       await closeDeepgram();
     }
+    // Screen naming: keep its numbers for the report before the namer is dropped.
+    const namingSnap = namerRef.current?.snapshot() ?? null;
+    if (namingSnap) namingStatsRef.current = namingSnap;
     cleanupMedia();
     if (pausedAtRef.current !== null) {
       pausedMsRef.current += Date.now() - pausedAtRef.current;
       pausedAtRef.current = null;
     }
     patch({
+      screenNaming: null,
       isRecording: false, isPaused: false, interimText: "", micLevel: 0, noSound: false, callSilent: false,
       recordingSeconds: secondsRef.current, statusMsg: "Stopped. Saving…",
       // Not "saved" until the final save below: the meeting link only appears once everything is in.
@@ -1124,6 +1215,7 @@ export function useRecorder(opts: {
     // Device-first checkpoint of everything transcribed before the optional (slow) refinement.
     try { await save(); } catch { /* the final save below retries */ }
     await refineSpeakers(); // no-op unless on-device diarization ran; never throws
+    await finishNamingStats(); // no-op unless names were read from the call screen; never throws
     // Autosave has stopped by now, so retry the final save a few times (phones drop requests).
     if (localModeRef.current) {
       // Device write first, then the engine uploads (flush retries for up to 15 s).
@@ -1726,7 +1818,8 @@ export function useRecorder(opts: {
    * so the video track is stopped at once. Throws a TabAudioError with a plain message when no audio came.
    * `guided` (the "Record an online call" flow) also refuses a window or a whole screen, and tags the error with a `code`.
    */
-  const getTabAudio = async (guided = false): Promise<MediaStream> => {
+  const getTabAudio = async (guided = false, keepVideo = false): Promise<MediaStream> => {
+    pendingVideoRef.current = null;
     // NotAllowedError is a dismissed picker, but also what a permissions policy (an iframe) answers with.
     const isCancel = (n?: string, msg?: string) =>
       (n === "NotAllowedError" && !/permissions? policy|feature policy|disallowed by/i.test(msg ?? "")) || n === "AbortError" || n === "PermissionDeniedError";
@@ -1751,7 +1844,9 @@ export function useRecorder(opts: {
       }
     }
     const surface = (disp.getVideoTracks()[0]?.getSettings?.() as { displaySurface?: string } | undefined)?.displaySurface;
-    disp.getVideoTracks().forEach((t) => t.stop());
+    // Screen naming keeps the picture track (not recorded, only single frames are read from it); otherwise it is not needed.
+    const kept = keepVideo ? disp.getVideoTracks()[0] ?? null : null;
+    disp.getVideoTracks().forEach((t) => { if (t !== kept) t.stop(); });
     const audio = disp.getAudioTracks();
     const problem = guided
       ? checkShare({ displaySurface: surface, audioTracks: audioTrackCount(audio) })
@@ -1761,6 +1856,7 @@ export function useRecorder(opts: {
       const copy = shareProblemCopy(problem);
       throw fail(guided ? `${copy.title}. ${copy.fix}` : NO_TAB_AUDIO_MESSAGE, problem);
     }
+    pendingVideoRef.current = kept;
     return new MediaStream(audio);
   };
 
@@ -1826,13 +1922,16 @@ export function useRecorder(opts: {
       return { ok: false, message: "You can share again while a call is being recorded." };
     }
     let fresh: MediaStream;
+    const wantNaming = !!videoTrackRef.current;
     try {
-      fresh = await getTabAudio(true);
+      fresh = await getTabAudio(true, wantNaming);
     } catch (e) {
       return { ok: false, message: (e as Error)?.message || "Couldn't share the tab. Try again." };
     }
     if (!wantRecordingRef.current || tabGraphRef.current !== old) {
       fresh.getTracks().forEach((t) => t.stop());
+      try { pendingVideoRef.current?.stop(); } catch { /* silent */ }
+      pendingVideoRef.current = null;
       return { ok: false, message: "The recording had already stopped." };
     }
     try { old.src.disconnect(); } catch { /* already gone */ }
@@ -1840,6 +1939,15 @@ export function useRecorder(opts: {
     old.stream.getTracks().forEach((t) => t.stop());
     streamsRef.current = streamsRef.current.filter((s) => s !== old.stream);
     streamsRef.current.push(fresh);
+    if (wantNaming) {
+      // The new share's picture replaces the old one for frame reading.
+      const nv = pendingVideoRef.current;
+      pendingVideoRef.current = null;
+      const ov = videoTrackRef.current;
+      videoTrackRef.current = nv;
+      if (nv) namerRef.current?.swapTrack(nv);
+      try { ov?.stop(); } catch { /* silent */ }
+    }
     patch({ callSilent: false });
     return { ok: true };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1939,12 +2047,43 @@ export function useRecorder(opts: {
     }
   };
 
-  const start = useCallback(async (source: AudioSource = "mic", startOpts?: { guided?: boolean }) => {
+  /** Starts reading names off the call screen. Everything is loaded on demand; any failure just leaves naming off. */
+  const startNaming = async (nopts: NamingStartOptions | undefined) => {
+    const track = videoTrackRef.current;
+    if (!track || !tabGraphRef.current) return;
+    try {
+      const { ScreenNamer: Namer } = await import("@/lib/naming/screenNamer");
+      if (!wantRecordingRef.current || videoTrackRef.current !== track) return;
+      const namer = new Namer({
+        track,
+        platform: nopts?.platform ?? null,
+        attendees: nopts?.attendees ?? [],
+        directory: nopts?.directory ?? [],
+        micAnalyser: micAnalyserRef.current,
+        getTabAnalyser: () => tabGraphRef.current?.an ?? null,
+        loadReader: async () => (await import("@/lib/naming/tesseractReader")).createTesseractReader(),
+        host: {
+          getNames: () => speakerNamesRef.current,
+          setAutoName: (cluster, name) => void writeSpeakerName(cluster, name),
+          onState: (st) => patch({ screenNaming: st }),
+        },
+      });
+      namerRef.current = namer;
+      namingStatsRef.current = null;
+      void namer.start();
+    } catch {
+      /* naming is optional: the recording carries on without it */
+    }
+  };
+
+  const start = useCallback(async (source: AudioSource = "mic", startOpts?: { guided?: boolean; naming?: NamingStartOptions }) => {
     // Ignore taps while already starting or recording (a second tap used to start a second recording).
     if (startingRef.current || wantRecordingRef.current || finalizingRef.current) return;
     const useSample = source === "sample";
     /** "Record an online call": always the call's tab, and a window or screen share is refused. */
     const guided = !!startOpts?.guided && !useSample;
+    /** Read names off the call screen: guided tab recording, switch on, this device opted in, laptop Chromium. */
+    const namingOn = guided && screenNamingAllowedNow(true);
 
     // Android app with the offline-capture service: record on-device through it, so capture carries on
     // with the screen locked. The website and older installed APKs fall through to the microphone path below.
@@ -2000,8 +2139,11 @@ export function useRecorder(opts: {
     pendingSegmentsRef.current.clear();
     failedPhrasesRef.current = 0;
     resetDiarization();
+    disposeNaming();
+    namingStatsRef.current = null;
     lastFrameAtRef.current = performance.now();
     patch({
+      screenNaming: null,
       speakerNames: null, speakerStatus: null,
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
       callSilent: false, shareProblem: null, guidedRun: guided,
@@ -2046,13 +2188,17 @@ export function useRecorder(opts: {
       if (tabMode) {
         // Asked first, while the tap's permission to open the picker is still fresh.
         patch({ statusMsg: "Choose the call's tab…" });
-        tabAudio = await getTabAudio(guided);
+        tabAudio = await getTabAudio(guided, namingOn);
         if (startTokenRef.current !== token) {
           // Cancelled while the picker was open: cleanup already ran, so release this share here (no leaked capture indicator).
           tabAudio.getTracks().forEach((t) => t.stop());
+          try { pendingVideoRef.current?.stop(); } catch { /* silent */ }
+          pendingVideoRef.current = null;
           throw new StartCancelled();
         }
         streamsRef.current.push(tabAudio);
+        videoTrackRef.current = namingOn ? pendingVideoRef.current : null; // stopped with the recording (cleanupMedia)
+        pendingVideoRef.current = null;
       }
       if (useSample) {
         mic = await createSampleStream(ctx);
@@ -2077,7 +2223,17 @@ export function useRecorder(opts: {
         // Tab audio (+ the mic, if on) mixed into one stream that every engine reads like a mic stream.
         const dest = ctx.createMediaStreamDestination();
         attachTab(ctx, dest, tabAudio, guided);
-        if (mic) ctx.createMediaStreamSource(mic).connect(dest);
+        if (mic) {
+          const micSrc = ctx.createMediaStreamSource(mic);
+          micSrc.connect(dest);
+          if (namingOn) {
+            // Screen naming compares the mic with the call before they are mixed ("is it me?").
+            const an = ctx.createAnalyser();
+            an.fftSize = 2048;
+            micSrc.connect(an);
+            micAnalyserRef.current = an;
+          }
+        }
         recordStream = dest.stream;
       } else {
         recordStream = mic as MediaStream;
@@ -2151,6 +2307,7 @@ export function useRecorder(opts: {
       lastFrameAtRef.current = performance.now();
       timerRef.current = setInterval(tick, 500);
       if (tabAudio && guided) startTabMonitor();
+      if (namingOn && tabAudio && videoTrackRef.current) void startNaming(startOpts?.naming);
       autosaveRef.current = setInterval(() => {
         void save();
         flushEmbedBuffer();
