@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { AlertTriangle, Sparkles } from "lucide-react";
 import { useFeatureGate } from "@/lib/featureGate";
 import { useFlag } from "@/lib/flagsClient";
 import { generateSummaryOnly } from "@/lib/minutesJob";
 import { useLocalUser } from "./SyncProvider";
 import { useExtras, writeExtras } from "@/lib/meetingExtras";
-import { Button, GateReason, Panel, PanelHeader } from "./ui";
+import { Button, GateReason, Notice, Panel, PanelHeader } from "./ui";
 
 function List({ title, items, empty }: { title: string; items: string[]; empty?: string }) {
   if (!items.length && !empty) return null;
@@ -55,7 +55,7 @@ export function SummaryTab({ meetingId, hasTranscript, model }: { meetingId: str
         <div className="space-y-3 p-5">
           <p className="text-ui text-muted-foreground">
             A short look at how the meeting went: why it was held, the main points, decisions, open questions and the tone. It is
-            written together with the minutes{aiOn ? "" : " when automatic minutes are switched on"}, and kept on this device.
+            written together with the minutes{aiOn ? "" : " when automatic minutes are on"}, and kept on this device.
           </p>
           {aiOn && (
             <>
@@ -66,19 +66,15 @@ export function SummaryTab({ meetingId, hasTranscript, model }: { meetingId: str
                 loading={busy}
                 icon={<Sparkles className="h-4 w-4" aria-hidden />}
                 disabled={!hasTranscript || !gate.enabled}
-                aria-describedby={gate.reason ? "summary-gate" : undefined}
+                aria-describedby={gate.reason || !hasTranscript ? "summary-gate" : undefined}
                 onClick={() => void write()}
               >
                 {busy ? "Writing…" : "Write summary"}
               </Button>
-              <GateReason id="summary-gate" reason={gate.reason} />
+              <GateReason id="summary-gate" reason={gate.reason ?? (hasTranscript ? null : "This meeting has no transcript to summarise.")} />
             </>
           )}
-          {error && (
-            <p className="text-meta text-danger" role="alert">
-              {error}
-            </p>
-          )}
+          {error && <Notice tone="danger" icon={<AlertTriangle className="h-4 w-4" aria-hidden />} title={error} />}
         </div>
       </Panel>
     );
@@ -102,11 +98,7 @@ export function SummaryTab({ meetingId, hasTranscript, model }: { meetingId: str
             <p className="text-ui">{summary.tone}</p>
           </section>
         )}
-        {error && (
-          <p className="text-meta text-danger" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <Notice tone="danger" icon={<AlertTriangle className="h-4 w-4" aria-hidden />} title={error} />}
         <p className="text-meta text-muted-foreground">Kept on this device. Regenerating the minutes writes a new summary.</p>
       </div>
     </Panel>

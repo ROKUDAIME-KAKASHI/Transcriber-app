@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Send, Trash2, WifiOff } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Send, Trash2, WifiOff } from "lucide-react";
 import { useFeatureGate } from "@/lib/featureGate";
 import { MAX_QUESTION_CHARS, trimHistory, type AskQuote } from "@/lib/askMeeting";
 import { flush } from "@/lib/local/sync";
 import { useLocalUser } from "./SyncProvider";
-import { Button, Panel, PanelHeader, cx, inputCls } from "./ui";
+import { Button, Notice, Panel, PanelHeader, cx, inputCls } from "./ui";
 
 interface Turn {
   id: number;
@@ -49,6 +49,8 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
+  // Only follow the chat down after a question was asked, so opening the tab doesn't scroll the page.
+  const asked = useRef(false);
 
   useEffect(() => {
     const t = load(userId, meetingId);
@@ -57,12 +59,13 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
   }, [meetingId, userId]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView?.({ block: "nearest" });
+    if (asked.current) endRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [turns.length, busy]);
 
   const ask = async () => {
     const q = text.trim();
     if (q.length < 2 || busy || !gate.enabled || !hasTranscript) return;
+    asked.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -162,17 +165,26 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
           ))}
         </ul>
         {busy && (
-          <p role="status" className="text-meta text-muted-foreground">
+          <p role="status" className="flex items-center gap-2 text-meta text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden />
             Looking through the transcript…
           </p>
         )}
-        <div ref={endRef} />
+        {error && <Notice tone="danger" icon={<AlertTriangle className="h-4 w-4" aria-hidden />} title={error} />}
+        {disabledReason && (
+          <p id="ask-gate" className="flex items-center gap-1.5 text-meta text-muted-foreground">
+            {!hasTranscript ? null : <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+            {disabledReason === "Needs internet" ? "Asking needs internet. Your earlier questions stay here." : disabledReason}
+          </p>
+        )}
+        <div ref={endRef} className="scroll-mb-48 lg:scroll-mb-6" />
+        {/* Stays above the floating bottom bar on phones, so the question box is always in reach. */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void ask();
           }}
-          className="space-y-2"
+          className="sticky bottom-[calc(5.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-10 -mx-5 -mb-5 space-y-2 rounded-b-panel border-t border-border/70 bg-card px-5 py-3 lg:bottom-0"
         >
           <label htmlFor="ask-input" className="sr-only">
             Your question
@@ -185,7 +197,8 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
             disabled={!!disabledReason}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // Not while an input method (Hindi, Gujarati, voice typing) is still composing a word.
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 void ask();
               }
@@ -209,17 +222,6 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
             </Button>
           </div>
         </form>
-        {disabledReason && (
-          <p id="ask-gate" className="flex items-center gap-1.5 text-meta text-muted-foreground">
-            <WifiOff className="h-3.5 w-3.5" aria-hidden />
-            {disabledReason === "Needs internet" ? "Asking needs internet. Your earlier questions stay here." : disabledReason}
-          </p>
-        )}
-        {error && (
-          <p className="text-meta text-danger" role="alert">
-            {error}
-          </p>
-        )}
       </div>
     </Panel>
   );
