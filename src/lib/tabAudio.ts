@@ -45,7 +45,9 @@ export function buildDisplayMediaOptions(supported: SupportedConstraints): Recor
   flag("noiseSuppression", false);
   flag("autoGainControl", false);
   flag("suppressLocalAudioPlayback", false);
-  const opts: Record<string, unknown> = { video: true, audio: Object.keys(audio).length ? audio : true };
+  // Ask the picker to open on its tab list. A hint only: the user can still pick anything. Sent only where the browser lists it.
+  const video: boolean | Record<string, unknown> = sup.displaySurface === true ? { displaySurface: "browser" } : true;
+  const opts: Record<string, unknown> = { video, audio: Object.keys(audio).length ? audio : true };
   // Chromium display-surface hints. They are not in getSupportedConstraints() on every version, so these
   // are sent as plain top-level options (ignored where unknown).
   opts.preferCurrentTab = false;

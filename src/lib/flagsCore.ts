@@ -18,6 +18,7 @@ export const FLAG_DEFAULTS = {
   meetingTabs: true,
   autoMinutes: true,
   meetingAsk: true,
+  guidedCall: true,
 } as const;
 
 export type FlagKey = keyof typeof FLAG_DEFAULTS;
@@ -42,6 +43,7 @@ export const FLAG_LABELS: Record<FlagKey, string> = {
   meetingTabs: "Meeting page tabs: Transcript, Minutes, Summary, Action items, Ask",
   autoMinutes: "Write minutes, summary and action items automatically after Stop (one small AI request; costs credits)",
   meetingAsk: "Ask tab: questions about a meeting, answered with quotes (small AI request per question)",
+  guidedCall: "Record an online call: picture guide, wrong-choice and no-sound warnings, open the call from Minutely (laptops)",
 };
 
 export function isFlagKey(k: unknown): k is FlagKey {
