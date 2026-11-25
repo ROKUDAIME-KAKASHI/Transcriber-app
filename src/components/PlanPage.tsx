@@ -10,6 +10,8 @@ import { PreworkSection } from "./PreworkSection";
 import { FindATime } from "./FindATime";
 import { SeriesSettingsSheet } from "./SeriesSettingsSheet";
 import { SeriesProgressCard } from "./SeriesProgressCard";
+import { CarriedTasksPanel } from "./CarriedTasksPanel";
+import { PlanNextButton } from "./PlanNextButton";
 import { useToast } from "./Toast";
 import { useConnectivity } from "@/lib/connectivity";
 import { useFlag } from "@/lib/flagsClient";
@@ -18,6 +20,7 @@ import { conflictMessage, conflictsWith, inviteLabel, type BusyBlock } from "@/l
 import { shareText } from "@/lib/export/deliver";
 import { usePeople } from "@/lib/stakeholdersClient";
 import { navBack } from "@/lib/navStack";
+import { CARRIED_PREFIX } from "@/lib/followUp";
 import { deliverPlanIcs, openCallLink } from "@/lib/planActions";
 import {
   CADENCES, CADENCE_LABEL, PLAN_DURATIONS, blankForm, formFromPlan, formStart, inviteText, payloadFromForm, recordHref,
@@ -91,6 +94,7 @@ export function PlanPage() {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const calOn = useFlag("calendar");
+  const followOn = useFlag("followUpPlanning");
   const calReady = useCalendarReady(calOn && !offline);
   const [calInfo, setCalInfo] = useState<PlanCalendarInfo | null>(null);
   const [conflicts, setConflicts] = useState<BusyBlock[]>([]);
@@ -608,9 +612,25 @@ export function PlanPage() {
         <PreworkSection planId={plan.id} agenda={form.agenda} onAgenda={(next) => set("agenda", next)} offline={offline} />
       )}
 
+      {plan && plan.status === "PLANNED" && <CarriedTasksPanel planId={plan.id} agenda={plan.agenda} />}
+
       <Panel>
         <PanelHeader title="Series" />
         <div className="space-y-3 p-4">
+          {followOn && plan && !plan.seriesId && form.seriesId === "" && plan.status === "PLANNED" && (plan.agenda ?? "").includes(CARRIED_PREFIX) && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-chip bg-muted px-3 py-2">
+              <p className="min-w-0 text-meta text-muted-foreground">This is a one-off follow-up. Meet again on a schedule?</p>
+              <Button
+                onClick={() => {
+                  set("seriesId", NEW_SERIES);
+                  if (!newSeriesTitle.trim()) setNewSeriesTitle(form.title);
+                  requestAnimationFrame(() => document.getElementById("plan-series-title")?.focus());
+                }}
+              >
+                Make this a series
+              </Button>
+            </div>
+          )}
           <div>
             <label htmlFor="plan-series" className="sr-only">
               Series
@@ -714,7 +734,8 @@ export function PlanPage() {
                   </Button>
                 )
               )}
-              {plan.seriesId && (
+              {recorded && <PlanNextButton planId={plan.id} />}
+              {plan.seriesId && !(recorded && followOn) && (
                 <Button icon={<Repeat className="h-4 w-4" aria-hidden />} loading={busy === "next"} disabled={offline} onClick={() => void planNext()}>
                   Plan next in series
                 </Button>
