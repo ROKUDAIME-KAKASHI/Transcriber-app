@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
-  MonitorSpeaker, ExternalLink, HardDrive, Info, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, FileText, ChevronDown, ArrowDown,
+  MonitorSpeaker, ExternalLink, HardDrive, Info, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, FileText, ChevronDown, ArrowDown, TriangleAlert,
 } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
@@ -35,6 +35,8 @@ import { NextUpCard } from "./NextUpCard";
 import {
   TAB_HINT, TAB_SPEAKER_NOTE, defaultSource, safeCallUrl, showSourceSelector, type AudioSourceChoice,
 } from "@/lib/tabAudio";
+import { CALL_SILENT_MESSAGE } from "@/lib/guidedCall";
+import { GuidedCall } from "./GuidedCall";
 import { useMotionPref } from "@/lib/motionPref";
 import * as haptics from "@/lib/haptics";
 
@@ -145,8 +147,17 @@ export function Recorder() {
   const [tabMic, setTabMic] = useState(true);
   const [callUrl, setCallUrl] = useState<string | null>(null);
   const tabSelector = tabAudioOn && tabCapable;
+  // "Record an online call": same laptop-only rules as the tab source, plus its own switch.
+  const guidedCallOn = useFlag("guidedCall");
+  const guidedEntry = guidedCallOn && tabSelector;
+  const [reshareNote, setReshareNote] = useState<string | null>(null);
+  const [resharing, setResharing] = useState(false);
   const source: AudioSourceChoice = tabSelector ? audioSource : "mic";
   const webRec = useRecorder({ captureSystemAudio: tabSelector ? false : captureSystemAudio, deviceId: micId, engine: effective, language, source, tabMic });
+  const callSilent = !!webRec.callSilent;
+  useEffect(() => {
+    if (!callSilent) setReshareNote(null);
+  }, [callSilent]);
   const nativeRec = useNativeRecorder({ language });
   // Android app: cloud mode records in a native service that keeps going with the screen off.
   const [inApp, setInApp] = useState(false);
@@ -606,7 +617,7 @@ export function Recorder() {
           )}
 
           <p className="mx-auto mt-2 min-h-[1.25rem] max-w-[30ch] text-meta text-muted-foreground" aria-live="polite">
-            {rec.statusMsg === "Ready" ? "" : rec.statusMsg}
+            {rec.statusMsg === "Ready" || (guidedEntry && webRec.shareProblem) ? "" : rec.statusMsg}
           </p>
 
           <div className="mt-2 flex min-h-11 items-center justify-center">
@@ -633,6 +644,27 @@ export function Recorder() {
               <NoSoundNotice />
             </div>
           )}
+          {guidedEntry && !nativeMode && busy && webRec.callSilent && !rec.isPaused && (
+            <div className="mt-2 w-full text-left" role="status">
+              <Notice tone="warning" icon={<TriangleAlert className="h-4 w-4" />} title="No call sound">
+                {CALL_SILENT_MESSAGE}
+                <Button
+                  className="mt-2 w-full"
+                  loading={resharing}
+                  onClick={async () => {
+                    setResharing(true);
+                    setReshareNote(null);
+                    const r = await webRec.reshareTab();
+                    setResharing(false);
+                    if (!r.ok) setReshareNote(r.message);
+                  }}
+                >
+                  Share again
+                </Button>
+                {reshareNote && <span className="mt-2 block">{reshareNote}</span>}
+              </Notice>
+            </div>
+          )}
           {rec.notice && (
             <div className="mt-2 w-full text-left" role="status">
               <Notice
@@ -647,6 +679,18 @@ export function Recorder() {
         </div>
 
         {!busy && !starting && <OverdueLine />}
+
+        {guidedEntry && !nativeMode && !busy && !starting && (
+          <GuidedCall
+            disabled={blocked || !gateStart.allowed}
+            startUrl={callUrl}
+            problem={webRec.shareProblem ?? null}
+            onStart={() => {
+              haptics.start();
+              void webRec.start("mic", { guided: true });
+            }}
+          />
+        )}
 
         <div className="space-y-5 border-t border-border/70 px-4 py-4">
           <div>

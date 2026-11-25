@@ -36,6 +36,9 @@ import {
   type AudioSourceChoice,
 } from "@/lib/tabAudio";
 import {
+  CALL_SILENCE, checkShare, initialSilence, shareProblemCopy, stepSilence, type ShareProblemCode, type SilenceState,
+} from "@/lib/guidedCall";
+import {
   DEEPGRAM_SAMPLE_RATE, deepgramUrl, fetchDeepgramToken, floatToPcm16, speakerRuns,
   type DeepgramMessage, type RecordEngine,
 } from "@/lib/speech/deepgram";
@@ -97,6 +100,10 @@ export interface RecorderState {
   finishing?: boolean;
   /** Offline capture: something the user should know about the phone (low or no storage). */
   notice?: { tone: "warning" | "danger"; text: string } | null;
+  /** Call recording: the shared tab has been silent for a while (cleared as soon as sound arrives). */
+  callSilent?: boolean;
+  /** Guided call: what was wrong with the last share, so the screen can offer "Try again". */
+  shareProblem?: ShareProblemCode | null;
 }
 
 /**
@@ -190,6 +197,8 @@ export function useRecorder(opts: {
     syncNote: null,
     speakerNames: null,
     speakerStatus: null,
+    callSilent: false,
+    shareProblem: null,
   });
 
   const { userId, available } = useLocalUser();
@@ -243,6 +252,11 @@ export function useRecorder(opts: {
   /** Each start() gets a token; cancelling or a newer start makes the old one bail out. */
   const startTokenRef = useRef(0);
   const startingRef = useRef(false);
+  /** The shared tab's audio in the mix, so "Share again" can swap it without touching the recording. */
+  const tabGraphRef = useRef<{ stream: MediaStream; src: MediaStreamAudioSourceNode; an: AnalyserNode; buf: Float32Array<ArrayBuffer> } | null>(null);
+  const tabDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const tabSilenceRef = useRef<SilenceState>(initialSilence());
+  const tabMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
   /** Parts the server has confirmed; autosave sends only the rest. */
   const savedPartsRef = useRef(0);
   const savingRef = useRef<Promise<boolean> | null>(null);
@@ -1003,6 +1017,11 @@ export function useRecorder(opts: {
     chunkerRef.current = null;
     moonCtxRef.current?.close().catch(() => {});
     moonCtxRef.current = null;
+    if (tabMonitorRef.current) clearInterval(tabMonitorRef.current);
+    tabMonitorRef.current = null;
+    tabGraphRef.current = null;
+    tabDestRef.current = null;
+    tabSilenceRef.current = initialSilence();
     streamsRef.current.forEach((s) => s.getTracks().forEach((t) => t.stop()));
     streamsRef.current = [];
     recordStreamRef.current = null;
@@ -1091,7 +1110,7 @@ export function useRecorder(opts: {
       pausedAtRef.current = null;
     }
     patch({
-      isRecording: false, isPaused: false, interimText: "", micLevel: 0, noSound: false,
+      isRecording: false, isPaused: false, interimText: "", micLevel: 0, noSound: false, callSilent: false,
       recordingSeconds: secondsRef.current, statusMsg: "Stopped. Saving…",
       // Not "saved" until the final save below: the meeting link only appears once everything is in.
       saveState: "saving",
@@ -1702,15 +1721,17 @@ export function useRecorder(opts: {
   /**
    * Asks the browser to share a tab and returns an audio-only stream of it. The picture is not needed,
    * so the video track is stopped at once. Throws a TabAudioError with a plain message when no audio came.
+   * `guided` (the "Record an online call" flow) also refuses a window or a whole screen, and tags the error with a `code`.
    */
-  const getTabAudio = async (): Promise<MediaStream> => {
+  const getTabAudio = async (guided = false): Promise<MediaStream> => {
     const md = navigator.mediaDevices;
-    const fail = (message: string) => Object.assign(new Error(message), { name: "TabAudioError" });
+    const fail = (message: string, code?: ShareProblemCode) => Object.assign(new Error(message), { name: "TabAudioError", code });
     let disp: MediaStream;
     try {
       disp = await md.getDisplayMedia(buildDisplayMediaOptions(md.getSupportedConstraints?.() as unknown as Record<string, unknown>) as DisplayMediaStreamOptions);
     } catch (e) {
       const name = (e as { name?: string })?.name;
+      const cancelled = name === "NotAllowedError" || name === "AbortError" || name === "PermissionDeniedError";
       if (name === "TypeError") {
         // An option this browser rejects: retry with the plain request.
         try {
@@ -1719,17 +1740,100 @@ export function useRecorder(opts: {
           throw fail(displayMediaErrorMessage((e2 as { name?: string })?.name));
         }
       } else {
-        throw fail(displayMediaErrorMessage(name));
+        throw fail(displayMediaErrorMessage(name), cancelled ? "cancelled" : undefined);
       }
     }
+    const surface = (disp.getVideoTracks()[0]?.getSettings?.() as { displaySurface?: string } | undefined)?.displaySurface;
     disp.getVideoTracks().forEach((t) => t.stop());
     const audio = disp.getAudioTracks();
-    if (audioTrackCount(audio) === 0) {
+    const problem = guided
+      ? checkShare({ displaySurface: surface, audioTracks: audioTrackCount(audio) })
+      : audioTrackCount(audio) === 0 ? "no-audio" : null;
+    if (problem) {
       disp.getTracks().forEach((t) => t.stop());
-      throw fail(NO_TAB_AUDIO_MESSAGE);
+      const copy = shareProblemCopy(problem);
+      throw fail(guided ? `${copy.title}. ${copy.fix}` : NO_TAB_AUDIO_MESSAGE, problem);
     }
     return new MediaStream(audio);
   };
+
+  /** Puts the shared tab's audio into the recording mix and starts watching it for silence. */
+  const attachTab = (ctx: AudioContext, dest: MediaStreamAudioDestinationNode, stream: MediaStream) => {
+    const src = ctx.createMediaStreamSource(stream);
+    src.connect(dest);
+    const an = ctx.createAnalyser();
+    an.fftSize = 4096;
+    src.connect(an); // listens only; not connected to the speakers
+    tabDestRef.current = dest;
+    tabGraphRef.current = { stream, src, an, buf: new Float32Array(an.fftSize) };
+    tabSilenceRef.current = initialSilence();
+    stream.getAudioTracks().forEach((t) =>
+      t.addEventListener("ended", () => {
+        // A share we replaced ("Share again") ending is not the user stopping the recording.
+        if (tabGraphRef.current?.stream !== stream) return;
+        // The user clicked "Stop sharing" (or closed the tab): finish and save as a normal stop.
+        if (!wantRecordingRef.current) return;
+        void stopRef.current().then(() => {
+          setState((st) => (st.saveState === "error" ? st : { ...st, statusMsg: SHARING_STOPPED_MESSAGE }));
+        });
+      })
+    );
+  };
+
+  /** Every 250 ms: how loud is the call? Timestamp-based, so a throttled background tab only delays the warning. */
+  const startTabMonitor = () => {
+    if (tabMonitorRef.current) clearInterval(tabMonitorRef.current);
+    tabMonitorRef.current = setInterval(() => {
+      const g = tabGraphRef.current;
+      if (!g || !wantRecordingRef.current) return;
+      if (pausedAtRef.current !== null) {
+        // On hold: silence is expected. Start counting again after Resume.
+        if (tabSilenceRef.current.quietSince !== null || tabSilenceRef.current.warning) {
+          tabSilenceRef.current = initialSilence();
+          patch({ callSilent: false });
+        }
+        return;
+      }
+      g.an.getFloatTimeDomainData(g.buf);
+      let sum = 0;
+      for (let i = 0; i < g.buf.length; i++) sum += g.buf[i] * g.buf[i];
+      const prev = tabSilenceRef.current;
+      const next = stepSilence(prev, Math.sqrt(sum / g.buf.length), performance.now(), CALL_SILENCE);
+      tabSilenceRef.current = next;
+      if (next.warning !== prev.warning) patch({ callSilent: next.warning });
+    }, 250);
+  };
+
+  /**
+   * "Share again" while recording: pick the tab again and swap it into the same mix. Everything already
+   * recorded stays; there is only a gap while the picker is open. Call from a click (the picker needs one).
+   */
+  const reshareTab = useCallback(async (): Promise<{ ok: true } | { ok: false; message: string }> => {
+    const old = tabGraphRef.current;
+    const ctx = moonCtxRef.current;
+    const dest = tabDestRef.current;
+    if (!old || !ctx || !dest || !wantRecordingRef.current) {
+      return { ok: false, message: "You can share again while a call is being recorded." };
+    }
+    let fresh: MediaStream;
+    try {
+      fresh = await getTabAudio(true);
+    } catch (e) {
+      return { ok: false, message: (e as Error)?.message || "Couldn't share the tab. Try again." };
+    }
+    if (!wantRecordingRef.current || tabGraphRef.current !== old) {
+      fresh.getTracks().forEach((t) => t.stop());
+      return { ok: false, message: "The recording had already stopped." };
+    }
+    try { old.src.disconnect(); } catch { /* already gone */ }
+    attachTab(ctx, dest, fresh); // becomes the current share first, so the old one ending is ignored
+    old.stream.getTracks().forEach((t) => t.stop());
+    streamsRef.current = streamsRef.current.filter((s) => s !== old.stream);
+    streamsRef.current.push(fresh);
+    patch({ callSilent: false });
+    return { ok: true };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Builds a MediaStream from the sample clip; it's also played out loud so you can follow along. */
   const createSampleStream = async (ctx: AudioContext): Promise<MediaStream> => {
@@ -1787,7 +1891,7 @@ export function useRecorder(opts: {
     cleanupMedia();
     discardEmptyLocal();
     resetDiarization();
-    patch({ isStarting: false, isRecording: false, statusMsg: "Cancelled.", speakerStatus: null });
+    patch({ isStarting: false, isRecording: false, statusMsg: "Cancelled.", speakerStatus: null, callSilent: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1825,14 +1929,16 @@ export function useRecorder(opts: {
     }
   };
 
-  const start = useCallback(async (source: AudioSource = "mic") => {
+  const start = useCallback(async (source: AudioSource = "mic", startOpts?: { guided?: boolean }) => {
     // Ignore taps while already starting or recording (a second tap used to start a second recording).
     if (startingRef.current || wantRecordingRef.current || finalizingRef.current) return;
     const useSample = source === "sample";
+    /** "Record an online call": always the call's tab, and a window or screen share is refused. */
+    const guided = !!startOpts?.guided && !useSample;
 
     // Android app with the offline-capture service: record on-device through it, so capture carries on
     // with the screen locked. The website and older installed APKs fall through to the microphone path below.
-    if (!useSample && opts.engine !== "deepgram" && isNativeApp()) {
+    if (!useSample && !guided && opts.engine !== "deepgram" && isNativeApp()) {
       startingRef.current = true;
       let capable = false;
       try {
@@ -1888,6 +1994,7 @@ export function useRecorder(opts: {
     patch({
       speakerNames: null, speakerStatus: null,
       transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0, noSound: false,
+      callSilent: false, shareProblem: null,
       recordingSeconds: 0, isPaused: false, isStarting: true, isRecording: false,
       statusMsg: useSample ? "Loading sample audio…" : "Requesting microphone…", saveState: "idle", meetingId: null,
       syncNote: null, stoppedRemotely: false, finishing: false, notice: null,
@@ -1925,11 +2032,11 @@ export function useRecorder(opts: {
     try {
       let mic: MediaStream | null = null;
       let tabAudio: MediaStream | null = null;
-      const tabMode = !useSample && opts.source === "tab";
+      const tabMode = !useSample && (opts.source === "tab" || guided);
       if (tabMode) {
         // Asked first, while the tap's permission to open the picker is still fresh.
         patch({ statusMsg: "Choose the call's tab…" });
-        tabAudio = await getTabAudio();
+        tabAudio = await getTabAudio(guided);
         if (startTokenRef.current !== token) {
           // Cancelled while the picker was open: cleanup already ran, so release this share here (no leaked capture indicator).
           tabAudio.getTracks().forEach((t) => t.stop());
@@ -1959,18 +2066,9 @@ export function useRecorder(opts: {
       if (tabAudio) {
         // Tab audio (+ the mic, if on) mixed into one stream that every engine reads like a mic stream.
         const dest = ctx.createMediaStreamDestination();
-        ctx.createMediaStreamSource(tabAudio).connect(dest);
+        attachTab(ctx, dest, tabAudio);
         if (mic) ctx.createMediaStreamSource(mic).connect(dest);
         recordStream = dest.stream;
-        tabAudio.getAudioTracks().forEach((t) =>
-          t.addEventListener("ended", () => {
-            // The user clicked "Stop sharing" (or closed the tab): finish and save as a normal stop.
-            if (!wantRecordingRef.current) return;
-            void stopRef.current().then(() => {
-              setState((st) => (st.saveState === "error" ? st : { ...st, statusMsg: SHARING_STOPPED_MESSAGE }));
-            });
-          })
-        );
       } else {
         recordStream = mic as MediaStream;
       }
@@ -2042,6 +2140,7 @@ export function useRecorder(opts: {
       startedAtRef.current = Date.now();
       lastFrameAtRef.current = performance.now();
       timerRef.current = setInterval(tick, 500);
+      if (tabAudio) startTabMonitor();
       autosaveRef.current = setInterval(() => {
         void save();
         flushEmbedBuffer();
@@ -2071,7 +2170,8 @@ export function useRecorder(opts: {
             : err?.message?.startsWith("Failed to fetch") || err?.message === "Load failed"
               ? "Network problem — check the connection and try again."
               : `Recording error: ${err?.message || "Unknown error"}`;
-      patch({ statusMsg: msg, isRecording: false, isStarting: false });
+      const code = (err as { code?: ShareProblemCode })?.code;
+      patch({ statusMsg: msg, isRecording: false, isStarting: false, shareProblem: guided && err?.name === "TabAudioError" ? code ?? null : null });
     } finally {
       if (startTokenRef.current === token) startingRef.current = false;
     }
@@ -2105,5 +2205,5 @@ export function useRecorder(opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, available]);
 
-  return { ...state, start, stop, pause, resume, cancelStart, renameSpeaker };
+  return { ...state, start, stop, pause, resume, cancelStart, renameSpeaker, reshareTab };
 }
