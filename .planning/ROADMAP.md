@@ -214,6 +214,9 @@ Phases 10-20 map to Steps 0-10 of the v2.0 plan.
 - [ ] **Phase 18: Online calls (Step 8)** - Laptop tab capture first (part A done, needs UAT), then a meeting bot for phone and laptop (part B pending)
 - [ ] **Phase 19: Privacy basics (Step 9)** - Recording consent notice, privacy page, delete account and data
 - [ ] **Phase 20: New web address migration (Step 10)** - Move to a new address sync-first, keep the old one working, ship a new APK
+- [ ] **Phase 21: Meeting page tabs + auto minutes + Ask (Step 8.1)** - Transcript/Minutes/Summary/Action items/Ask tabs; minutes auto-generate on stop with a "ready in" estimate; one combined small-model request
+- [ ] **Phase 22: Guided online-call recording (Step 8.2)** - One-click "Record an online call" with picture guidance, no-audio warning, open the meeting from Minutely
+- [ ] **Phase 23: Screenshot + voice naming (Step 8.3)** - On laptop tab capture, read the highlighted speaker's name from a frame when a new voice starts and attach it to that voice (Mirage or Tesseract.js, on-device, Rs 0); accuracy test on real calls first
 
 ### Phase 10: Safety foundations
 **Goal**: Every later change can be tried safely before real users see it, and problems are visible and switchable
@@ -315,6 +318,33 @@ Phases 10-20 map to Steps 0-10 of the v2.0 plan.
   1. The new address serves the full app; the old address keeps working (redirect or mirror) until the owner removes it
   2. Data and sessions survive the move: unsynced local meetings sync before the switch (sync-first)
   3. A new APK pointing at the new address is built with the release script and installed over the old one
+
+### Phase 21: Meeting page tabs + auto minutes + Ask
+**Goal**: Every meeting has clear tabs and its minutes are written automatically after Stop, cheaply
+**Depends on**: Phase 9
+**Success Criteria** (what must be TRUE):
+  1. A meeting shows tabs: Transcript, Minutes, Summary, Action items, Ask
+  2. When online, pressing Stop starts generation automatically and shows a "ready in about N seconds" estimate; offline it waits and runs once back online
+  3. Minutes, summary and action items come from one small-model request (action-item rules unchanged)
+  4. Ask answers questions about that meeting with quotes from the transcript, using a small model and only the relevant parts
+
+### Phase 22: Guided online-call recording
+**Goal**: Non-technical users can record an online call on a laptop without getting lost
+**Depends on**: Phase 18 part A
+**Success Criteria** (what must be TRUE):
+  1. A "Record an online call" button opens the tab picker with simple picture steps
+  2. If no call sound arrives, the user is warned within seconds with how to fix it
+  3. A call link (pasted or from a plan) can be opened from Minutely, which then asks to share that tab
+
+### Phase 23: Screenshot + voice naming
+**Goal**: In laptop call recordings, speakers get their real display names automatically, for Rs 0
+**Depends on**: Phase 4, Phase 22
+**Success Criteria** (what must be TRUE):
+  1. When a not-yet-named voice starts, one frame of the shared tab is read on-device and the highlighted tile's name is attached to that voice for the rest of the meeting
+  2. Nothing leaves the device for naming; a wrong name can be fixed with one tap
+  3. An accuracy check on 3-5 real calls is recorded before the feature is switched on for everyone (feature flag)
+
+Order note (2026-11-25): the owner chose 21 -> 22 -> 23 next, before 19 and 20. The browser extension and the Oracle bot are deferred; the bot is dropped if Phase 23 works well.
 
 ## Backlog
 
