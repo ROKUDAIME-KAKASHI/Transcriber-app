@@ -42,6 +42,11 @@ export function lineKey(line: string): string {
 
 const NUMBERED = /^\s*\d+[.)]\s+/;
 
+/** Added when some carried points don't fit within the agenda size limit. */
+function omittedNote(n: number): string {
+  return `(${n} more unfinished ${n === 1 ? "task" : "tasks"} not shown. See Meetings > Action items.)`;
+}
+
 export interface MergeResult {
   agenda: string;
   /** Points that were new to the agenda. */
@@ -53,7 +58,7 @@ export interface MergeResult {
  * - Empty agenda: heading, numbered points, then "Any new discussion topics".
  * - Existing agenda: the points are appended under the heading, skipping any line already there (ignoring
  *   numbering and case). Running it again changes nothing. The agenda is never cut: points that don't fit
- *   within `max` characters are left out.
+ *   within `max` characters are left out and a short note says how many.
  */
 export function mergeCarryOver(existing: string | null | undefined, points: string[], heading: string, max = MAX_AGENDA): MergeResult {
   const have = (existing ?? "").replace(/\r\n/g, "\n").trim();
@@ -71,6 +76,7 @@ export function mergeCarryOver(existing: string | null | undefined, points: stri
       const lines = [heading, ""];
       if (list.length === 0) lines.push(NO_CARRIED_LINE, "");
       [...list, NEW_TOPICS_LINE].forEach((p, n) => lines.push(`${n + 1}. ${p}`));
+      if (list.length < fresh.length) lines.push("", omittedNote(fresh.length - list.length));
       return lines.join("\n");
     };
     let list = fresh;
@@ -88,7 +94,8 @@ export function mergeCarryOver(existing: string | null | undefined, points: stri
     }
   }
   const build = (list: string[]) =>
-    `${have}\n\n${headingPresent ? "" : `${heading}\n`}${list.map((p, n) => `${start + n}. ${p}`).join("\n")}`;
+    `${have}\n\n${headingPresent ? "" : `${heading}\n`}${list.map((p, n) => `${start + n}. ${p}`).join("\n")}${list.length < fresh.length ? `
+${omittedNote(fresh.length - list.length)}` : ""}`;
   let list = fresh;
   while (list.length && build(list).length > max) list = list.slice(0, -1);
   if (!list.length) return { agenda: have, added: 0 };

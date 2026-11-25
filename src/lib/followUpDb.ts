@@ -116,12 +116,15 @@ export async function planFollowUp(userId: string, src: FollowUpSource, opts: { 
   const items = await openTasks(userId, await sourceMeetingIds(userId, src));
   const heading = carriedHeading(src.title, dayInZone(src.startAt, src.timeZone));
 
+  const findExisting = () =>
+    prisma.plannedMeeting.findFirst({
+      where: { userId, seriesId, startAt, deletedAt: null, status: { not: "CANCELLED" }, ...(seriesId ? {} : { title: src.title }) },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, agenda: true },
+    });
   let id: string;
   let existing = true;
-  const found = await prisma.plannedMeeting.findFirst({
-    where: { userId, seriesId, startAt, deletedAt: null, status: { not: "CANCELLED" }, ...(seriesId ? {} : { title: src.title }) },
-    select: { id: true, agenda: true },
-  });
+  const found = await findExisting();
   let agendaNow: string | null = found?.agenda ?? null;
   if (found) {
     id = found.id;
@@ -135,19 +138,33 @@ export async function planFollowUp(userId: string, src: FollowUpSource, opts: { 
       });
       id = created.id;
       existing = false;
-      if (src.attendees.length) await prisma.plannedAttendee.createMany({ data: attendeeRows(id, src.attendees) });
+      // Outside a series nothing in the database stops two taps (or two devices) creating twins. The oldest one wins.
+      const winner = seriesId ? null : await findExisting();
+      if (winner && winner.id !== id) {
+        await prisma.plannedMeeting.update({ where: { id }, data: { deletedAt: new Date() }, select: { id: true } });
+        id = winner.id;
+        existing = true;
+        agendaNow = winner.agenda;
+      } else if (src.attendees.length) {
+        await prisma.plannedAttendee.createMany({ data: attendeeRows(id, src.attendees) });
+      }
     } catch (err) {
-      if (isUniqueViolation(err)) {
+      if (!isUniqueViolation(err)) throw err;
+      // A concurrent request created it first in this series: use that one.
+      const raced = seriesId ? await findExisting() : null;
+      if (!raced) {
         return { ok: false, status: 409, error: "That date is already taken in this series (it may be a cancelled meeting). Pick the next date by hand." };
       }
-      throw err;
+      id = raced.id;
+      existing = true;
+      agendaNow = raced.agenda;
     }
   }
 
   const merged = mergeCarryOver(agendaNow, carryPoints(items, opts.today), heading);
   if (merged.agenda !== (agendaNow ?? "").trim()) {
-    await prisma.plannedMeeting.update({ where: { id }, data: { agenda: merged.agenda }, select: { id: true } });
-    agendaNow = merged.agenda;
+    // Only write if the agenda is still what we merged into, so an edit made meanwhile is never overwritten.
+    await prisma.plannedMeeting.updateMany({ where: { id, userId, agenda: agendaNow }, data: { agenda: merged.agenda } });
   }
   const row = await prisma.plannedMeeting.findFirst({ where: { id, userId }, select: PLAN_SELECT });
   if (!row) return { ok: false, status: 404, error: "Planned meeting not found" };

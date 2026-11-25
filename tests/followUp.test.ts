@@ -155,3 +155,11 @@ describe("previousRecorded", () => {
     assert.equal(previousRecorded(plans, new Date("2026-11-10T10:00:00Z").getTime()), null);
   });
 });
+
+test("mergeCarryOver notes how many points did not fit", () => {
+  const points = Array.from({ length: 40 }, (_, i) => `Check status of task number ${i} with a fairly long description`);
+  const r = mergeCarryOver(null, points, "Carried over from X (1 Jan 2026)", 600);
+  assert.ok(r.agenda.length <= 600);
+  assert.ok(r.added < 40 && r.added > 0);
+  assert.ok(r.agenda.includes(`(${40 - r.added} more unfinished tasks not shown`));
+});
