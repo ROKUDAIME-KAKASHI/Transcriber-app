@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, CheckCircle2, CloudOff, Info } from "lucide-react";
 import { cx } from "./ui";
 
 export type ToastTone = "success" | "warning" | "danger" | "neutral";
-type ToastFn = (text: string, tone?: ToastTone) => void;
-type Current = { id: number; text: string; tone: ToastTone; leaving: boolean };
+/** An optional link shown at the end of the toast (it then stays a little longer). */
+export type ToastAction = { label: string; href: string };
+type ToastFn = (text: string, tone?: ToastTone, action?: ToastAction) => void;
+type Current = { id: number; text: string; tone: ToastTone; leaving: boolean; action?: ToastAction };
 
 const ToastContext = createContext<ToastFn | null>(null);
 
@@ -37,16 +40,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     removeTimer.current = null;
   };
 
-  const toast = useCallback<ToastFn>((text, tone = "success") => {
+  const toast = useCallback<ToastFn>((text, tone = "success", action) => {
     clearTimers();
     const id = ++idRef.current;
-    setCurrent({ id, text, tone, leaving: false });
+    setCurrent({ id, text, tone, leaving: false, action });
     hideTimer.current = setTimeout(() => {
       setCurrent((c) => (c && c.id === id ? { ...c, leaving: true } : c));
       removeTimer.current = setTimeout(() => {
         setCurrent((c) => (c && c.id === id ? null : c));
       }, 200);
-    }, 2500);
+    }, action ? 6000 : 2500);
   }, []);
 
   useEffect(() => clearTimers, []);
@@ -73,6 +76,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           >
             {ICONS[current.tone]}
             <span>{current.text}</span>
+            {current.action && <span aria-hidden className="text-muted-foreground">·</span>}
+            {current.action && (
+              <Link
+                href={current.action.href}
+                onClick={() => setCurrent(null)}
+                className="-mr-2 inline-flex min-h-9 items-center rounded-full px-2 text-accent underline-offset-2 hover:underline"
+              >
+                {current.action.label}
+              </Link>
+            )}
           </div>
         )}
       </div>

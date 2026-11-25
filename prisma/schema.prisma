@@ -67,6 +67,8 @@ model ActionItem {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   task         String
   owner        String?
+  /// The People entry this task is assigned to (no foreign key: a deleted person keeps the owner text above)
+  ownerStakeholderId String?
   /// Deadline wording exactly as spoken
   deadlineText String?
   /// Parsed deadline (unused until the tracker)

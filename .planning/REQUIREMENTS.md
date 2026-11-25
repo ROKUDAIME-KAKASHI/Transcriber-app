@@ -133,9 +133,9 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 - [x] **CAL-01**: Common free slots are shown for selected internal users (Phase 15)
 - [x] **CAL-02**: Chosen slots are blocked for everyone and invites are sent (Phase 15)
 - [x] **CAL-03**: Recurring series block every occurrence (Phase 15)
-- [ ] **TRK-01**: Task owners are picked from stakeholders (Phase 16)
-- [ ] **TRK-02**: Timeline view and overdue alerts for tasks (Phase 16)
-- [ ] **TRK-03**: Series progress shows done vs open (Phase 16)
+- [x] **TRK-01**: Task owners are picked from stakeholders (Phase 16)
+- [x] **TRK-02**: Timeline view and overdue alerts for tasks (Phase 16)
+- [x] **TRK-03**: Series progress shows done vs open (Phase 16)
 - [ ] **FUP-01**: "Plan next meeting" opens a prefilled planned meeting (Phase 17)
 - [ ] **FUP-02**: Unfinished tasks are carried into the next agenda (Phase 17)
 - [ ] **CALL-01**: Laptop tab-audio capture for online calls (Phase 18)
@@ -203,7 +203,7 @@ Shipped as quick tasks after Phase 8 (see ROADMAP.md, Phase 9).
 | PLAN-01..03 | Phase 13 | Complete (needs UAT, apply 4_planned_meetings) |
 | PRE-01..02 | Phase 14 | Complete (needs UAT, apply 5_prework) |
 | CAL-01..03 | Phase 15 | Complete (needs UAT, apply 6_calendar) |
-| TRK-01..03 | Phase 16 | Pending |
+| TRK-01..03 | Phase 16 | Complete (needs UAT, apply 7_tracker) |
 | FUP-01..02 | Phase 17 | Pending |
 | CALL-01..02 | Phase 18 | Pending |
 | PRIV-01..03 | Phase 19 | Pending |

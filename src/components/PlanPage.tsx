@@ -9,6 +9,7 @@ import { PersonPicker } from "./PersonPicker";
 import { PreworkSection } from "./PreworkSection";
 import { FindATime } from "./FindATime";
 import { SeriesSettingsSheet } from "./SeriesSettingsSheet";
+import { SeriesProgressCard } from "./SeriesProgressCard";
 import { useToast } from "./Toast";
 import { useConnectivity } from "@/lib/connectivity";
 import { useFlag } from "@/lib/flagsClient";
@@ -652,6 +653,8 @@ export function PlanPage() {
           )}
         </div>
       </Panel>
+
+      {plan?.seriesId && form.seriesId === plan.seriesId && <SeriesProgressCard seriesId={plan.seriesId} />}
 
       <div className="sticky bottom-[calc(92px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-10 space-y-2 lg:static">
         {formError && (

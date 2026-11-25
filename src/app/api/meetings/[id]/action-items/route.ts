@@ -4,6 +4,7 @@ import { SaveBody } from "@/lib/actionItems";
 import { actionItemsMissing, isActionItemsMissing } from "@/lib/actionItemsDb";
 import { recordEvents, withLive } from "@/lib/actionItemHistory";
 import { skipExactDuplicates } from "@/lib/dedupe";
+import { resolveOwners, withOwnerLink } from "@/lib/trackerPlusDb";
 
 const SELECT = {
   id: true, task: true, owner: true, deadlineText: true, dueDate: true, note: true, sourceQuote: true, status: true, createdAt: true,
@@ -13,14 +14,19 @@ async function ownsMeeting(id: string, userId: string) {
   return !!(await prisma.meeting.findFirst({ where: { id, userId }, select: { id: true } }));
 }
 
-function listItems(meetingId: string, userId: string) {
-  return withLive((live) =>
-    prisma.actionItem.findMany({
-      where: { meetingId, userId, ...live },
-      orderBy: { createdAt: "asc" },
-      select: SELECT,
-    })
-  );
+async function listItems(meetingId: string, userId: string) {
+  const { rows, linked } = await withOwnerLink(async (link) => ({
+    linked: link,
+    rows: await withLive((live) =>
+      prisma.actionItem.findMany({
+        where: { meetingId, userId, ...live },
+        orderBy: { createdAt: "asc" },
+        select: link ? { ...SELECT, ownerStakeholderId: true } : SELECT,
+      })
+    ),
+  }));
+  // A renamed person shows their current name; a deleted one keeps the stored text.
+  return linked ? resolveOwners(userId, rows as (typeof rows[number] & { ownerStakeholderId?: string | null })[]) : rows;
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -52,10 +58,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
     const { fresh, skipped } = skipExactDuplicates(parsed.data.items, existing.map((e) => e.task));
     if (fresh.length) {
-      const created = await prisma.actionItem.createManyAndReturn({
-        data: fresh.map((i) => ({ ...i, meetingId: id, userId })),
-        select: { id: true },
-      });
+      // Picked People entries must be this user's live people; anything else is saved as plain text.
+      const wanted = [...new Set(fresh.map((i) => i.ownerStakeholderId).filter((x): x is string => !!x))];
+      const valid = new Set<string>();
+      if (wanted.length) {
+        try {
+          const found = await prisma.stakeholder.findMany({ where: { userId, deletedAt: null, id: { in: wanted } }, select: { id: true } });
+          for (const f of found) valid.add(f.id);
+        } catch {
+          /* directory unavailable: owners stay plain text */
+        }
+      }
+      const created = await withOwnerLink((link) =>
+        prisma.actionItem.createManyAndReturn({
+          data: fresh.map(({ ownerStakeholderId, ...i }) => ({
+            ...i,
+            meetingId: id,
+            userId,
+            ...(link && ownerStakeholderId && valid.has(ownerStakeholderId) ? { ownerStakeholderId } : {}),
+          })),
+          select: { id: true },
+        })
+      );
       await recordEvents(
         userId,
         created.map((c) => ({ actionItemId: c.id, draft: { action: "created", field: null, oldValue: null, newValue: null } }))

@@ -11,8 +11,11 @@ type Props = {
   id: string;
   value: string;
   onChange: (value: string) => void;
-  /** Called with the final name when a person is picked or added (so callers can save straight away). */
-  onCommit?: (name: string) => void;
+  /**
+   * Called with the final name when a person is picked or added (so callers can save straight away), and that
+   * person's directory id when there is one (not when the add was refused or failed: the name is then plain text).
+   */
+  onCommit?: (name: string, personId?: string) => void;
   placeholder?: string;
   maxLength?: number;
   className?: string;
@@ -40,9 +43,9 @@ export function PersonPicker({ id, value, onChange, onCommit, placeholder, maxLe
   const showList = status === "ready" && open && count > 0;
   const optId = (i: number) => `${listId}-opt-${i}`;
 
-  const pick = (name: string) => {
+  const pick = (name: string, personId?: string) => {
     onChange(name);
-    onCommit?.(name);
+    onCommit?.(name, personId);
     setOpen(false);
     setActive(-1);
   };
@@ -66,6 +69,9 @@ export function PersonPicker({ id, value, onChange, onCommit, placeholder, maxLe
       } else {
         toast(`Added ${name} to People`, "success");
         invalidatePeople();
+        const j = (await r.json().catch(() => null)) as { person?: { id?: string } } | null;
+        pick(name, j?.person?.id);
+        return;
       }
       pick(name);
     } catch {
@@ -77,7 +83,7 @@ export function PersonPicker({ id, value, onChange, onCommit, placeholder, maxLe
   };
 
   const choose = (i: number) => {
-    if (i < options.length) pick(options[i].name);
+    if (i < options.length) pick(options[i].name, options[i].id);
     else void addNew();
   };
 

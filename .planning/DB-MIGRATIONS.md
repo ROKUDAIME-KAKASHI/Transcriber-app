@@ -96,9 +96,19 @@ The migration begins the index with a safety step: if two plans in one series ev
 
 Until it is applied the app still works exactly as before: every new route (`/api/freebusy`, `/api/calendar/*`, `/api/plans/[id]/calendar`, `/api/plans/[id]/invite`, `/api/series/[id]/keep-ahead`) answers "Calendar needs a database update" (503), Find a time, the conflict warning, invites, Series settings and the Profile sharing switch stay hidden, public booking ignores planned meetings, and a plan's .ics is the same file as before. The feature can also be switched off any time in Admin, Feature switches ("Calendar"). Email invites need `RESEND_API_KEY` and `BOOKING_FROM_EMAIL` (the same ones booking emails use); without them the invite button becomes "Share invite file".
 
+## Apply 7_tracker (Phase 16)
+
+Additive only: one new nullable column, `ActionItem.ownerStakeholderId` (TEXT, no default, no index, no foreign key). No table is created, changed in meaning or dropped, and existing rows are untouched.
+
+1. On a Neon preview branch first: `npx prisma migrate deploy` with that branch's `DATABASE_URL` / `DATABASE_URL_UNPOOLED`.
+2. After the pull request is merged, the same command against production.
+3. `npm run db:status` should say "Database schema is up to date".
+
+Until it is applied the tracker behaves exactly as before: every task query falls back to the old columns when the database says the new one is missing (P2022), owners stay plain text, the series chip, "Link owners to People" and the owner-by-person filter do not appear. The switch-only parts (Timeline view, the Tasks badge, the daily reminder, the Record line, Series progress) need no new column and work straight away. The whole set can be switched off any time in Admin, Feature switches ("Tracker upgrades"); the task list then returns exactly the old fields.
+
 ### Brand new databases (for example a fresh Neon preview branch)
 
-A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, `4_planned_meetings`, `5_prework`, then `6_calendar`).
+A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, `4_planned_meetings`, `5_prework`, `6_calendar`, then `7_tracker`).
 
 ## From now on
 
