@@ -360,8 +360,8 @@ function CalendarSection({ offline }: { offline: boolean }) {
       <PanelHeader title="Calendar" />
       <div className="p-2">
         <Switch
-          label="Let people who add me see when I'm busy"
-          description="Other Minutely users who add your email to a meeting see only the busy blocks and your working hours. No titles or details."
+          label="Share when I'm busy with other Minutely users"
+          description="Anyone signed in to Minutely who knows your email can see your busy times and working hours when planning a meeting. They never see titles or details."
           checked={share}
           disabled={saving || offline}
           onChange={(v) => void change(v)}
