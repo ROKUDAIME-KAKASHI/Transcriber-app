@@ -46,3 +46,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Check generated service worker and shells
+        run: npm run check-build
