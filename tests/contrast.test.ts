@@ -26,7 +26,8 @@ function hexTokens(body: string): Record<string, string> {
 
 const light = hexTokens(blockAfter(":root {"));
 const mediaIdx = css.indexOf("@media (prefers-color-scheme: dark)");
-const dark = hexTokens(blockAfter(":root {", mediaIdx));
+const dark = hexTokens(blockAfter(":root:not([data-theme=\"light\"]) {", mediaIdx));
+const forcedDark = hexTokens(blockAfter(":root[data-theme=\"dark\"] {"));
 
 function lum(hex: string): number {
   const n = parseInt(hex.slice(1), 16);
@@ -111,3 +112,7 @@ for (const [name, t] of themes) {
     check(t, blend(t["muted-foreground"], t.card, 0.75), "card", 3, name);
   });
 }
+
+test("forced dark block carries the same tokens as the system dark block", () => {
+  assert.deepEqual(forcedDark, dark);
+});

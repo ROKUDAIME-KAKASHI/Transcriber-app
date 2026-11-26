@@ -9,6 +9,7 @@
  * - Fonts are self-hosted by next/font at build time (COEP require-corp safe): no remote @import here.
  */
 :root {
+  color-scheme: light dark;
   --background: #f7f7fb;
   --card: #ffffff;
   --muted: #eff0f6;
@@ -55,7 +56,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0e0f17;
     --card: #171926;
     --muted: #20233a;
@@ -87,6 +88,57 @@
     --elev-card: none;
     --elev-float: 0 0 0 1px var(--border);
     --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239A9DB3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0e0f17;
+  --card: #171926;
+  --muted: #20233a;
+  --border: #2a2d44;
+  --foreground: #edeef5;
+  --muted-foreground: #9a9db3;
+  --accent: #4c8df6;
+  --accent-foreground: #0e0f17;
+  --record: #ff6369;
+  --record-fill: #e5484d;
+  --danger: #ff6369;
+  --success: #3dd68c;
+  --warning: #f5b544;
+
+  --speaker-0: #4c8df6;
+  --speaker-1: #3ccfbc;
+  --speaker-2: #f4a955;
+  --speaker-3: #f483ae;
+  --speaker-4: #b0d163;
+  --speaker-5: #5cc8ee;
+
+  --accent-soft: color-mix(in oklab, var(--accent) 16%, var(--card));
+  --warning-soft: color-mix(in oklab, var(--warning) 16%, var(--card));
+  --success-soft: color-mix(in oklab, var(--success) 16%, var(--card));
+  --danger-soft: color-mix(in oklab, var(--danger) 16%, var(--card));
+  --glow-a: rgb(76 141 246 / 0.35);
+  --glow-b: rgb(34 211 238 / 0.35);
+
+  --elev-card: none;
+  --elev-float: 0 0 0 1px var(--border);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239A9DB3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* `dark:` utilities follow data-theme when set, else the system. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
   }
 }
 
