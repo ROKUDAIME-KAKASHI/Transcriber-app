@@ -136,7 +136,9 @@ function loadSpeaker(localOnly: boolean): Promise<SpeakerModel | null> {
     try {
       // Never compete with the ASR model for the download or the CPU.
       await loaded.get(active);
-      const opts = { ...(localOnly ? { local_files_only: true } : {}) };
+      // No `local_files_only` in a worker (see loadModel): the browser cache is checked first anyway.
+      void localOnly;
+      const opts = {};
       const fe = (await AutoFeatureExtractor.from_pretrained(SPEAKER_MODEL.repo, opts)) as unknown as SpeakerModel["fe"];
       // Session creation and warm-up are CPU-heavy: do them only when no phrase is waiting.
       await untilIdle();
@@ -189,15 +191,16 @@ async function warmUp(t: Transcriber) {
   await t(new Float32Array(SAMPLE_RATE), { max_new_tokens: 2 });
 }
 
-function loadModel(name: ModelName, reportProgress: boolean, localOnly = false): Promise<Transcriber> {
+function loadModel(name: ModelName, reportProgress: boolean, _localOnly = false): Promise<Transcriber> {
   const existing = loaded.get(name);
   if (existing) return existing;
   let lastPct = -1;
   const p = pipeline("automatic-speech-recognition", MODELS[name].repo, {
     device: "wasm",
     dtype: "q8",
-    // Offline: never touch the network. A cached model loads; an uncached one fails fast.
-    ...(localOnly ? { local_files_only: true } : {}),
+    // Offline: transformers.js checks its browser cache before the network, so a cached model still
+    // loads. `local_files_only` must NOT be passed in a browser/worker: env.allowLocalModels is false
+    // there and the library rejects that combination outright ("Invalid configuration detected").
     progress_callback: (info: ProgressInfo) => {
       if (!reportProgress || info.status !== "progress_total") return;
       const pct = Math.round(info.progress);
