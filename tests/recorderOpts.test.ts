@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nextRecorderOpts, recorderBusy, sameRecorderOpts } from "../src/lib/recorderOpts.ts";
+import { holdAppForRecording, nextRecorderOpts, recorderBusy, sameRecorderOpts } from "../src/lib/recorderOpts.ts";
 
 const a = { engine: "moonshine", language: "en", deviceId: "", source: "mic", naming: undefined };
 
@@ -25,4 +25,20 @@ test("busy covers starting, recording and finishing", () => {
   assert.equal(recorderBusy({ isRecording: true, isStarting: false }), true);
   assert.equal(recorderBusy({ isRecording: false, isStarting: true }), true);
   assert.equal(recorderBusy({ isRecording: false, isStarting: false, finishing: true }), true);
+});
+
+test("busy also covers the saving phase after Stop", () => {
+  assert.equal(recorderBusy({ isRecording: false, isStarting: false, saveState: "saving" }), true);
+  assert.equal(recorderBusy({ isRecording: false, isStarting: false, saveState: "saved" }), false);
+  assert.equal(recorderBusy({ isRecording: false, isStarting: false, saveState: "local" }), false);
+  assert.equal(recorderBusy({ isRecording: false, isStarting: false, saveState: "idle" }), false);
+});
+
+test("the app is held for a busy recording on any non-app auth decision", () => {
+  assert.equal(holdAppForRecording("redirect-login", true), true);
+  assert.equal(holdAppForRecording("needs-internet", true), true);
+  assert.equal(holdAppForRecording("pending", true), true);
+  assert.equal(holdAppForRecording("redirect-login", false), false);
+  assert.equal(holdAppForRecording("app", true), false);
+  assert.equal(holdAppForRecording("app-cached", true), false);
 });

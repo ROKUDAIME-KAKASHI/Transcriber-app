@@ -28,7 +28,20 @@ export function nextRecorderOpts<T extends RecorderOptsLike>(current: T, pushed:
   return sameRecorderOpts(current, pushed) ? current : pushed;
 }
 
-/** Whether sign-out must wait: a recording is starting, running or still being saved. */
-export function recorderBusy(s: { isRecording: boolean; isStarting: boolean; finishing?: boolean }): boolean {
-  return s.isRecording || s.isStarting || !!s.finishing;
+/**
+ * Whether the recorder is busy: starting, recording (or paused), finishing a native capture, or still
+ * saving. Sign-out, the settings freeze, the reload guards and the auth gate all use this one answer.
+ */
+export function recorderBusy(s: {
+  isRecording: boolean;
+  isStarting: boolean;
+  finishing?: boolean;
+  saveState?: string;
+}): boolean {
+  return s.isRecording || s.isStarting || !!s.finishing || s.saveState === "saving";
+}
+
+/** The app stays mounted (never the skeleton or login) while a recording is busy, whatever the session probe says. */
+export function holdAppForRecording(decision: string, busy: boolean): boolean {
+  return busy && decision !== "app" && decision !== "app-cached";
 }

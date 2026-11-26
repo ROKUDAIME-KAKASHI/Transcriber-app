@@ -57,10 +57,11 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Back button / sign-in guard: a web recording is running.
+  // Back button / reload / sign-in guard: a web recording is starting, running or still saving.
+  const busy = recorderBusy(rec);
   useEffect(() => {
-    setWebRecording(rec.isRecording);
-  }, [rec.isRecording]);
+    setWebRecording(busy);
+  }, [busy]);
   useEffect(() => () => setWebRecording(false), []);
 
   return (
