@@ -212,7 +212,7 @@ Phases 10-20 map to Steps 0-10 of the v2.0 plan.
 - [x] **Phase 16: Tracker upgrades (Step 6)** - Task owners are stakeholders; timeline, overdue alerts, series progress
 - [x] **Phase 17: Follow-up (Step 7)** - "Plan next meeting" carries unfinished tasks
 - [ ] **Phase 18: Online calls (Step 8)** - Laptop tab capture first (part A done, needs UAT), then a meeting bot for phone and laptop (part B pending)
-- [ ] **Phase 19: Privacy basics (Step 9)** - Recording consent notice, privacy page, delete account and data
+- [x] **Phase 19: Privacy basics (Step 9)** (code complete 2026-11-26, UAT pending) - Recording consent notice, privacy page, delete account and data
 - [ ] **Phase 20: New web address migration (Step 10)** - Move to a new address sync-first, keep the old one working, ship a new APK
 - [x] **Phase 21: Meeting page tabs + auto minutes + Ask (Step 8.1)** (code complete 2026-11-25, UAT pending) - Transcript/Minutes/Summary/Action items/Ask tabs; minutes auto-generate on stop with a "ready in" estimate; one combined small-model request
 - [x] **Phase 22: Guided online-call recording (Step 8.2)** (code complete 2026-11-25, UAT pending) - One-click "Record an online call" with picture guidance, no-audio warning, open the meeting from Minutely

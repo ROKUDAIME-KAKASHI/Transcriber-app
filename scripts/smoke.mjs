@@ -74,6 +74,9 @@ try {
   check("/login has COOP same-origin", login.headers.get("cross-origin-opener-policy") === "same-origin", String(login.headers.get("cross-origin-opener-policy")));
   check("/login has COEP require-corp", login.headers.get("cross-origin-embedder-policy") === "require-corp", String(login.headers.get("cross-origin-embedder-policy")));
 
+  const privacy = await get("/privacy");
+  check("/privacy answers 200 with no sign-in", privacy.status === 200, String(privacy.status));
+
   const book = await get("/book/does-not-exist-smoke");
   // 404 with a database; without one the page shows its own "couldn't load" notice (200) or a 503. Never a 500.
   check("/book/<nonexistent> is 404, or graceful without a database", [404, 503, 200].includes(book.status), String(book.status));
@@ -94,6 +97,8 @@ try {
     const r = await get(p);
     check(`${p} without a session is 401 or a redirect`, r.status === 401 || isRedirect(r.status), String(r.status));
   }
+  const del = await get("/api/profile", { method: "DELETE" });
+  check("DELETE /api/profile without a session is 401", del.status === 401, String(del.status));
   for (const p of ["/meetings", "/profile", "/tasks"]) {
     const r = await get(p);
     check(`${p} without a session is not a server error`, r.status < 500, String(r.status));

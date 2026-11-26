@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ScreenNamingToggle } from "./ScreenNamingToggle";
+import { DeleteAccountDialog } from "./DeleteAccountDialog";
+import { copyConsentNote } from "./ConsentDialog";
 import { Check, ChevronRight, Copy, Download, RefreshCw, Share2, Users } from "lucide-react";
 import { Badge, Button, DeviceTag, FieldLabel, Panel, PanelHeader, Segmented, Switch, inputCls } from "@/components/ui";
 import { cacheDisplayName, cachedDisplayName, refreshDisplayName } from "@/lib/displayName";
@@ -117,8 +119,12 @@ function AccountSection({ offline }: { offline: boolean }) {
   const email = user?.email ?? cachedUser?.email ?? "";
   const signOut = useSignOut();
   const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   useEffect(() => {
-    if (offline) setConfirming(false);
+    if (offline) {
+      setConfirming(false);
+      setDeleting(false);
+    }
   }, [offline]);
   return (
     <Panel aria-label="Account">
@@ -157,6 +163,15 @@ function AccountSection({ offline }: { offline: boolean }) {
             {offline && <p className="mt-1.5 text-meta text-muted-foreground">Signing out needs internet.</p>}
           </div>
         )}
+        <div className="border-t border-border/70 pt-3">
+          <Button variant="danger" disabled={offline} onClick={() => setDeleting(true)}>
+            Delete account
+          </Button>
+          <p className="mt-1.5 text-meta text-muted-foreground">
+            {offline ? "Deleting needs internet." : "Removes your account and all your data for good."}
+          </p>
+        </div>
+        {deleting && <DeleteAccountDialog userId={user?.id ?? cachedUser?.id ?? null} onClose={() => setDeleting(false)} />}
       </div>
     </Panel>
   );
@@ -508,6 +523,7 @@ function PreferencesSection({ offline }: { offline: boolean }) {
 
 /* ---------- Storage ---------- */
 function RecordingSection() {
+  const toast = useToast();
   const { readiness } = useOfflineReadiness("moonshine");
   const line = !readiness
     ? "Checking…"
@@ -531,6 +547,17 @@ function RecordingSection() {
           </Link>
         </div>
         <ScreenNamingToggle />
+        <div className="space-y-1 px-3 py-2">
+          <p className="text-ui font-semibold">Consent note</p>
+          <p className="text-meta text-muted-foreground">A short message to paste into a call chat or WhatsApp before you record.</p>
+          <Button
+            variant="secondary"
+            icon={<Copy className="h-4 w-4" aria-hidden />}
+            onClick={async () => toast((await copyConsentNote()) ? "Consent note copied" : "Couldn't copy the note", "neutral")}
+          >
+            Copy consent note
+          </Button>
+        </div>
       </div>
     </Panel>
   );
@@ -566,7 +593,10 @@ export function ProfilePage() {
       <RecordingSection />
       <AppSection offline={offline} />
       <p className="px-1 text-meta text-muted-foreground">
-        Minutely web {webVersion} · Android app {LATEST_APK.versionName} (build {LATEST_APK.versionCode})
+        Minutely web {webVersion} · Android app {LATEST_APK.versionName} (build {LATEST_APK.versionCode}) ·{" "}
+        <Link href="/privacy" className="underline-offset-2 hover:underline">
+          Privacy
+        </Link>
       </p>
     </div>
   );
