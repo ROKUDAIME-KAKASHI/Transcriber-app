@@ -36,7 +36,8 @@ export interface MeetingRow {
   nativeCapture?: boolean;
 }
 
-function StatusChip({ m, stale }: { m: MeetingRow; stale: boolean }) {
+/** At most one chip per row: what needs attention first, else the nicest thing to know. Plain words, no jargon. */
+function RowChip({ m, stale, syncing, duplicate }: { m: MeetingRow; stale: boolean; syncing: boolean; duplicate: boolean }) {
   if (m.status === "RECORDING" && m.nativeCapture && stale) return <Badge tone="warning">Needs finishing</Badge>;
   if (m.status === "RECORDING" && stale) return <Badge tone="warning">Not responding</Badge>;
   if (m.status === "RECORDING") {
@@ -46,20 +47,17 @@ function StatusChip({ m, stale }: { m: MeetingRow; stale: boolean }) {
       </Badge>
     );
   }
-  if (m.template) return <Badge tone="accent">{m.template === "Report" ? "Report ready" : "Minutes ready"}</Badge>;
-  return <Badge tone="neutral">Transcript</Badge>;
-}
-
-function SyncChip({ m, syncing }: { m: MeetingRow; syncing: boolean }) {
+  if (m.sync === "error") return <Badge tone="danger">Couldn’t upload</Badge>;
   if (m.sync === "pending" && syncing) {
     return (
       <Badge tone="neutral">
-        <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> Syncing…
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> Uploading…
       </Badge>
     );
   }
-  if (m.sync === "pending") return <Badge tone="warning">On this phone</Badge>;
-  if (m.sync === "error") return <Badge tone="danger">Couldn't sync</Badge>;
+  if (m.sync === "pending") return <Badge tone="warning">Not uploaded yet</Badge>;
+  if (duplicate) return <Badge tone="warning">Possible duplicate</Badge>;
+  if (m.template) return <Badge tone="accent">{m.template === "Report" ? "Report ready" : "Minutes ready"}</Badge>;
   return null;
 }
 
@@ -223,6 +221,7 @@ export function MeetingList() {
 
   const nothingMatches = groups.every((g) => g.items.length === 0);
   const time = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
   let index = 0;
 
   return (
@@ -278,22 +277,13 @@ export function MeetingList() {
                     >
                       <span className="min-w-0">
                         <span className="line-clamp-2 text-ui font-semibold">{m.title}</span>
-                        <span className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-meta tabular-nums text-muted-foreground">
+                        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-meta tabular-nums text-muted-foreground" suppressHydrationWarning>
+                          {mounted && <span className="shrink-0 whitespace-nowrap">{day(m.createdAt)} · {time(m.createdAt)} ·</span>}
                           <span className="shrink-0 whitespace-nowrap">{formatDuration(m.durationSec)}</span>
-                          {mounted && (
-                            <span className="shrink-0 whitespace-nowrap" suppressHydrationWarning>
-                              · {time(m.createdAt)}
-                            </span>
-                          )}
-                          {m.deviceName && <span className="min-w-0 truncate">· {m.deviceName}</span>}
                         </span>
                       </span>
                       <span className="flex items-center gap-3">
-                        <span className="flex flex-col items-end gap-1.5">
-                          <StatusChip m={m} stale={stale} />
-                          <SyncChip m={m} syncing={sync.state === "syncing"} />
-                          {dupIds.has(m.id) && <Badge tone="warning">Possible duplicate</Badge>}
-                        </span>
+                        <RowChip m={m} stale={stale} syncing={sync.state === "syncing"} duplicate={dupIds.has(m.id)} />
                         <ChevronRight className="hidden h-4 w-4 text-muted-foreground lg:block" />
                       </span>
                     </Link>

@@ -39,6 +39,7 @@ import { useScreenNamingOptIn } from "@/lib/naming/client";
 import { usePeople } from "@/lib/stakeholdersClient";
 import { useMotionPref } from "@/lib/motionPref";
 import * as haptics from "@/lib/haptics";
+import { privacyNote, settingsSummary } from "@/lib/recordSummary";
 
 const MIC_KEY = "transcriber.micId";
 const ENGINE_KEY = "transcriber.engine";
@@ -440,6 +441,8 @@ export function Recorder() {
   const showBar = busy && !heroVisible;
   useFloatingBarFlag(showBar);
   const selectedEngine = ENGINES.find((e) => e.value === effective);
+  const languageLabel = effective === "moonshine" ? "English" : (WHISPER_LANGUAGES.find((l) => l.value === language)?.label ?? "English");
+  const settingsLine = settingsSummary(effective, languageLabel);
   const onHeroClick = (e: React.MouseEvent) => {
     if (mode !== "calm") return;
     if ((e.target as HTMLElement).closest("button, a, select, input, label")) return;
@@ -595,7 +598,8 @@ export function Recorder() {
             ) : (
               !starting && (
                 <p className="self-center text-meta text-muted-foreground">
-                  {onDevice && inApp ? "Tap to record · Works without internet on this phone" : "Tap to record"}
+                  Tap to record
+                  <span className="block">{privacyNote(effective)}</span>
                 </p>
               )
             )}
@@ -678,66 +682,7 @@ export function Recorder() {
 
         {!busy && !starting && <OverdueLine />}
 
-        <div className="space-y-5 border-t border-border/70 px-4 py-4">
-          <div>
-            <FieldLabel>Speech engine</FieldLabel>
-            <Segmented<RecordEngine>
-              label="Speech engine"
-              value={effective}
-              disabled={locked}
-              onChange={(v) => {
-                setEngine(v);
-                remember(ENGINE_KEY, v);
-                if (v !== "deepgram") {
-                  setLastOnDevice(v);
-                  remember(LAST_ON_DEVICE_KEY, v);
-                }
-              }}
-              options={ENGINES.map((e) => ({
-                value: e.value,
-                label: e.title,
-                icon: e.icon,
-                disabled: e.value === "deepgram" && !deepgramGate.enabled,
-              }))}
-            />
-            {selectedEngine && (
-              <p className="mt-2 text-meta text-muted-foreground">
-                <span className="font-medium text-foreground">{selectedEngine.aside}</span>
-                {" · "}
-                {inApp
-                  ? nativeLocal && onDevice
-                    ? APP_LOCAL_ENGINE_NOTES[onDevice]
-                    : APP_ENGINE_NOTES[selectedEngine.value]
-                  : selectedEngine.description}
-                {ready[effective] && <> <span className="text-success">Ready offline</span></>}
-              </p>
-            )}
-            <GateReason reason={deepgramGate.enabled ? null : deepgramGate.reason} icon={<CloudOff className="h-3.5 w-3.5" />} />
-            {onDevice && (
-              <div className="mt-3">
-                <OfflineModelControl
-                  engine={onDevice}
-                  disabled={locked}
-                  onStatusChange={(r) =>
-                    setModelStatus((m) => {
-                      const o = m[onDevice];
-                      return o && o.status === r.status && o.preferredCached === r.preferredCached && o.ortCached === r.ortCached
-                        ? m
-                        : { ...m, [onDevice]: r };
-                    })
-                  }
-                />
-              </div>
-            )}
-            {overridden && !locked && (
-              <div className="mt-3">
-                <Notice icon={<WifiOff className="h-4 w-4" />}>
-                  Offline, using on-device. Your Cloud choice comes back when you&apos;re online.
-                </Notice>
-              </div>
-            )}
-          </div>
-
+        <div className="space-y-4 border-t border-border/70 px-4 py-4">
           {rec.stoppedRemotely && (
             <div className="mt-3" role="status">
               <Notice icon={<Info className="h-4 w-4" />} title="Stopped from another device">
@@ -755,101 +700,160 @@ export function Recorder() {
             </Notice>
           )}
 
-          <div>
-            <Button
-              variant="ghost"
+          <div className={cx(busy && "max-lg:hidden")}>
+            <button
+              type="button"
               onClick={() => setOptionsOpen((o) => !o)}
               aria-expanded={optionsOpen}
               aria-controls="rec-options"
-              icon={
-                <ChevronDown
-                  className="h-4 w-4"
-                  style={{ transition: "transform var(--dur-2)", transform: optionsOpen ? "rotate(180deg)" : "none" }}
-                />
-              }
+              className="flex min-h-12 w-full items-center justify-between gap-3 rounded-btn border border-border px-4 text-left hover:bg-muted"
             >
-              Options
-            </Button>
-            <div id="rec-options" hidden={!optionsOpen} className="mt-3 space-y-5">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                <div>
-                  <FieldLabel htmlFor="rec-language">Language</FieldLabel>
-                  {effective === "moonshine" ? (
-                    <select id="rec-language" disabled className={selectCls}>
-                      <option>English</option>
-                    </select>
-                  ) : (
-                    <select
-                      id="rec-language"
-                      value={language}
-                      onChange={(e) => {
-                        setLanguage(e.target.value);
-                        remember(LANG_KEY, e.target.value);
-                      }}
-                      disabled={locked}
-                      className={selectCls}
-                    >
-                      {WHISPER_LANGUAGES.map((l) => (
-                        <option key={l.value} value={l.value}>{l.label}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <div>
-                  <FieldLabel htmlFor="rec-mic">Microphone</FieldLabel>
-                  {(nativeMode || nativeLocal) && (
-                    <select disabled className={selectCls}>
-                      <option>Phone microphone</option>
-                    </select>
-                  )}
-                  <select
-                    id="rec-mic"
-                    hidden={nativeMode || nativeLocal}
-                    value={mics.some((m) => m.deviceId === micId) ? micId : ""}
-                    onChange={(e) => {
-                      setMicId(e.target.value);
-                      remember(MIC_KEY, e.target.value);
-                    }}
-                    disabled={locked || mics.length === 0}
-                    className={selectCls}
-                  >
-                    <option value="">Default microphone</option>
-                    {mics
-                      .filter((m) => m.deviceId !== "default")
-                      .map((m, i) => (
-                        <option key={m.deviceId} value={m.deviceId}>{m.label || `Microphone ${i + 1}`}</option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-
-              {nativeLocal ? (
-                <p className="flex items-start gap-2 text-meta text-muted-foreground">
-                  <BatteryCharging className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  Recording keeps going with the screen locked and no internet. The transcript is made on this phone, so it can
-                  trail the recording until you open the app. Plug in the charger for long meetings.
-                </p>
-              ) : effective !== "deepgram" ? (
-                <Notice icon={<BatteryCharging className="h-4 w-4" />} title="Keep the screen on">
-                  On-device recording works with no internet, but it stops if the screen locks. Keep this screen open while
-                  you record.
-                </Notice>
-              ) : (
-                <p className="flex items-start gap-2 text-meta text-muted-foreground">
-                  <BatteryCharging className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  {nativeMode
-                    ? "Cloud keeps recording with the screen off, but it needs internet the whole time. Plug in the charger for long meetings."
-                    : "Cloud keeps recording with the screen off, but it needs internet the whole time."}
+              <span className="min-w-0">
+                <span className="block text-ui font-semibold">Settings</span>
+                <span className="block truncate text-meta text-muted-foreground">{settingsLine}</span>
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0" aria-hidden style={{ transition: "transform var(--dur-2)", transform: optionsOpen ? "rotate(180deg)" : "none" }} />
+            </button>
+            <div id="rec-options" hidden={!optionsOpen} className="mt-4 space-y-5">
+            <div>
+              <FieldLabel>Speech engine</FieldLabel>
+              <Segmented<RecordEngine>
+                label="Speech engine"
+                value={effective}
+                disabled={locked}
+                onChange={(v) => {
+                  setEngine(v);
+                  remember(ENGINE_KEY, v);
+                  if (v !== "deepgram") {
+                    setLastOnDevice(v);
+                    remember(LAST_ON_DEVICE_KEY, v);
+                  }
+                }}
+                options={ENGINES.map((e) => ({
+                  value: e.value,
+                  label: e.title,
+                  icon: e.icon,
+                  disabled: e.value === "deepgram" && !deepgramGate.enabled,
+                }))}
+              />
+              {selectedEngine && (
+                <p className="mt-2 text-meta text-muted-foreground">
+                  <span className="font-medium text-foreground">{selectedEngine.aside}</span>
+                  {" · "}
+                  {inApp
+                    ? nativeLocal && onDevice
+                      ? APP_LOCAL_ENGINE_NOTES[onDevice]
+                      : APP_ENGINE_NOTES[selectedEngine.value]
+                    : selectedEngine.description}
+                  {ready[effective] && <> <span className="text-success">Ready offline</span></>}
                 </p>
               )}
-
-              <Switch
-                label="Reduce motion"
-                description="Fewer animations. Saves a little battery."
-                checked={pref === "reduced"}
-                onChange={(on) => setPref(on ? "reduced" : "auto")}
-              />
+              <GateReason reason={deepgramGate.enabled ? null : deepgramGate.reason} icon={<CloudOff className="h-3.5 w-3.5" />} />
+              {onDevice && (
+                <div className="mt-3">
+                  <OfflineModelControl
+                    engine={onDevice}
+                    disabled={locked}
+                    onStatusChange={(r) =>
+                      setModelStatus((m) => {
+                        const o = m[onDevice];
+                        return o && o.status === r.status && o.preferredCached === r.preferredCached && o.ortCached === r.ortCached
+                          ? m
+                          : { ...m, [onDevice]: r };
+                      })
+                    }
+                  />
+                </div>
+              )}
+              {overridden && !locked && (
+                <div className="mt-3">
+                  <Notice icon={<WifiOff className="h-4 w-4" />}>
+                    Offline, using on-device. Your Cloud choice comes back when you&apos;re online.
+                  </Notice>
+                </div>
+              )}
             </div>
+
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              <div>
+                <FieldLabel htmlFor="rec-language">Language</FieldLabel>
+                {effective === "moonshine" ? (
+                  <select id="rec-language" disabled className={selectCls}>
+                    <option>English</option>
+                  </select>
+                ) : (
+                  <select
+                    id="rec-language"
+                    value={language}
+                    onChange={(e) => {
+                      setLanguage(e.target.value);
+                      remember(LANG_KEY, e.target.value);
+                    }}
+                    disabled={locked}
+                    className={selectCls}
+                  >
+                    {WHISPER_LANGUAGES.map((l) => (
+                      <option key={l.value} value={l.value}>{l.label}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div>
+                <FieldLabel htmlFor="rec-mic">Microphone</FieldLabel>
+                {(nativeMode || nativeLocal) && (
+                  <select disabled className={selectCls}>
+                    <option>Phone microphone</option>
+                  </select>
+                )}
+                <select
+                  id="rec-mic"
+                  hidden={nativeMode || nativeLocal}
+                  value={mics.some((m) => m.deviceId === micId) ? micId : ""}
+                  onChange={(e) => {
+                    setMicId(e.target.value);
+                    remember(MIC_KEY, e.target.value);
+                  }}
+                  disabled={locked || mics.length === 0}
+                  className={selectCls}
+                >
+                  <option value="">Default microphone</option>
+                  {mics
+                    .filter((m) => m.deviceId !== "default")
+                    .map((m, i) => (
+                      <option key={m.deviceId} value={m.deviceId}>{m.label || `Microphone ${i + 1}`}</option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            {nativeLocal ? (
+              <p className="flex items-start gap-2 text-meta text-muted-foreground">
+                <BatteryCharging className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Recording keeps going with the screen locked and no internet. The transcript is made on this phone, so it can
+                trail the recording until you open the app. Plug in the charger for long meetings.
+              </p>
+            ) : effective !== "deepgram" ? (
+              <Notice icon={<BatteryCharging className="h-4 w-4" />} title="Keep the screen on">
+                On-device recording works with no internet, but it stops if the screen locks. Keep this screen open while
+                you record.
+              </Notice>
+            ) : (
+              <p className="flex items-start gap-2 text-meta text-muted-foreground">
+                <BatteryCharging className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {nativeMode
+                  ? "Cloud keeps recording with the screen off, but it needs internet the whole time. Plug in the charger for long meetings."
+                  : "Cloud keeps recording with the screen off, but it needs internet the whole time."}
+              </p>
+            )}
+
+            <Switch
+              label="Reduce motion"
+              description="Fewer animations. Saves a little battery."
+              checked={pref === "reduced"}
+              onChange={(on) => setPref(on ? "reduced" : "auto")}
+            />
+                      </div>
           </div>
         </div>
       </Panel>
@@ -871,7 +875,7 @@ export function Recorder() {
 
         <div
           ref={scrollRef}
-          className="scroll-thin h-[55dvh] min-h-64 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 lg:h-auto lg:min-h-0"
+          className={cx("scroll-thin min-h-64 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 lg:h-auto lg:min-h-0", busy ? "h-[68dvh]" : "h-[55dvh]")}
         >
           {busy && rec.noSound && (
             <div className="mb-4 lg:hidden" role="alert">
