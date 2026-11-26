@@ -34,7 +34,7 @@ function Logo() {
       title="Go to Record"
       className="-mx-2 inline-flex min-h-11 items-center gap-2.5 rounded-btn px-2 text-ui font-semibold tracking-tight"
     >
-      <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
+      <span className="grid h-7 w-7 place-items-center rounded-[8px] bg-accent text-accent-foreground">
         <AudioLines className="h-4 w-4" />
       </span>
       Minutely

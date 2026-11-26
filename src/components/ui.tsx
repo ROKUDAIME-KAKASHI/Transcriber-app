@@ -32,7 +32,7 @@ export function Button({ variant = "secondary", size = "md", loading, icon, clas
         "disabled:opacity-50 disabled:cursor-not-allowed",
         pill ? "rounded-full" : "rounded-btn",
         size === "lg" ? "min-h-12 px-5 text-ui" : "min-h-12 lg:min-h-10 px-4 text-ui",
-        variant === "primary" && "bg-accent text-accent-foreground hover:bg-accent/90 shadow-[0_4px_14px_-6px_var(--accent)]",
+        variant === "primary" && "bg-accent text-accent-foreground hover:bg-accent/90",
         variant === "secondary" && "border border-border/70 bg-card text-foreground shadow-card hover:bg-muted",
         variant === "ghost" && "text-muted-foreground hover:bg-muted hover:text-foreground",
         variant === "danger" && "text-danger hover:bg-danger-soft",

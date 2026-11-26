@@ -15,7 +15,7 @@
   --border: #e2e4ee;
   --foreground: #14151f;
   --muted-foreground: #5b5f73;
-  --accent: #3651f5;
+  --accent: #1c68e0;
   --accent-foreground: #ffffff;
   --record: #c9353b;
   --record-fill: #e5484d;
@@ -24,24 +24,24 @@
   --warning: #a15c00;
 
   /* Speaker colours (content, not chrome). */
-  --speaker-0: #3651f5;
+  --speaker-0: #1c68e0;
   --speaker-1: #0b7d70;
   --speaker-2: #b25a08;
   --speaker-3: #c23a72;
   --speaker-4: #5a7a12;
-  --speaker-5: #7a5af0;
+  --speaker-5: #0a7ea4;
 
   --surface-2: var(--muted);
   --accent-soft: color-mix(in oklab, var(--accent) 12%, var(--card));
   --warning-soft: color-mix(in oklab, var(--warning) 10%, var(--card));
   --success-soft: color-mix(in oklab, var(--success) 10%, var(--card));
   --danger-soft: color-mix(in oklab, var(--danger) 10%, var(--card));
-  --glow-a: rgb(54 81 245 / 0.3);
+  --glow-a: rgb(28 104 224 / 0.3);
   --glow-b: rgb(20 184 196 / 0.3);
 
-  --elev-card: 0 1px 2px rgba(20, 21, 31, 0.04), 0 4px 16px -4px rgba(20, 21, 31, 0.06);
-  --elev-float: 0 8px 32px -8px rgba(14, 15, 23, 0.18);
-  --glass: color-mix(in oklab, var(--card) 78%, transparent);
+  --elev-card: none; /* no shadows: hairline borders separate cards */
+  --elev-float: 0 0 0 1px var(--border);
+  --glass: var(--card);
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235B5F73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 
   /* Motion tokens (theme independent). */
@@ -62,7 +62,7 @@
     --border: #2a2d44;
     --foreground: #edeef5;
     --muted-foreground: #9a9db3;
-    --accent: #8ea2ff;
+    --accent: #4c8df6;
     --accent-foreground: #0e0f17;
     --record: #ff6369;
     --record-fill: #e5484d;
@@ -70,22 +70,22 @@
     --success: #3dd68c;
     --warning: #f5b544;
 
-    --speaker-0: #8ea2ff;
+    --speaker-0: #4c8df6;
     --speaker-1: #3ccfbc;
     --speaker-2: #f4a955;
     --speaker-3: #f483ae;
     --speaker-4: #b0d163;
-    --speaker-5: #b39cff;
+    --speaker-5: #5cc8ee;
 
     --accent-soft: color-mix(in oklab, var(--accent) 16%, var(--card));
     --warning-soft: color-mix(in oklab, var(--warning) 16%, var(--card));
     --success-soft: color-mix(in oklab, var(--success) 16%, var(--card));
     --danger-soft: color-mix(in oklab, var(--danger) 16%, var(--card));
-    --glow-a: rgb(91 108 255 / 0.35);
+    --glow-a: rgb(76 141 246 / 0.35);
     --glow-b: rgb(34 211 238 / 0.35);
 
-    --elev-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
-    --elev-float: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+    --elev-card: none;
+    --elev-float: 0 0 0 1px var(--border);
     --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239A9DB3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 }
@@ -111,7 +111,7 @@
   --color-surface-2: var(--surface-2);
 
   /* System fallback keeps Devanagari rendering. */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, "Noto Sans Devanagari", "Nirmala UI", "Mangal", sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   /* Two weights only: every font-medium renders 600. */
   --font-weight-medium: 600;
@@ -120,15 +120,15 @@
   --text-meta: 0.8125rem;
   --text-meta--line-height: 1.25rem;
   --text-ui: 0.9375rem;
-  --text-ui--line-height: 1.375rem;
+  --text-ui--line-height: 1.5rem;
   --text-reading: 1.0625rem;
   --text-reading--line-height: 1.6;
   --text-display: 3.5rem;
   --text-display--line-height: 1;
 
-  --radius-chip: 10px;
-  --radius-btn: 14px;
-  --radius-panel: 22px;
+  --radius-chip: 8px;
+  --radius-btn: 12px;
+  --radius-panel: 20px;
 
   --shadow-card: var(--elev-card);
   --shadow-float: var(--elev-float);
@@ -142,13 +142,14 @@ body {
 }
 
 body {
-  background-image: radial-gradient(
-    1200px 600px at 50% -10%,
-    color-mix(in oklab, var(--glow-a) 10%, transparent),
-    transparent 70%
-  );
-  background-repeat: no-repeat;
-  background-attachment: fixed;
+  line-height: 1.5;
+}
+
+/* Devanagari needs more vertical room so matras and shirorekha are not clipped. */
+:lang(hi),
+:lang(mr),
+[lang="hi"] {
+  line-height: 1.7;
 }
 
 h1,
@@ -186,18 +187,10 @@ h2 {
   scrollbar-color: var(--border) transparent;
 }
 
-/* Frosted surface for floating bars and pills. */
+/* Opaque surface for floating bars and pills (no blur). */
 .glass {
   background: var(--glass);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-  backdrop-filter: blur(16px) saturate(160%);
-  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
-}
-
-@supports not (backdrop-filter: blur(1px)) {
-  .glass {
-    background: var(--card);
-  }
+  border: 1px solid var(--border);
 }
 
 /* Motion: transform/opacity only (plus filter for text-in). */

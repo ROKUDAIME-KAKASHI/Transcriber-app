@@ -77,7 +77,7 @@ export default function LoginPage() {
       {/* About (laptops) */}
       <aside className="hidden flex-col justify-between border-r border-border/70 bg-card px-12 py-10 lg:flex xl:px-16">
         <div className="flex items-center gap-2.5 text-ui font-semibold tracking-tight">
-          <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
+          <span className="grid h-7 w-7 place-items-center rounded-[8px] bg-accent text-accent-foreground">
             <AudioLines className="h-4 w-4" />
           </span>
           Minutely
@@ -107,7 +107,7 @@ export default function LoginPage() {
       <main className="grid place-items-center px-4 py-10 sm:px-8">
         <Panel className="w-full max-w-sm p-6 sm:p-8">
           <div className="mb-8 flex items-center gap-2.5 text-ui font-semibold tracking-tight lg:hidden">
-            <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
+            <span className="grid h-7 w-7 place-items-center rounded-[8px] bg-accent text-accent-foreground">
               <AudioLines className="h-4 w-4" />
             </span>
             Minutely

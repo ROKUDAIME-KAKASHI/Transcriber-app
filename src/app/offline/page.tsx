@@ -6,7 +6,7 @@ export default function OfflinePage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-md items-center px-4">
       <Panel className="w-full px-6 py-12 text-center">
-        <span className="mx-auto mb-4 grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground" aria-hidden>
+        <span className="mx-auto mb-4 grid h-7 w-7 place-items-center rounded-[8px] bg-accent text-accent-foreground" aria-hidden>
           <AudioLines className="h-4 w-4" />
         </span>
         <h1 className="text-2xl font-semibold">You&apos;re offline</h1>
