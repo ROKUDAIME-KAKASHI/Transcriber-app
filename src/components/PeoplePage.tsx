@@ -159,9 +159,9 @@ function PersonSheet({
         aria-modal="true"
         aria-label={person ? "Edit person" : "Add person"}
         className={cx(
-          "safe-bottom fixed inset-x-0 bottom-0 z-40 max-h-[90dvh] overflow-y-auto rounded-t-panel border border-border/70 bg-card p-4 shadow-float",
+          "safe-bottom fixed inset-x-0 bottom-0 z-40 max-h-[90dvh] overflow-y-auto rounded-t-modal border border-border/70 bg-card p-4 shadow-float",
           "transition-[transform,opacity] duration-[var(--dur-3)] ease-[var(--ease-in-out)]",
-          "lg:inset-x-auto lg:bottom-auto lg:left-1/2 lg:top-1/2 lg:w-[28rem] lg:-translate-x-1/2 lg:rounded-panel",
+          "lg:inset-x-auto lg:bottom-auto lg:left-1/2 lg:top-1/2 lg:w-[28rem] lg:-translate-x-1/2 lg:rounded-modal",
           shown ? "translate-y-0 opacity-100 lg:-translate-y-1/2" : "translate-y-full opacity-0 lg:-translate-y-[45%]"
         )}
       >
@@ -196,12 +196,12 @@ function PersonSheet({
           </div>
 
           {warn && (
-            <p className="text-meta text-warning" role="status">
+            <p className="text-meta text-warning-text" role="status">
               {warn}
             </p>
           )}
           {error && (
-            <p className="text-meta text-danger" role="alert">
+            <p className="text-meta text-danger-text" role="alert">
               {error}
               {forceName && " Choose Save anyway to keep both."}
             </p>
@@ -334,7 +334,7 @@ export function PeoplePage() {
       )}
       {error && !offline && (
         <Notice tone="danger" title={error}>
-          <button type="button" onClick={() => void load()} className="mt-1 min-h-11 rounded-btn font-semibold text-accent underline-offset-2 hover:underline">
+          <button type="button" onClick={() => void load()} className="mt-1 min-h-11 rounded-btn font-semibold text-accent-text underline-offset-2 hover:underline">
             Try again
           </button>
         </Notice>
@@ -353,7 +353,7 @@ export function PeoplePage() {
                 title={s.email ?? undefined}
                 className="inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-chip border border-border/70 bg-card px-3 text-ui font-medium shadow-card hover:bg-muted disabled:opacity-50 lg:min-h-9"
               >
-                <UserPlus className="h-4 w-4 shrink-0 text-accent" aria-hidden />
+                <UserPlus className="h-4 w-4 shrink-0 text-accent-text" aria-hidden />
                 <span className="truncate">{s.name}</span>
               </button>
             ))}
@@ -408,7 +408,7 @@ export function PeoplePage() {
                             onClick={() => setSheet({ person: p })}
                             className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-muted"
                           >
-                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent-soft text-ui font-semibold uppercase text-accent" aria-hidden>
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent-soft text-ui font-semibold uppercase text-accent-text" aria-hidden>
                               {p.name.trim().slice(0, 1)}
                             </span>
                             <span className="min-w-0 flex-1">

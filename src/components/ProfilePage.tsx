@@ -55,7 +55,7 @@ function AccountSection({ offline }: { offline: boolean }) {
       <PanelHeader title="Account" />
       <div className="space-y-3 p-4">
         <div className="flex items-center gap-3">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent-soft text-ui font-semibold uppercase text-accent">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent-soft text-ui font-semibold uppercase text-accent-text">
             {email.slice(0, 1) || "?"}
           </span>
           <div className="min-w-0">
@@ -163,7 +163,7 @@ function BookingSection({ offline }: { offline: boolean }) {
               <Button variant="secondary" icon={<Share2 className="h-4 w-4" aria-hidden />} onClick={share}>
                 Share
               </Button>
-              <Link href="/schedule" className="inline-flex min-h-12 items-center rounded-btn px-4 text-ui font-semibold text-accent hover:bg-muted lg:min-h-10">
+              <Link href="/schedule" className="inline-flex min-h-12 items-center rounded-btn px-4 text-ui font-semibold text-accent-text hover:bg-muted lg:min-h-10">
                 Edit
               </Link>
             </div>
@@ -265,7 +265,7 @@ function AppSection({ offline }: { offline: boolean }) {
               type="button"
               onClick={install}
               disabled={offline}
-              className="min-h-11 rounded-btn px-1 text-ui font-semibold text-accent underline-offset-2 hover:underline disabled:opacity-50"
+              className="min-h-11 rounded-btn px-1 text-ui font-semibold text-accent-text underline-offset-2 hover:underline disabled:opacity-50"
             >
               Install latest app again
             </button>
@@ -297,7 +297,7 @@ function AppSection({ offline }: { offline: boolean }) {
                   >
                     Copy link
                   </Button>
-                  <a href={apkUrl} download className="inline-flex min-h-12 items-center rounded-btn px-4 text-ui font-semibold text-accent hover:bg-muted lg:min-h-10">
+                  <a href={apkUrl} download className="inline-flex min-h-12 items-center rounded-btn px-4 text-ui font-semibold text-accent-text hover:bg-muted lg:min-h-10">
                     Download the file
                   </a>
                 </div>
@@ -435,7 +435,7 @@ function StorageSection() {
       <PanelHeader title="Offline models" />
       <div className="space-y-2 p-4">
         <p className="text-ui">{line}</p>
-        <Link href="/" className="inline-flex min-h-11 items-center text-ui font-semibold text-accent underline-offset-2 hover:underline">
+        <Link href="/" className="inline-flex min-h-11 items-center text-ui font-semibold text-accent-text underline-offset-2 hover:underline">
           Open offline use on Record
         </Link>
       </div>
@@ -450,7 +450,7 @@ function PeopleSection() {
   return (
     <Panel aria-label="People">
       <Link href="/people" className="flex min-h-14 items-center gap-3 rounded-panel px-4 py-3 hover:bg-muted">
-        <Users className="h-5 w-5 shrink-0 text-accent" aria-hidden />
+        <Users className="h-5 w-5 shrink-0 text-accent-text" aria-hidden />
         <span className="min-w-0 flex-1">
           <span className="block text-ui font-semibold">People</span>
           <span className="block text-meta text-muted-foreground">The people you meet, for attendees and task owners</span>

@@ -5,7 +5,7 @@ export const THEME_KEY = "transcriber.theme";
 export type ThemePref = "system" | "light" | "dark";
 
 /** Matches --background in globals.css (light and dark). */
-export const THEME_COLORS = { light: "#f7f7fb", dark: "#0e0f17" } as const;
+export const THEME_COLORS = { light: "#f6f5f1", dark: "#111827" } as const;
 
 /** Only the literal "light" or "dark" is a choice; anything else (or nothing) is "system". */
 export function parseTheme(v: unknown): ThemePref {

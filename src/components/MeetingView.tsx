@@ -591,7 +591,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
       <GateReason id="ai-gate-reason" reason={aiReason} />
       {!hasTranscript && <p className="text-meta text-muted-foreground">This meeting has no transcript to work from.</p>}
       {error && (
-        <p className="text-meta text-danger" role="alert">
+        <p className="text-meta text-danger-text" role="alert">
           {error}
         </p>
       )}
@@ -651,7 +651,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
             </button>
           )}
         </div>
-        {titleError && <p className="mt-2 text-meta text-danger" role="alert">{titleError}</p>}
+        {titleError && <p className="mt-2 text-meta text-danger-text" role="alert">{titleError}</p>}
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-meta tabular-nums text-muted-foreground">
           <span suppressHydrationWarning>
             {new Date(meeting.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
@@ -804,7 +804,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
           </Button>
         </div>
         {nothingToExport && <p className="mt-2 text-meta text-muted-foreground">This meeting has nothing to export yet.</p>}
-        {exportNote && <p className="mt-2 text-meta text-danger" role="alert">{exportNote.text}</p>}
+        {exportNote && <p className="mt-2 text-meta text-danger-text" role="alert">{exportNote.text}</p>}
       </section>
 
       <LinkedPlanCard meetingId={meeting.id} className="mb-4" />

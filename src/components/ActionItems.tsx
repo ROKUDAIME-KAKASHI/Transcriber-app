@@ -235,7 +235,7 @@ export function ActionItems({
 
   const gateReason = !aiGate.enabled ? aiGate.reason : null;
   const quoteWarn = (
-    <span className="inline-flex items-center gap-1 text-meta text-warning">
+    <span className="inline-flex items-center gap-1 text-meta text-warning-text">
       <AlertTriangle className="h-3.5 w-3.5" aria-hidden /> Quote not found in transcript
     </span>
   );
@@ -263,7 +263,7 @@ export function ActionItems({
           <GateReason id="action-items-gate" reason={gateReason} />
           {!hasTranscript && <p className="text-meta text-muted-foreground">This meeting has no transcript to work from.</p>}
           {error && (
-            <p className="text-meta text-danger" role="alert">
+            <p className="text-meta text-danger-text" role="alert">
               {error}
             </p>
           )}
@@ -409,7 +409,7 @@ export function ActionItems({
       <Panel aria-label="Saved tasks">
         <PanelHeader title="Saved tasks" meta={saved && saved.length ? String(saved.length) : undefined}>
           {saved && saved.length > 0 && (
-            <Link href={`/tasks?meetingId=${encodeURIComponent(meetingId)}&status=all`} className="text-meta font-semibold text-accent underline-offset-2 hover:underline">
+            <Link href={`/tasks?meetingId=${encodeURIComponent(meetingId)}&status=all`} className="text-meta font-semibold text-accent-text underline-offset-2 hover:underline">
               View in Tasks
             </Link>
           )}
@@ -427,7 +427,7 @@ export function ActionItems({
                 <PlanNextButton meetingId={meetingId} className="w-full sm:w-auto" />
               </div>
               {agendaError && (
-                <p className="text-meta text-danger" role="alert">
+                <p className="text-meta text-danger-text" role="alert">
                   {agendaError}
                 </p>
               )}
@@ -436,7 +436,7 @@ export function ActionItems({
           {saved === null ? (
             <p className="text-ui text-muted-foreground">Loading…</p>
           ) : loadError ? (
-            <p className="text-meta text-danger" role="alert">
+            <p className="text-meta text-danger-text" role="alert">
               {loadError}
             </p>
           ) : saved.length === 0 ? (
@@ -458,7 +458,7 @@ export function ActionItems({
                   </div>
                   <Button
                     variant="ghost"
-                    className="!min-h-11 !min-w-11 px-0 text-danger"
+                    className="!min-h-11 !min-w-11 px-0 text-danger-text"
                     onClick={() => void deleteSaved(i.id)}
                     aria-label={`Delete task: ${i.task}`}
                   >

@@ -13,6 +13,7 @@ import { tap } from "@/lib/haptics";
 import { prefersReducedMotion } from "@/lib/motionPref";
 import { useBackgroundRecording } from "@/hooks/useBackgroundRecording";
 import { ThemeToggle } from "./ThemeToggle";
+import { AccountMenu } from "./AccountMenu";
 import { applyTheme, getThemePref } from "@/lib/themePref";
 import { RecordingPill } from "./RecordingPill";
 import { AppUpdateBanner } from "./AppUpdateBanner";
@@ -47,7 +48,7 @@ function Logo() {
 /**
  * Laptops (lg+): fixed sidebar with navigation and account.
  * Phones and tablets: slim top bar plus a bottom tab bar within thumb reach.
- * Only the floating phone tab bar is glass; the rest is solid with hairlines.
+ * Everything is solid with hairline borders. Phones put People, Profile, theme and sign out in an account menu.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -89,7 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh">
       {/* Sidebar (laptops) */}
-      <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-border/70 bg-card px-3 py-4 lg:flex">
+      <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-border bg-card px-3 py-4 lg:flex">
         <div className="px-2.5 py-1">
           <Logo />
           <ConnectivityPill className="mt-1" />
@@ -107,10 +108,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 }}
                 className={cx(
                   "flex min-h-10 items-center gap-3 rounded-btn px-2.5 text-ui font-medium transition-[background-color,transform] duration-[var(--dur-1)] active:scale-[0.96]",
-                  active ? "bg-accent-soft text-foreground" : "text-muted-foreground hover:bg-muted"
+                  active ? "bg-accent-soft text-accent-text" : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                <Icon className={cx("h-4 w-4", active && "text-accent")} />
+                <Icon className="h-4 w-4" />
                 {label}
                 {href === "/tasks" && <OverdueBadge count={overdue} className="ml-auto" />}
               </Link>
@@ -122,15 +123,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-current={pathname.startsWith("/people") ? "page" : undefined}
               className={cx(
                 "flex min-h-10 items-center gap-3 rounded-btn px-2.5 text-ui font-medium transition-[background-color,transform] duration-[var(--dur-1)] active:scale-[0.96]",
-                pathname.startsWith("/people") ? "bg-accent-soft text-foreground" : "text-muted-foreground hover:bg-muted"
+                pathname.startsWith("/people") ? "bg-accent-soft text-accent-text" : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
-              <Users className={cx("h-4 w-4", pathname.startsWith("/people") && "text-accent")} />
+              <Users className="h-4 w-4" />
               People
             </Link>
           )}
         </nav>
-        <div className="mt-auto border-t border-border/70 pt-3">
+        <div className="mt-auto border-t border-border pt-3">
           <div className="flex items-center gap-1 px-1.5">
             <Link
               href="/profile"
@@ -164,24 +165,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Top bar (phones, tablets) */}
-      <header className="sticky top-0 z-20 border-b border-border/70 bg-background/90 pt-[var(--safe-area-inset-top,env(safe-area-inset-top))] lg:hidden">
+      <header className="sticky top-0 z-20 border-b border-border bg-background pt-[var(--safe-area-inset-top,env(safe-area-inset-top))] lg:hidden">
         <div className="flex h-14 items-center justify-between gap-4 px-4">
           <Logo />
           <div className="ml-auto flex items-center gap-1">
           <ConnectivityPill />
-          <ThemeToggle />
-          <Link
-            href="/profile"
-            aria-label="Profile"
-            aria-current={pathname === "/profile" ? "page" : undefined}
-            title={email ? `Profile (${email})` : "Profile"}
-            className={cx(
-              "-mr-2 grid h-11 w-11 place-items-center rounded-btn hover:text-foreground",
-              pathname === "/profile" ? "text-accent" : "text-muted-foreground"
-            )}
-          >
-            <CircleUser className="h-6 w-6" />
-          </Link>
+          <AccountMenu pathname={pathname} email={email} peopleOn={peopleOn} offline={offline} onSignOut={doSignOut} />
           </div>
         </div>
       </header>
@@ -193,12 +182,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
 
-      {/* Bottom tab bar (phones, tablets): floating glass */}
-      <nav
-        className="glass fixed inset-x-4 bottom-[calc(12px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-20 mx-auto h-16 max-w-md rounded-full shadow-float lg:hidden"
-        aria-label="Main"
-      >
-        <div className="grid h-full items-center px-1.5" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
+      {/* Bottom tab bar (phones, tablets): opaque, hairline top border, safe-area aware */}
+      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card lg:hidden" aria-label="Main">
+        <div className="mx-auto grid max-w-xl" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
@@ -210,16 +196,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   if (!active) tap();
                 }}
                 className={cx(
-                  "relative flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-full text-meta font-semibold transition-transform duration-[var(--dur-1)] active:scale-[0.96]",
-                  active ? "text-foreground" : "text-muted-foreground"
+                  "relative flex min-h-14 min-w-11 flex-col items-center justify-center gap-0.5 text-meta font-semibold transition-colors active:bg-muted",
+                  active ? "text-accent-text" : "text-muted-foreground"
                 )}
               >
-                {active && <span className="pop-in absolute inset-0 rounded-full bg-accent-soft" aria-hidden />}
+                {active && <span className="absolute inset-x-6 top-0 h-0.5 rounded-b bg-accent" aria-hidden />}
                 <span className="relative">
-                  <Icon className={cx("h-5 w-5", active && "text-accent")} />
+                  <Icon className="h-5 w-5" />
                   {href === "/tasks" && <OverdueBadge count={overdue} className="absolute -right-2.5 -top-1.5 ring-2 ring-card" />}
                 </span>
-                <span className="relative">{label}</span>
+                <span>{label}</span>
               </Link>
             );
           })}

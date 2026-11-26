@@ -106,8 +106,8 @@ export function RenameSpeakerSheet({
         aria-label="Rename speaker"
         aria-modal={!desktop}
         className={
-          "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-panel border border-border/70 bg-card p-4 shadow-float transition-[transform,opacity] duration-[var(--dur-3)] ease-[var(--ease-in-out)] " +
-          "lg:absolute lg:inset-x-auto lg:bottom-auto lg:left-0 lg:top-full lg:z-30 lg:mt-2 lg:w-72 lg:rounded-panel " +
+          "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-modal border border-border/70 bg-card p-4 shadow-float transition-[transform,opacity] duration-[var(--dur-3)] ease-[var(--ease-in-out)] " +
+          "lg:absolute lg:inset-x-auto lg:bottom-auto lg:left-0 lg:top-full lg:z-30 lg:mt-2 lg:w-72 lg:rounded-modal " +
           (shown ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 lg:translate-y-2")
         }
       >
@@ -163,7 +163,7 @@ export function RenameSpeakerSheet({
         )}
         <p className="mt-2 text-meta text-muted-foreground">Applies to the transcript, exports and minutes.</p>
         {error && (
-          <p className="mt-2 text-meta text-danger" role="alert">
+          <p className="mt-2 text-meta text-danger-text" role="alert">
             Couldn&apos;t save the name. Try again.
           </p>
         )}

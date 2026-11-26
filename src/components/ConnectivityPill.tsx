@@ -67,7 +67,7 @@ export function ConnectivityPill({ className = "" }: { className?: string }) {
             onClick={() => setOpen((o) => !o)}
             className="-my-2 inline-flex items-center py-2"
           >
-            <span className="pop-in inline-flex h-7 items-center gap-1.5 rounded-full bg-warning-soft px-2.5 text-meta font-semibold text-warning">
+            <span className="pop-in inline-flex h-7 items-center gap-1.5 rounded-full bg-warning-soft px-2.5 text-meta font-semibold text-warning-text">
               <CloudOff size={14} aria-hidden />
               Offline
             </span>
@@ -84,7 +84,7 @@ export function ConnectivityPill({ className = "" }: { className?: string }) {
               <ul className="mt-1 space-y-1">
                 {WORKS.map((t) => (
                   <li key={t} className="flex items-start gap-2 text-meta">
-                    <Check size={14} className="mt-0.5 shrink-0 text-success" aria-hidden />
+                    <Check size={14} className="mt-0.5 shrink-0 text-success-text" aria-hidden />
                     {t}
                   </li>
                 ))}

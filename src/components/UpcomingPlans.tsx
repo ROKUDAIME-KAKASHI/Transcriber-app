@@ -70,7 +70,7 @@ export function UpcomingPlans({ className }: { className?: string }) {
         </h2>
         <Link
           href="/plan?new=1"
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-btn px-2 text-meta font-semibold text-accent hover:bg-accent-soft"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-btn px-2 text-meta font-semibold text-accent-text hover:bg-accent-soft"
         >
           <CalendarPlus className="h-4 w-4" aria-hidden /> Plan a meeting
         </Link>
@@ -105,7 +105,7 @@ export function UpcomingPlans({ className }: { className?: string }) {
                 href={recordHref(p)}
                 aria-label={`Record ${p.title}`}
                 className={cx(
-                  "grid w-12 shrink-0 place-items-center rounded-panel border border-border/70 bg-card text-accent shadow-card hover:bg-accent-soft"
+                  "grid w-12 shrink-0 place-items-center rounded-panel border border-border/70 bg-card text-accent-text shadow-card hover:bg-accent-soft"
                 )}
               >
                 <Mic className="h-5 w-5" aria-hidden />

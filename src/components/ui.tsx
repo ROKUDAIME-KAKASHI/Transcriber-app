@@ -35,7 +35,7 @@ export function Button({ variant = "secondary", size = "md", loading, icon, clas
         variant === "primary" && "bg-accent text-accent-foreground hover:bg-accent/90",
         variant === "secondary" && "border border-border/70 bg-card text-foreground shadow-card hover:bg-muted",
         variant === "ghost" && "text-muted-foreground hover:bg-muted hover:text-foreground",
-        variant === "danger" && "text-danger hover:bg-danger-soft",
+        variant === "danger" && "text-danger-text hover:bg-danger-soft",
         variant === "danger-solid" && "bg-danger text-white hover:bg-danger/90",
         className
       )}
@@ -259,10 +259,10 @@ export function Badge({
       className={cx(
         "inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-meta font-semibold",
         tone === "neutral" && "bg-muted text-muted-foreground",
-        tone === "accent" && "bg-accent-soft text-accent",
-        tone === "success" && "bg-success-soft text-success",
-        tone === "warning" && "bg-warning-soft text-warning",
-        tone === "danger" && "bg-danger-soft text-danger",
+        tone === "accent" && "bg-accent-soft text-accent-text",
+        tone === "success" && "bg-success-soft text-success-text",
+        tone === "warning" && "bg-warning-soft text-warning-text",
+        tone === "danger" && "bg-danger-soft text-danger-text",
         tone === "live" && "bg-danger-soft text-record"
       )}
     >
@@ -315,13 +315,13 @@ export function Notice({
           className={cx(
             "mt-0.5 shrink-0",
             tone === "danger"
-              ? "text-danger"
+              ? "text-danger-text"
               : tone === "success"
-                ? "text-success"
+                ? "text-success-text"
                 : tone === "warning"
-                  ? "text-warning"
+                  ? "text-warning-text"
                   : tone === "accent"
-                    ? "text-accent"
+                    ? "text-accent-text"
                     : "text-muted-foreground"
           )}
         >

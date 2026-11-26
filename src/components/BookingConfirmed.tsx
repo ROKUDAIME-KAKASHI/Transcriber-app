@@ -75,7 +75,7 @@ export function BookingConfirmed(p: Props) {
     <div className="mx-auto max-w-xl space-y-6 text-center">
       <div className="space-y-3">
         <span
-          className={`mx-auto grid h-16 w-16 place-items-center rounded-full ${cancelled ? "bg-danger-soft text-danger" : "bg-success-soft text-success"}`}
+          className={`mx-auto grid h-16 w-16 place-items-center rounded-full ${cancelled ? "bg-danger-soft text-danger-text" : "bg-success-soft text-success-text"}`}
         >
           {cancelled ? <CalendarX className="h-8 w-8" aria-hidden /> : <Check className="h-8 w-8" aria-hidden />}
         </span>
@@ -119,14 +119,14 @@ export function BookingConfirmed(p: Props) {
       )}
 
       {error && (
-        <p className="text-meta text-danger" role="alert">
+        <p className="text-meta text-danger-text" role="alert">
           {error}
         </p>
       )}
 
       {cancelled ? (
         p.handle && (
-          <Link href={`/book/${p.handle}/${p.eventSlug}`} className="inline-flex min-h-11 items-center text-ui font-semibold text-accent">
+          <Link href={`/book/${p.handle}/${p.eventSlug}`} className="inline-flex min-h-11 items-center text-ui font-semibold text-accent-text">
             Book another time
           </Link>
         )
@@ -141,7 +141,7 @@ export function BookingConfirmed(p: Props) {
           </Button>
         </div>
       ) : (
-        <button type="button" className="min-h-11 px-3 text-meta font-semibold text-danger" onClick={() => setConfirming(true)}>
+        <button type="button" className="min-h-11 px-3 text-meta font-semibold text-danger-text" onClick={() => setConfirming(true)}>
           Cancel booking
         </button>
       )}

@@ -23,7 +23,7 @@ export function MinutesStatus({ meetingId, onRetry, className }: { meetingId: st
   if (job.phase === "error") {
     return (
       <div role="alert" className={cx(box, "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between")}>
-        <p className="text-danger">{job.error ?? "Couldn't write the minutes."}</p>
+        <p className="text-danger-text">{job.error ?? "Couldn't write the minutes."}</p>
         <Button icon={<RotateCw className="h-4 w-4" aria-hidden />} onClick={onRetry}>
           Try again
         </Button>
@@ -44,7 +44,7 @@ export function MinutesStatus({ meetingId, onRetry, className }: { meetingId: st
   return (
     <div role="status" aria-live="polite" className={box}>
       <p className="flex items-center gap-2 font-semibold">
-        <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden />
+        <Loader2 className="h-4 w-4 animate-spin text-accent-text" aria-hidden />
         {job.phase === "uploading"
           ? "Saving the transcript first…"
           : left > 1

@@ -42,8 +42,8 @@ function run(stored: string | null, throwing = false) {
 }
 
 test("init script sets data-theme and theme-color from the saved choice", () => {
-  assert.deepEqual(run("dark"), { attrs: { "data-theme": "dark" }, color: "#0e0f17" });
-  assert.deepEqual(run("light"), { attrs: { "data-theme": "light" }, color: "#f7f7fb" });
+  assert.deepEqual(run("dark"), { attrs: { "data-theme": "dark" }, color: "#111827" });
+  assert.deepEqual(run("light"), { attrs: { "data-theme": "light" }, color: "#f6f5f1" });
 });
 
 test("init script leaves system alone and never throws", () => {

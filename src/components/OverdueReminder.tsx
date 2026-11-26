@@ -76,9 +76,9 @@ export function OverdueLine() {
       href="/tasks?view=timeline"
       className="flex min-h-11 items-center gap-2 border-t border-border/70 px-4 text-meta text-muted-foreground hover:bg-muted"
     >
-      <AlertTriangle className="h-4 w-4 shrink-0 text-danger" aria-hidden />
+      <AlertTriangle className="h-4 w-4 shrink-0 text-danger-text" aria-hidden />
       <span className="min-w-0 flex-1 truncate">{overdueText(count)}</span>
-      <span className="font-semibold text-accent">View</span>
+      <span className="font-semibold text-accent-text">View</span>
     </Link>
   );
 }

@@ -167,7 +167,7 @@ export function ShareMenu(props: ShareMenuProps) {
         aria-modal="true"
         aria-label="Share"
         className={cx(
-          "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-panel border-t border-border/70 bg-card shadow-float transition-transform",
+          "safe-bottom fixed inset-x-0 bottom-0 z-40 rounded-t-modal border-t border-border/70 bg-card shadow-float transition-transform",
           shown && open ? "translate-y-0 duration-[var(--dur-3)] ease-[var(--ease-in-out)]" : "translate-y-full duration-150 ease-in"
         )}
       >

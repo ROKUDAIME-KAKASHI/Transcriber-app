@@ -46,7 +46,7 @@ function Bars({ data, value, label }: { data: AdminData["daily"]; value: (p: Adm
   const gap = 4;
   const h = 96;
   return (
-    <svg viewBox={`0 0 ${data.length * (w + gap)} ${h}`} className="h-24 w-full min-w-[480px] text-accent" role="img" aria-label="Last 30 days">
+    <svg viewBox={`0 0 ${data.length * (w + gap)} ${h}`} className="h-24 w-full min-w-[480px] text-accent-text" role="img" aria-label="Last 30 days">
       {data.map((p, i) => {
         const bh = (value(p) / max) * (h - 4);
         return (

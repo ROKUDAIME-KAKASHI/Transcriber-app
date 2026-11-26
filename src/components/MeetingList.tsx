@@ -206,7 +206,7 @@ export function MeetingList() {
         <Panel as="div" className="px-6 py-12 text-center">
           <div aria-hidden className="relative mx-auto h-40 w-40">
             <div className="glass absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full">
-              <Mic className="h-7 w-7 text-accent" />
+              <Mic className="h-7 w-7 text-accent-text" />
             </div>
           </div>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight">No meetings yet</h2>
@@ -277,7 +277,7 @@ export function MeetingList() {
                     >
                       <span className="min-w-0">
                         <span className="line-clamp-2 text-ui font-semibold">{m.title}</span>
-                        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-meta tabular-nums text-muted-foreground" suppressHydrationWarning>
+                        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-meta num text-muted-foreground" suppressHydrationWarning>
                           {mounted && <span className="shrink-0 whitespace-nowrap">{day(m.createdAt)} · {time(m.createdAt)} ·</span>}
                           <span className="shrink-0 whitespace-nowrap">{formatDuration(m.durationSec)}</span>
                         </span>

@@ -31,7 +31,7 @@ export function NamingStrip({
   return (
     <div className="space-y-2" role="status" aria-live="polite">
       <p className="flex items-center gap-1.5 px-1 text-meta text-muted-foreground">
-        <Eye className={`h-3.5 w-3.5 ${state.reading ? "animate-pulse text-accent" : ""}`} aria-hidden />
+        <Eye className={`h-3.5 w-3.5 ${state.reading ? "animate-pulse text-accent-text" : ""}`} aria-hidden />
         {state.status === "loading" ? "Getting ready to read names on this device…" : "Reading names on this device"}
       </p>
       {entries.length > 0 && (

@@ -181,7 +181,7 @@ function TranscriptViewImpl({
     <button
       type="button"
       onClick={() => setShown((n) => n + pageSize * 2)}
-      className="mx-auto my-2 block min-h-10 rounded-chip px-4 text-meta font-medium text-accent hover:bg-accent/10"
+      className="mx-auto my-2 block min-h-10 rounded-chip px-4 text-meta font-medium text-accent-text hover:bg-accent/10"
     >
       Show {Math.min(hidden, pageSize * 2).toLocaleString("en-IN")} {windowMode === "tail" ? "earlier" : "more"} paragraphs
       {hidden > pageSize * 2 ? ` of ${hidden.toLocaleString("en-IN")}` : ""}

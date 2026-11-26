@@ -280,7 +280,7 @@ export function ScheduleSettings() {
           <Panel>
             <PanelHeader title="Your booking link">
               {!editingHandle && (
-                <button type="button" className="min-h-11 px-2 text-meta font-semibold text-accent" onClick={() => setEditingHandle(true)}>
+                <button type="button" className="min-h-11 px-2 text-meta font-semibold text-accent-text" onClick={() => setEditingHandle(true)}>
                   Change
                 </button>
               )}
@@ -384,7 +384,7 @@ export function ScheduleSettings() {
               <div>
                 <p className="text-meta text-muted-foreground">
                   Times in {tz.replace(/_/g, " ")} ·{" "}
-                  <button type="button" className="font-semibold text-accent" onClick={() => setEditingTz((v) => !v)} aria-expanded={editingTz}>
+                  <button type="button" className="font-semibold text-accent-text" onClick={() => setEditingTz((v) => !v)} aria-expanded={editingTz}>
                     Change
                   </button>
                 </p>
@@ -401,7 +401,7 @@ export function ScheduleSettings() {
                       ))}
                     </select>
                     {tz !== browserTz && (
-                      <button type="button" className="text-meta font-semibold text-accent" onClick={() => setTz(browserTz)}>
+                      <button type="button" className="text-meta font-semibold text-accent-text" onClick={() => setTz(browserTz)}>
                         Use this device&apos;s zone ({browserTz.replace(/_/g, " ")})
                       </button>
                     )}
@@ -422,7 +422,7 @@ export function ScheduleSettings() {
                 ))}
               </div>
               <details className="group">
-                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 text-ui font-semibold text-accent [&::-webkit-details-marker]:hidden">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 text-ui font-semibold text-accent-text [&::-webkit-details-marker]:hidden">
                   More options
                   <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden />
                 </summary>
@@ -467,7 +467,7 @@ export function ScheduleSettings() {
 
           <div className="sticky bottom-[calc(92px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-10 space-y-2 lg:static">
             {formError && (
-              <p className="rounded-chip bg-card px-3 py-2 text-meta text-danger shadow-card" role="alert">
+              <p className="rounded-chip bg-card px-3 py-2 text-meta text-danger-text shadow-card" role="alert">
                 {formError}
               </p>
             )}

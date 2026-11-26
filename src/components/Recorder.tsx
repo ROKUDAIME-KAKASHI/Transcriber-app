@@ -454,11 +454,11 @@ export function Recorder() {
   const saveStatus = rec.meetingId && (
     <span className="inline-flex items-center gap-1.5">
       {rec.saveState === "saving" && <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving</>}
-      {rec.saveState === "saved" && <><Cloud className="h-3.5 w-3.5 text-success" /> Synced</>}
+      {rec.saveState === "saved" && <><Cloud className="h-3.5 w-3.5 text-success-text" /> Synced</>}
       {rec.saveState === "local" && (
-        <><HardDrive className="h-3.5 w-3.5 text-success" /> Saved on this device{rec.syncNote ? ` · ${rec.syncNote}` : ""}</>
+        <><HardDrive className="h-3.5 w-3.5 text-success-text" /> Saved on this device{rec.syncNote ? ` · ${rec.syncNote}` : ""}</>
       )}
-      {rec.saveState === "error" && <><CloudOff className="h-3.5 w-3.5 text-danger" /> Offline · will retry</>}
+      {rec.saveState === "error" && <><CloudOff className="h-3.5 w-3.5 text-danger-text" /> Offline · will retry</>}
     </span>
   );
 
@@ -470,9 +470,9 @@ export function Recorder() {
           // Phones: the transcript is below the fold after Stop, so offer the meeting up here.
           <Link
             href={`/meeting?id=${rec.meetingId}`}
-            className="flex items-center gap-3 rounded-t-panel border-b border-border px-4 py-3 text-ui hover:bg-muted/50 lg:hidden"
+            className="flex items-center gap-3 rounded-t-modal border-b border-border px-4 py-3 text-ui hover:bg-muted/50 lg:hidden"
           >
-            <FileText className="h-4 w-4 shrink-0 text-success" />
+            <FileText className="h-4 w-4 shrink-0 text-success-text" />
             <span className="flex-1">
               <span className="block font-medium">Meeting saved</span>
               <span className="block text-meta text-muted-foreground">Open it for minutes and export</span>
@@ -511,7 +511,7 @@ export function Recorder() {
             <span
               className={cx(
                 busy && !rec.isPaused && "text-record",
-                busy && rec.isPaused && "text-warning",
+                busy && rec.isPaused && "text-warning-text",
                 !busy && "text-muted-foreground",
                 busy && !rec.isPaused && mode === "live" && "live-blink"
               )}
@@ -528,7 +528,7 @@ export function Recorder() {
           )}
           <div
             className={cx(
-              "mt-2 font-mono text-display font-normal tabular-nums tracking-[-0.02em]",
+              "mt-2 num text-display font-normal tracking-[-0.02em]",
               busy || starting ? "text-foreground" : "text-muted-foreground"
             )}
           >
@@ -611,7 +611,7 @@ export function Recorder() {
               <button
                 type="button"
                 onClick={() => setBoostUntil(Date.now() + CALM_BOOST_MS)}
-                className="font-semibold text-accent underline underline-offset-2"
+                className="font-semibold text-accent-text underline underline-offset-2"
               >
                 Show animation
               </button>
@@ -671,7 +671,7 @@ export function Recorder() {
             <div className="mt-2 w-full text-left" role="status">
               <Notice
                 tone={rec.notice.tone}
-                icon={<HardDrive className={cx("h-4 w-4", rec.notice.tone === "danger" ? "text-danger" : "text-warning")} />}
+                icon={<HardDrive className={cx("h-4 w-4", rec.notice.tone === "danger" ? "text-danger-text" : "text-warning-text")} />}
                 title="Phone storage"
               >
                 {rec.notice.text}
@@ -692,7 +692,7 @@ export function Recorder() {
           )}
 
           {(nativeMode || nativeLocal) && battery.restricted && (
-            <Notice icon={<BatteryWarning className="h-4 w-4 text-warning" />} tone="warning" title="Let long meetings run">
+            <Notice icon={<BatteryWarning className="h-4 w-4 text-warning-text" />} tone="warning" title="Let long meetings run">
               <span className="block">
                 Android may stop the app during a long recording to save battery. Set battery use to Unrestricted.
               </span>
@@ -745,7 +745,7 @@ export function Recorder() {
                       ? APP_LOCAL_ENGINE_NOTES[onDevice]
                       : APP_ENGINE_NOTES[selectedEngine.value]
                     : selectedEngine.description}
-                  {ready[effective] && <> <span className="text-success">Ready offline</span></>}
+                  {ready[effective] && <> <span className="text-success-text">Ready offline</span></>}
                 </p>
               )}
               <GateReason reason={deepgramGate.enabled ? null : deepgramGate.reason} icon={<CloudOff className="h-3.5 w-3.5" />} />
@@ -956,7 +956,7 @@ export function Recorder() {
         <div className="pointer-events-none fixed inset-x-0 bottom-[calc(88px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-30 flex justify-center px-3 lg:hidden">
           <div className="glass pointer-events-auto flex h-12 items-center gap-3 rounded-full px-3 shadow-float">
             <LiveDot paused={rec.isPaused} solid={mode !== "live"} />
-            <span className={cx("font-mono text-ui font-semibold tabular-nums", rec.isPaused && "text-muted-foreground")}>
+            <span className={cx("num text-ui font-semibold", rec.isPaused && "text-muted-foreground")}>
               {formatDuration(rec.recordingSeconds)}
             </span>
             <Waveform bars={10} height={20} level={rec.isPaused ? 0 : rec.micLevel} reduced={mode !== "live"} />

@@ -214,14 +214,14 @@ export function PreworkSection({
                     <p className="break-words text-ui font-semibold">{ref.fileName}</p>
                     <p className="text-meta text-muted-foreground tabular-nums">{sizeText(ref.sizeBytes)}</p>
                     {ref.truncated && (
-                      <p className="text-meta text-warning">Text cut at {MAX_REFERENCE_CHARS / 1000}k characters</p>
+                      <p className="text-meta text-warning-text">Text cut at {MAX_REFERENCE_CHARS / 1000}k characters</p>
                     )}
                   </div>
                   <button
                     type="button"
                     onClick={() => void remove(ref)}
                     aria-label={`Delete ${ref.fileName}`}
-                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-btn text-muted-foreground transition-colors hover:bg-danger-soft hover:text-danger"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-btn text-muted-foreground transition-colors hover:bg-danger-soft hover:text-danger-text"
                   >
                     <Trash2 className="h-4 w-4" aria-hidden />
                   </button>
@@ -273,14 +273,14 @@ export function PreworkSection({
                             </div>
                             {pt.sourceQuote && (
                               <details className="group pb-2 pl-7">
-                                <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 text-meta font-semibold text-accent">
+                                <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 text-meta font-semibold text-accent-text">
                                   Source <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
                                 </summary>
                                 <blockquote className="mt-1 break-words border-l-2 border-border pl-2 text-meta italic text-muted-foreground">
                                   {pt.sourceQuote}
                                 </blockquote>
                                 {!pt.verified && (
-                                  <p className="mt-1 text-meta text-warning">This quote wasn&apos;t found word for word in the file. Check it before using.</p>
+                                  <p className="mt-1 text-meta text-warning-text">This quote wasn&apos;t found word for word in the file. Check it before using.</p>
                                 )}
                               </details>
                             )}
