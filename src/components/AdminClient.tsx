@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button, FieldLabel, Notice, Panel, PanelHeader, Switch, inputCls } from "./ui";
+import { PasswordInput } from "./PasswordInput";
 
 export function AdminLogin() {
   const [pw, setPw] = useState("");
@@ -35,15 +36,7 @@ export function AdminLogin() {
       <form onSubmit={submit} className="space-y-4 p-4">
         <div>
           <FieldLabel htmlFor="admin-pw">Password</FieldLabel>
-          <input
-            id="admin-pw"
-            type="password"
-            autoComplete="current-password"
-            maxLength={200}
-            value={pw}
-            onChange={(e) => setPw(e.target.value)}
-            className={inputCls}
-          />
+          <PasswordInput id="admin-pw" autoComplete="current-password" maxLength={200} value={pw} onChange={setPw} />
         </div>
         {err && <Notice tone="danger">{err}</Notice>}
         <Button type="submit" variant="primary" loading={busy} disabled={!pw} className="w-full">

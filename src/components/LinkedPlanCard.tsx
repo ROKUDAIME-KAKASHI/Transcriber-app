@@ -79,7 +79,7 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
           {followOn && previous && (
             <p className="text-meta text-muted-foreground">
               Follow-up of{" "}
-              <Link href={`/meetings/${encodeURIComponent(previous.meetingId)}`} className="font-semibold text-accent-text underline underline-offset-2">
+              <Link href={`/meeting?id=${encodeURIComponent(previous.meetingId)}`} className="font-semibold text-accent-text underline underline-offset-2">
                 {previous.title}
               </Link>
             </p>

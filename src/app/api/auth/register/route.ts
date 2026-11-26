@@ -1,10 +1,12 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { EMAIL_DOMAIN_MESSAGE, isAllowedEmailDomain } from "@/lib/emailRule";
+import { passwordProblem } from "@/lib/passwordRule";
 
 const Body = z.object({
   email: z.string().email(),
-  password: z.string().min(6, "Password must be at least 6 characters long"),
+  password: z.string().min(1, "Password is required"),
 });
 
 export async function POST(req: Request) {
@@ -17,6 +19,9 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.toLowerCase().trim();
+  if (!isAllowedEmailDomain(email)) return Response.json({ error: EMAIL_DOMAIN_MESSAGE }, { status: 400 });
+  const weak = passwordProblem(parsed.data.password);
+  if (weak) return Response.json({ error: weak }, { status: 400 });
   try {
     const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (existing) {

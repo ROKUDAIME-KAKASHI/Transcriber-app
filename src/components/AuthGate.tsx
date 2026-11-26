@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WifiOff } from "lucide-react";
 import { decideAuth } from "@/lib/authCore";
+import { holdAppForRecording } from "@/lib/recorderOpts";
+import { useRecorderActions } from "./RecorderProvider";
 import { isRecordingActive } from "@/lib/recordingFlag";
 import { useAuth } from "./AuthProvider";
 import { Button, Panel } from "./ui";
@@ -27,6 +29,7 @@ function Skeleton() {
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { probe, cachedUser, probing, recheck } = useAuth();
   const router = useRouter();
+  const recorder = useRecorderActions();
   const [waitedMs, setWaitedMs] = useState(0);
 
   useEffect(() => {
@@ -48,7 +51,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const attempt = async () => {
-      const recording = await isRecordingActive();
+      const recording = !!recorder?.isBusy() || (await isRecordingActive());
       if (cancelled) return;
       if (recording) {
         setHoldForRecording(true);
@@ -63,15 +66,21 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [decision, router]);
+  }, [decision, router, recorder]);
 
-  if (decision === "app" || decision === "app-cached") return <>{children}</>;
-  if (decision === "redirect-login" && holdForRecording) {
+  // One tree shape for every held state: `children` stays at the same position, so React never remounts it.
+  // The recorder is above this gate, so a busy recording is also held here synchronously (no skeleton, no login).
+  const busyNow = !!recorder?.isBusy();
+  const held = holdAppForRecording(decision, busyNow) || (decision === "redirect-login" && holdForRecording);
+  if (decision === "app" || decision === "app-cached" || held) {
+    const showBanner = decision === "redirect-login";
     return (
       <>
-        <div role="alert" className="sticky top-0 z-50 bg-amber-100 px-4 py-2 text-center text-ui text-amber-900">
-          Your session expired. Your recording is safe and keeps running. Sign in again after you stop it.
-        </div>
+        {showBanner ? (
+          <div role="alert" className="sticky top-0 z-50 bg-amber-100 px-4 py-2 text-center text-ui text-amber-900">
+            Your session expired. Your recording is safe and keeps running. Sign in again after you stop it.
+          </div>
+        ) : null}
         {children}
       </>
     );

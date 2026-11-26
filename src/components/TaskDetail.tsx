@@ -8,6 +8,7 @@ import { Badge, Button, FieldLabel, cx, selectCls } from "./ui";
 import { pushOverlay } from "@/lib/overlays";
 import { STATUSES, STATUS_LABEL, type TaskRow, type TaskStatus } from "@/lib/taskTracker";
 import { dueView } from "@/lib/taskView";
+import { localToday, maxDeadline, validateDeadline } from "@/lib/deadline";
 import { HISTORY_PAGE, describeEvent, type HistoryEvent } from "@/lib/taskHistory";
 
 export type Patch = Partial<Pick<TaskRow, "status" | "owner" | "ownerStakeholderId" | "dueDate" | "note" | "task">>;
@@ -103,6 +104,8 @@ export function TaskDetail({
   const [owner, setOwner] = useState(item.owner ?? "");
   const [note, setNote] = useState(item.note ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [dueErr, setDueErr] = useState<string | null>(null);
+  useEffect(() => setDueErr(null), [item.id]);
   useEffect(() => setTitle(item.task), [item.task]);
   useEffect(() => setOwner(item.owner ?? ""), [item.owner]);
   useEffect(() => setNote(item.note ?? ""), [item.note]);
@@ -245,9 +248,23 @@ export function TaskDetail({
                 id={`d-due-${id}`}
                 type="date"
                 value={due.day}
-                onChange={(e) => onPatch(id, { dueDate: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
+                min={localToday()}
+                max={maxDeadline()}
+                aria-invalid={!!dueErr}
+                aria-describedby={dueErr ? `d-due-err-${id}` : undefined}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const err = validateDeadline(v, { previous: due.day });
+                  setDueErr(err);
+                  if (!err) onPatch(id, { dueDate: v ? `${v}T00:00:00.000Z` : null });
+                }}
                 className={cx(fieldCls, "num")}
               />
+              {dueErr && (
+                <p id={`d-due-err-${id}`} className="mt-1 text-meta text-danger-text" role="alert">
+                  {dueErr}
+                </p>
+              )}
               <div className="mt-1 flex flex-wrap items-center gap-2 empty:hidden">
                 {due.overdue && (
                   <Badge tone="danger">

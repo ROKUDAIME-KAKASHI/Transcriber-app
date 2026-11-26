@@ -12,7 +12,6 @@ import { Mic, LayoutList, ListChecks, CalendarClock, Users, LogOut, AudioLines, 
 import { cx } from "./ui";
 import { tap } from "@/lib/haptics";
 import { prefersReducedMotion } from "@/lib/motionPref";
-import { useBackgroundRecording } from "@/hooks/useBackgroundRecording";
 import { ThemeToggle } from "./ThemeToggle";
 import { AccountMenu } from "./AccountMenu";
 import { applyTheme, getThemePref } from "@/lib/themePref";
@@ -70,7 +69,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (offline) return;
     signOutNow();
   };
-  const bg = useBackgroundRecording(pathname !== "/");
   const contentRef = useRef<HTMLDivElement>(null);
   const firstPath = useRef(true);
   useEffect(() => {
@@ -252,7 +250,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} tasksOn={tasksOn} scheduleOn={scheduleOn} peopleOn={peopleOn} />}
       <OverdueReminder />
-      {pathname !== "/" && <RecordingPill state={bg} />}
+      <RecordingPill />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { localToday, maxDeadline, validateDeadline } from "@/lib/deadline";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -186,6 +187,8 @@ export function PlanPage() {
     setFormError(null);
   };
 
+  // New plans (or a changed date) can't be in the past; an old plan keeps its stored date.
+  const dateError = form ? validateDeadline(form.date, { previous: plan ? formFromPlan(plan).date : null }) : null;
   const dirty = useMemo(() => !!form && (!plan || JSON.stringify(form) !== JSON.stringify(formFromPlan(plan))), [form, plan]);
   const zones = useMemo(() => timeZones(form?.timeZone ?? browserTz), [form?.timeZone, browserTz]);
 
@@ -205,6 +208,10 @@ export function PlanPage() {
   const save = async () => {
     if (!form) return;
     setFormError(null);
+    if (dateError) {
+      setFormError(dateError);
+      return;
+    }
     const p = payloadFromForm(form);
     if (!p.ok) {
       setFormError(p.error);
@@ -472,7 +479,8 @@ export function PlanPage() {
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id="plan-date" label="Date">
-              <input id="plan-date" type="date" value={form.date} onChange={(e) => set("date", e.target.value)} className={inputCls} />
+              <input id="plan-date" type="date" min={plan ? undefined : localToday()} max={maxDeadline()} value={form.date} onChange={(e) => set("date", e.target.value)} aria-invalid={!!dateError} aria-describedby={dateError ? "plan-date-err" : undefined} className={inputCls} />
+              {dateError && <p id="plan-date-err" className="mt-1 text-meta text-danger-text" role="alert">{dateError}</p>}
             </Field>
             <Field id="plan-time" label="Time">
               <input id="plan-time" type="time" value={form.time} onChange={(e) => set("time", e.target.value)} className={inputCls} />

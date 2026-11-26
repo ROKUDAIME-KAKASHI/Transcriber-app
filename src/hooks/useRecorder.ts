@@ -28,6 +28,7 @@ import { newMeetingId } from "@/lib/local/ids";
 import { flush, markRecording, onRemoteStop, poke, type FlushResult } from "@/lib/local/sync";
 import { isStoppedReply } from "@/lib/recordingState";
 import { useLocalUser } from "@/components/SyncProvider";
+import { recorderBusy } from "@/lib/recorderOpts";
 import { useMeetingSync } from "@/hooks/useSync";
 import { takeTitle } from "@/lib/titlePrefill";
 import { linkStartedMeeting } from "@/lib/planLink";
@@ -215,7 +216,9 @@ export function useRecorder(opts: {
 
   const { userId, available } = useLocalUser();
   const localUserRef = useRef<{ userId: string | null; available: boolean }>({ userId, available });
-  localUserRef.current = { userId, available };
+  // Once a session is busy it keeps the account it started under: a sign-in as someone else mid-meeting
+  // must never save the recording (or upload it) under the new account.
+  if (!recorderBusy(state)) localUserRef.current = { userId, available };
   /** This recording lives in the device store first; the sync engine is the only server writer. */
   const localModeRef = useRef(false);
   const [localMode, setLocalMode] = useState(false);
@@ -2333,8 +2336,9 @@ export function useRecorder(opts: {
     return () => window.removeEventListener("pagehide", onUnload);
   }, [save]);
 
-  // Leaving the Record screen (e.g. tapping "Meetings" in the tab bar) used to leave the mic and
-  // timers running with no Stop button. Stop and save instead; cancel a start in progress.
+  // The hook now lives in RecorderProvider (app level), so moving between pages never unmounts it and
+  // recording carries on. This cleanup only runs on a full unload / provider teardown: stop and save
+  // (or detach a native capture), cancel a start in progress.
   useEffect(() => {
     return () => {
       if (nativeRef.current && wantRecordingRef.current) detachNative(); // capture carries on in the service
