@@ -6,6 +6,7 @@ import { formatDuration, speakerLabel, type SpeakerNames, type TranscriptPart } 
 import type { SpeakerStatus } from "@/lib/speech/diarize";
 import { SpeakerChip, speakerColor } from "./SpeakerChip";
 import { RenameSpeakerSheet } from "./RenameSpeakerSheet";
+import { highlightSegments, matchesQuery } from "@/lib/transcriptSearch";
 
 /**
  * The transcript as a readable document: paragraphs with a time (and, for multi-speaker
@@ -83,6 +84,7 @@ function TranscriptViewImpl({
   onRenameSpeaker,
   speakerStatus,
   renameHint = false,
+  query = "",
 }: {
   parts: TranscriptPart[];
   interimText?: string;
@@ -97,8 +99,12 @@ function TranscriptViewImpl({
   speakerStatus?: SpeakerStatus;
   /** Show the one-time "tap a name to rename" hint (meeting page only). */
   renameHint?: boolean;
+  /** Only paragraphs containing this text are shown, with the text highlighted (saved meetings). */
+  query?: string;
 }) {
-  const paragraphs = useMemo(() => toParagraphs(parts), [parts]);
+  const allParagraphs = useMemo(() => toParagraphs(parts), [parts]);
+  const searching = query.trim() !== "";
+  const paragraphs = useMemo(() => (searching ? allParagraphs.filter((p) => matchesQuery(p.text, query)) : allParagraphs), [allParagraphs, query, searching]);
   const multiSpeaker = useMemo(() => new Set(parts.map((p) => p.speaker)).size > 1, [parts]);
   const [shown, setShown] = useState(pageSize);
   const hidden = Math.max(0, paragraphs.length - shown);
@@ -201,6 +207,11 @@ function TranscriptViewImpl({
           </button>
         </div>
       )}
+      {searching && (
+        <p className="mb-3 text-meta text-muted-foreground" role="status">
+          {paragraphs.length === 0 ? `No lines match “${query.trim()}”` : `${paragraphs.length.toLocaleString("en-IN")} matching ${paragraphs.length === 1 ? "line" : "lines"}`}
+        </p>
+      )}
       {windowMode === "tail" && hidden > 0 && more}
       <div className="space-y-4">
         {visible.map((p, i) => {
@@ -249,7 +260,7 @@ function TranscriptViewImpl({
                   <span className="font-mono text-meta tabular-nums text-muted-foreground">{formatDuration(Math.floor(p.t))}</span>
                 )}
               </div>
-              <p className="mt-1 max-w-[68ch] break-words text-reading leading-[1.6] text-foreground sm:text-base">{p.text}</p>
+              <p className="mt-1 max-w-[68ch] break-words text-reading leading-[1.6] text-foreground sm:text-base">{searching ? highlightSegments(p.text, query).map((s, k) => (s.hit ? <mark key={k} className="rounded-[4px] bg-accent-soft px-0.5 text-foreground">{s.text}</mark> : s.text)) : p.text}</p>
             </div>
           );
         })}
