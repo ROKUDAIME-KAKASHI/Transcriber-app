@@ -1,3 +1,4 @@
+import { isRecordingActive } from "@/lib/recordingFlag";
 import { canApplyUpdate } from "@/lib/sw/updateCore";
 
 const RELOAD_GUARD = "sw.reloading";
@@ -66,7 +67,14 @@ export function applyUpdate(reg: ServiceWorkerRegistration): void {
   }
   if (!controllerListenerAdded) {
     controllerListenerAdded = true;
-    navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload());
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      // Never reload under a running recording; the next launch picks the new worker up.
+      void isRecordingActive()
+        .catch(() => true)
+        .then((rec) => {
+          if (!rec) window.location.reload();
+        });
+    });
   }
   reg.waiting.postMessage({ type: "SKIP_WAITING" });
 }
