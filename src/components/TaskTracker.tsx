@@ -1,39 +1,28 @@
 "use client";
 
-import { PersonPicker } from "./PersonPicker";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ChevronDown, CloudOff, Copy, Link2, ListChecks, Trash2 } from "lucide-react";
+import { CloudOff, Copy, Link2, ListChecks } from "lucide-react";
 import { useConnectivity } from "@/lib/connectivity";
 import { useToast } from "./Toast";
 import { AgendaButton, FollowUpAgendaSheet } from "./FollowUpAgenda";
-import { Badge, Button, Notice, Panel, Segmented, cx, selectCls } from "./ui";
+import { Button, Notice, Panel, Segmented, cx, selectCls } from "./ui";
 import { TaskTimeline } from "./TaskTimeline";
+import { STATUS_TONE, TaskDetail, formatDue, type Patch } from "./TaskDetail";
 import { useFlag } from "@/lib/flagsClient";
 import { usePeople, invalidatePeople } from "@/lib/stakeholdersClient";
 import { invalidateOverdue } from "@/lib/overdueClient";
 import {
-  STATUSES, STATUS_FILTERS, STATUS_FILTER_LABEL, STATUS_LABEL, UNASSIGNED,
-  distinctMeetings, dueDay, filterTasks, isOverdue, localToday, parseStatusFilter, sortTasks, statusCounts,
-  type StatusFilter, type TaskRow, type TaskStatus,
+  STATUS_FILTERS, STATUS_FILTER_LABEL, STATUS_LABEL, UNASSIGNED,
+  distinctMeetings, dueDay, filterTasks, localToday, parseStatusFilter, sortTasks, statusCounts,
+  type StatusFilter, type TaskRow,
 } from "@/lib/taskTracker";
+import { dueView, emptyTasksText, statusOverview } from "@/lib/taskView";
 import { distinctSeries, matchOwnersToPeople, ownerOptions } from "@/lib/trackerPlus";
 import { findTaskDuplicates } from "@/lib/dedupe";
-import { HISTORY_PAGE, describeEvent, type HistoryEvent } from "@/lib/taskHistory";
 
-type Patch = Partial<Pick<TaskRow, "status" | "owner" | "ownerStakeholderId" | "dueDate" | "note" | "task">>;
 type View = "list" | "timeline";
-
-const STATUS_TONE: Record<TaskStatus, string> = {
-  NOT_STARTED: "bg-muted text-foreground",
-  IN_PROGRESS: "bg-accent-soft text-accent-text",
-  BLOCKED: "bg-danger-soft text-danger-text",
-  DONE: "bg-success-soft text-success-text",
-};
-
-const fieldCls =
-  "min-h-11 w-full rounded-chip border border-transparent bg-muted px-3 text-base outline-none transition-[box-shadow,background-color] duration-[var(--dur-2)] placeholder:text-muted-foreground focus:ring-2 focus:ring-accent sm:text-ui lg:min-h-10";
 
 /** Body of a PATCH: the due day goes up as a plain "YYYY-MM-DD". */
 function toBody(p: Patch): Record<string, unknown> {
@@ -42,263 +31,65 @@ function toBody(p: Patch): Record<string, unknown> {
   return b;
 }
 
-function formatDue(day: string): string {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-}
-
-function whenText(iso: string): string {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-}
-
-/** Change history of one task. Hidden when the database has no history table yet or the request fails. */
-function TaskHistory({ id, rev }: { id: string; rev: number }) {
-  const [events, setEvents] = useState<HistoryEvent[] | null>(null);
-  const [more, setMore] = useState(false);
-  useEffect(() => {
-    let live = true;
-    fetch(`/api/action-items/${id}/history`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { events?: HistoryEvent[] | null } | null) => {
-        if (live) setEvents(d?.events ?? null);
-      })
-      .catch(() => {
-        if (live) setEvents(null);
-      });
-    return () => {
-      live = false;
-    };
-  }, [id, rev]);
-  if (!events) return null;
-  const shown = more ? events : events.slice(0, HISTORY_PAGE);
-  return (
-    <div>
-      <p className="mb-1 text-meta font-semibold text-muted-foreground">History</p>
-      {events.length === 0 ? (
-        <p className="text-meta text-muted-foreground">No changes recorded yet.</p>
-      ) : (
-        <ul className="space-y-1">
-          {shown.map((e) => (
-            <li key={e.id} className="break-words text-meta text-muted-foreground">
-              <span className="text-foreground">{describeEvent(e)}</span> · {whenText(e.createdAt)}
-            </li>
-          ))}
-        </ul>
-      )}
-      {!more && events.length > HISTORY_PAGE && (
-        <Button variant="ghost" className="mt-1" onClick={() => setMore(true)}>
-          Show more
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function TaskItem({
-  item, today, onPatch, onDelete, dupOf, onJump, onSeries, rev, wide,
+/** One compact row. The title button opens the detail panel; the meeting link sits above its stretched hit area. */
+function TaskRowItem({
+  item, today, onOpen, dupOf, wide,
 }: {
   item: TaskRow;
   today: string;
-  onPatch: (id: string, p: Patch) => void;
-  onDelete: (id: string) => void;
-  /** Another task in the same meeting that looks like this one. */
+  onOpen: (id: string) => void;
   dupOf?: string;
-  onJump: (id: string) => void;
-  onSeries: (id: string) => void;
-  rev: number;
   wide: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [owner, setOwner] = useState(item.owner ?? "");
-  const [note, setNote] = useState(item.note ?? "");
-  useEffect(() => setOwner(item.owner ?? ""), [item.owner]);
-  useEffect(() => setNote(item.note ?? ""), [item.note]);
-
   const done = item.status === "DONE";
-  const overdue = isOverdue(item, today);
-  const saveOwner = () => {
-    const next = owner.trim();
-    if (next !== (item.owner ?? "")) onPatch(item.id, { owner: next || null });
-  };
-  const saveNote = () => {
-    const next = note.trim();
-    if (next !== (item.note ?? "")) onPatch(item.id, { note: next || null });
-  };
-
+  const due = dueView(item, today);
   return (
-    <li id={`task-${item.id}`} tabIndex={-1} className="px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-accent">
-      <div className={cx("grid gap-3", wide)}>
-        <div className="flex min-w-0 items-start gap-2">
+    <li id={`task-${item.id}`} tabIndex={-1} className="relative outline-none focus-visible:ring-2 focus-visible:ring-accent hover:bg-muted/50">
+      <div className={cx("flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 lg:grid lg:items-center", wide)}>
+        <div className="min-w-0 basis-full lg:basis-auto">
           <button
             type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-label={open ? "Hide details" : "Show details"}
-            className="-ml-2 grid h-11 w-11 shrink-0 place-items-center rounded-btn text-muted-foreground hover:bg-muted lg:h-9 lg:w-9"
+            onClick={() => onOpen(item.id)}
+            aria-label={`Open task: ${item.task}`}
+            className={cx(
+              "line-clamp-2 break-words text-left text-ui font-semibold after:absolute after:inset-0 after:content-[''] focus-visible:outline-none",
+              done && "text-muted-foreground line-through"
+            )}
           >
-            <ChevronDown className={cx("h-4 w-4 transition-transform duration-[var(--dur-2)]", open && "rotate-180")} aria-hidden />
+            {item.task}
           </button>
-          <div className="min-w-0 pt-2.5 lg:pt-1.5">
-            <p className={cx("break-words text-ui font-semibold", done && "text-muted-foreground line-through")}>{item.task}</p>
-            {dupOf && (
-              <button
-                type="button"
-                onClick={() => onJump(dupOf)}
-                className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-chip bg-warning-soft px-2 text-meta font-semibold text-warning-text hover:opacity-90"
-              >
-                <Copy className="h-3 w-3" aria-hidden /> Possible duplicate. Show the other
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="min-w-0" title={item.ownerDesignation ? `${item.owner} · ${item.ownerDesignation}` : undefined}>
-          <label className="mb-1 block text-meta font-semibold text-muted-foreground lg:sr-only" htmlFor={`owner-${item.id}`}>
-            Owner
-          </label>
-          <PersonPicker
-            id={`owner-${item.id}`}
-            maxLength={100}
-            value={owner}
-            placeholder="Unassigned"
-            onChange={setOwner}
-            onCommit={(name, personId) => {
-              // A picked person links the task to People as well as naming the owner.
-              if (name !== (item.owner ?? "") || (personId ?? null) !== (item.ownerStakeholderId ?? null)) {
-                onPatch(item.id, { owner: name || null, ownerStakeholderId: personId ?? null });
-              }
-            }}
-            onBlur={saveOwner}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-            }}
-            className={fieldCls}
-          />
-        </div>
-
-        <div className="min-w-0">
-          <label className="mb-1 block text-meta font-semibold text-muted-foreground lg:sr-only" htmlFor={`due-${item.id}`}>
-            Due date
-          </label>
-          <input
-            id={`due-${item.id}`}
-            type="date"
-            value={dueDay(item.dueDate)}
-            onChange={(e) => onPatch(item.id, { dueDate: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
-            className={fieldCls}
-          />
-          <div className="mt-1 flex flex-wrap items-center gap-2 empty:hidden">
-            {overdue && (
-              <Badge tone="danger">
-                <AlertTriangle className="h-3 w-3" aria-hidden /> Overdue
-              </Badge>
-            )}
-            {!item.dueDate && item.deadlineText && (
-              <span className="text-meta text-muted-foreground">Said: {item.deadlineText}</span>
-            )}
-          </div>
-        </div>
-
-        <div className="min-w-0">
-          <label className="mb-1 block text-meta font-semibold text-muted-foreground lg:sr-only" htmlFor={`status-${item.id}`}>
-            Status
-          </label>
-          <select
-            id={`status-${item.id}`}
-            value={item.status}
-            onChange={(e) => onPatch(item.id, { status: e.target.value as TaskStatus })}
-            className={cx(selectCls, "!min-h-11 !rounded-full !border-transparent text-ui font-semibold lg:!min-h-10", STATUS_TONE[item.status])}
-          >
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABEL[s]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="min-w-0 text-meta text-muted-foreground">
-          <Link
-            href={`/meeting?id=${encodeURIComponent(item.meeting.id)}`}
-            className="line-clamp-2 break-words underline-offset-2 hover:text-foreground hover:underline"
-          >
-            {item.meeting.title}
-          </Link>
-          <span className="block">{new Date(item.meeting.createdAt).toLocaleDateString()}</span>
-          {item.series && (
-            <button
-              type="button"
-              onClick={() => onSeries(item.series!.id)}
-              aria-label={`Show tasks from the series ${item.series.title}`}
-              className="mt-1 inline-flex h-6 max-w-full items-center rounded-full bg-accent-soft px-2 text-meta font-semibold text-accent-text hover:opacity-90"
-            >
-              <span className="truncate">{item.series.title}</span>
-            </button>
+          {dupOf && (
+            <span className="mt-0.5 inline-flex items-center gap-1 text-meta font-semibold text-warning-text">
+              <Copy className="h-3 w-3" aria-hidden /> Possible duplicate
+            </span>
           )}
         </div>
+        <span className={cx("min-w-0 truncate text-meta", item.owner?.trim() ? "text-foreground" : "text-muted-foreground")} title={item.owner ?? undefined}>
+          {item.owner?.trim() || "Unassigned"}
+        </span>
+        <span className={cx("text-meta", due.overdue ? "font-semibold text-danger-text" : "text-muted-foreground")}>
+          {due.day ? (
+            <>
+              <span className="num">{formatDue(due.day)}</span>
+              {due.overdue && <span> · Overdue</span>}
+            </>
+          ) : due.said ? (
+            <span className="line-clamp-1">Said: {due.said}</span>
+          ) : (
+            "No due date"
+          )}
+        </span>
+        <span className={cx("inline-flex h-6 w-fit items-center rounded-full px-2 text-meta font-semibold", STATUS_TONE[item.status])}>
+          {STATUS_LABEL[item.status]}
+        </span>
+        <Link
+          href={`/meeting?id=${encodeURIComponent(item.meeting.id)}`}
+          className="relative z-10 min-w-0 max-w-full truncate text-meta text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          title={item.meeting.title}
+        >
+          {item.meeting.title}
+        </Link>
       </div>
-
-      {open && (
-        <div className="mt-3 space-y-3 border-t border-border/70 pt-3 lg:pl-9">
-          {item.ownerStakeholderId && (
-            <p className="break-words text-meta text-muted-foreground">
-              <span className="font-semibold">Owner: </span>
-              {item.owner}
-              {item.ownerDesignation ? ` · ${item.ownerDesignation}` : ""} · from People
-            </p>
-          )}
-          <div>
-            <label className="mb-1 block text-meta font-semibold text-muted-foreground" htmlFor={`note-${item.id}`}>
-              Progress note
-            </label>
-            <textarea
-              id={`note-${item.id}`}
-              rows={2}
-              maxLength={1000}
-              value={note}
-              placeholder="Add a short update"
-              onChange={(e) => setNote(e.target.value)}
-              onBlur={saveNote}
-              className={cx(fieldCls, "resize-y py-2")}
-            />
-            <div className="mt-2">
-              <Button onClick={saveNote} disabled={note.trim() === (item.note ?? "")}>
-                Save note
-              </Button>
-            </div>
-          </div>
-          {item.sourceQuote && (
-            <p className="break-words text-meta text-muted-foreground">
-              <span className="font-semibold">Source: </span>&ldquo;{item.sourceQuote}&rdquo;
-            </p>
-          )}
-          <TaskHistory id={item.id} rev={rev} />
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/meeting?id=${encodeURIComponent(item.meeting.id)}`}
-              className="inline-flex min-h-11 items-center rounded-btn border border-border/70 bg-card px-4 text-ui font-semibold shadow-card hover:bg-muted"
-            >
-              Open meeting
-            </Link>
-            {confirmDelete ? (
-              <>
-                <Button variant="danger-solid" onClick={() => onDelete(item.id)}>
-                  Confirm delete
-                </Button>
-                <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-                  Keep
-                </Button>
-              </>
-            ) : (
-              <Button variant="danger" icon={<Trash2 className="h-4 w-4" aria-hidden />} onClick={() => setConfirmDelete(true)}>
-                Delete task
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
     </li>
   );
 }
@@ -472,7 +263,10 @@ function TaskTrackerInner() {
       setLinking(false);
     }
   };
-  const openInList = (id: string) => {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId ? (all.find((t) => t.id === selectedId) ?? null) : null;
+  const jumpToDuplicate = (id: string) => {
+    setSelectedId(null);
     setView("list");
     setStatus("all");
     window.setTimeout(() => jumpTo(id), 60);
@@ -480,14 +274,16 @@ function TaskTrackerInner() {
   const today = localToday();
   const [agendaOpen, setAgendaOpen] = useState(false);
   const agendaTitle = meetingId ? (meetings.find((m) => m.id === meetingId)?.title ?? null) : null;
-  const wide = "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.2fr)] lg:items-start";
+  const wide = "lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1.1fr)_7rem_minmax(0,1.3fr)]";
+  const narrowed = Boolean(owner || meetingId || seriesId);
+  const overview = useMemo(() => statusOverview(counts), [counts]);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-          <p className="mt-1 text-ui text-muted-foreground">Action items from your meetings. Update them by hand as work moves.</p>
+          <p className="mt-1 text-ui text-muted-foreground">Action items from your meetings. Keep commitments moving.</p>
         </div>
         {plusOn && items && items.length > 0 && (
           <Segmented<View>
@@ -520,7 +316,8 @@ function TaskTrackerInner() {
         !offline && !error && (
           <Panel className="p-6 text-center">
             <ListChecks className="mx-auto h-6 w-6 text-muted-foreground" aria-hidden />
-            <p className="mt-2 text-ui text-muted-foreground">No tasks yet. Open a meeting and use Extract action items.</p>
+            <p className="mt-2 text-ui font-semibold">No tasks yet.</p>
+            <p className="mt-1 text-meta text-muted-foreground">Tasks from your meetings will appear here. Open a meeting and use Extract action items.</p>
             <Link
               href="/meetings"
               className="mt-4 inline-flex min-h-11 items-center rounded-btn border border-border/70 bg-card px-4 text-ui font-semibold shadow-card hover:bg-muted"
@@ -565,6 +362,15 @@ function TaskTrackerInner() {
               )}
             </Notice>
           )}
+
+          <dl aria-label="Task overview" className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+            {overview.map((o) => (
+              <div key={o.key} className="rounded-panel border border-border/70 bg-card px-3 py-2 shadow-card dark:border-border">
+                <dt className="truncate text-meta text-muted-foreground">{o.label}</dt>
+                <dd className={cx("num text-xl font-semibold", o.key === "BLOCKED" && o.count > 0 && "text-danger-text")}>{o.count}</dd>
+              </div>
+            ))}
+          </dl>
 
           <div className="space-y-3">
             {!timeline && (
@@ -644,7 +450,7 @@ function TaskTrackerInner() {
 
           {timeline ? (
             <div className={cx(offline && "pointer-events-none opacity-60")}>
-              <TaskTimeline items={shown} today={today} showDone={showDone} onShowDone={setShowDone} onOpen={openInList} />
+              <TaskTimeline items={shown} today={today} showDone={showDone} onShowDone={setShowDone} onOpen={setSelectedId} />
             </div>
           ) : (
           <Panel aria-label="Tasks">
@@ -652,35 +458,42 @@ function TaskTrackerInner() {
               className={cx("hidden gap-3 border-b border-border/70 px-4 py-2 text-meta font-semibold text-muted-foreground lg:grid", wide)}
               aria-hidden
             >
-              <span className="pl-9">Task</span>
+              <span>Task</span>
               <span>Owner</span>
               <span>Due date</span>
               <span>Status</span>
               <span>Source meeting</span>
             </div>
             {shown.length === 0 ? (
-              <p className="p-5 text-ui text-muted-foreground">No tasks match these filters.</p>
+              <p className="p-5 text-ui text-muted-foreground">{emptyTasksText(status, narrowed)}</p>
             ) : (
               <ul className={cx("divide-y divide-border/70", offline && "pointer-events-none opacity-60")}>
                 {shown.map((t) => (
-                  <TaskItem
-                    key={t.id}
-                    item={t}
-                    today={today}
-                    onPatch={(id, p) => void patch(id, p)}
-                    onDelete={(id) => void remove(id)}
-                    dupOf={dups.get(t.id)}
-                    onJump={jumpTo}
-                    onSeries={setSeriesId}
-                    rev={revs[t.id] ?? 0}
-                    wide={wide}
-                  />
+                  <TaskRowItem key={t.id} item={t} today={today} onOpen={setSelectedId} dupOf={dups.get(t.id)} wide={wide} />
                 ))}
               </ul>
             )}
           </Panel>
           )}
         </>
+      )}
+      {selected && (
+        <TaskDetail
+          key={selected.id}
+          item={selected}
+          today={today}
+          offline={offline}
+          rev={revs[selected.id] ?? 0}
+          dupOf={dups.get(selected.id)}
+          onPatch={(id, p) => void patch(id, p)}
+          onDelete={(id) => {
+            setSelectedId(null);
+            void remove(id);
+          }}
+          onClose={() => setSelectedId(null)}
+          onSeries={setSeriesId}
+          onJump={jumpToDuplicate}
+        />
       )}
       <FollowUpAgendaSheet
         open={agendaOpen}

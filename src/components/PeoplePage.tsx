@@ -8,7 +8,7 @@ import { useConnectivity } from "@/lib/connectivity";
 import { pushOverlay } from "@/lib/overlays";
 import { invalidatePeople } from "@/lib/stakeholdersClient";
 import {
-  findPossibleDuplicate, groupAlphabetically, matchesQuery, personLine, type Person, type Suggestion,
+  findPossibleDuplicate, groupAlphabetically, initials, matchesQuery, personLine, type Person, type Suggestion,
 } from "@/lib/stakeholders";
 
 type Draft = { name: string; designation: string; organisation: string; area: string; email: string; phone: string; notes: string };
@@ -42,35 +42,56 @@ function PersonSheet({
   const [draft, setDraft] = useState<Draft>(() => (person ? toDraft(person) : { ...EMPTY, ...prefill }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [nameErr, setNameErr] = useState("");
+  const [emailErr, setEmailErr] = useState("");
   const [forceName, setForceName] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [shown, setShown] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
   });
 
   useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
     const id = requestAnimationFrame(() => {
       setShown(true);
       nameRef.current?.focus();
     });
     const unregister = pushOverlay(() => onCloseRef.current());
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !boxRef.current) return;
+      const f = Array.from(boxRef.current.querySelectorAll<HTMLElement>("input:not(:disabled), textarea:not(:disabled), button:not(:disabled)"));
+      if (f.length === 0) return;
+      const a = document.activeElement;
+      if (e.shiftKey && (a === f[0] || !boxRef.current.contains(a))) {
+        e.preventDefault();
+        f[f.length - 1].focus();
+      } else if (!e.shiftKey && (a === f[f.length - 1] || !boxRef.current.contains(a))) {
+        e.preventDefault();
+        f[0].focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => {
       cancelAnimationFrame(id);
       unregister();
       document.removeEventListener("keydown", onKey);
+      opener?.focus?.({ preventScroll: true });
     };
   }, []);
 
   const set = (k: keyof Draft, v: string) => {
     setDraft((d) => ({ ...d, [k]: v }));
     if (k === "name" || k === "email") setForceName(false);
+    if (k === "name") setNameErr("");
+    if (k === "email") setEmailErr("");
     setError("");
   };
 
@@ -82,16 +103,18 @@ function PersonSheet({
   const save = async () => {
     if (saving) return;
     if (!draft.name.trim()) {
-      setError("Name is required.");
+      setNameErr("Name is required.");
       nameRef.current?.focus();
       return;
     }
     if (dup?.reason === "email") {
-      setError(`${dup.person.name} already uses this email.`);
+      setEmailErr(`${dup.person.name} already uses this email.`);
       return;
     }
     setSaving(true);
     setError("");
+    setNameErr("");
+    setEmailErr("");
     try {
       const r = await fetch(person ? `/api/stakeholders/${person.id}` : "/api/stakeholders", {
         method: person ? "PATCH" : "POST",
@@ -104,7 +127,8 @@ function PersonSheet({
       }
       const e = await errorOf(r, "Couldn't save this person. Try again.");
       if (e.code === "similar_name") setForceName(true);
-      setError(e.message);
+      if (/email/i.test(e.message)) setEmailErr(e.message);
+      else setError(e.message);
     } catch {
       setError("Couldn't reach the server. Your changes are still here. Try again.");
     } finally {
@@ -130,22 +154,35 @@ function PersonSheet({
     }
   };
 
-  const field = (k: keyof Draft, label: string, props: Record<string, unknown> = {}) => (
-    <div>
-      <FieldLabel htmlFor={`person-${k}`}>{label}</FieldLabel>
-      <input
-        id={`person-${k}`}
-        ref={k === "name" ? nameRef : undefined}
-        value={draft[k]}
-        onChange={(e) => set(k, e.target.value)}
-        className={cx(inputCls, "min-h-11")}
-        autoComplete="off"
-        {...props}
-      />
-    </div>
-  );
-
-  const warn = dup && !error ? (dup.reason === "email" ? `${dup.person.name} already uses this email.` : `Possible duplicate of ${dup.person.name}.`) : "";
+  // Inline messages sit under their own field. A saved-email clash is an error; a similar name is only a warning.
+  const emailMsg = emailErr || (dup?.reason === "email" ? `${dup.person.name} already uses this email.` : "");
+  const nameWarn = !nameErr && dup?.reason === "name" ? `Possible duplicate of ${dup.person.name}.` : "";
+  const field = (k: keyof Draft, label: string, props: Record<string, unknown> = {}) => {
+    const err = k === "name" ? nameErr : k === "email" ? emailMsg : "";
+    const hint = k === "name" ? nameWarn : "";
+    const msgId = `person-${k}-msg`;
+    return (
+      <div>
+        <FieldLabel htmlFor={`person-${k}`}>{label}</FieldLabel>
+        <input
+          id={`person-${k}`}
+          ref={k === "name" ? nameRef : undefined}
+          value={draft[k]}
+          onChange={(e) => set(k, e.target.value)}
+          className={cx(inputCls, "min-h-11", err && "ring-2 ring-danger")}
+          autoComplete="off"
+          aria-invalid={err ? true : undefined}
+          aria-describedby={err || hint ? msgId : undefined}
+          {...props}
+        />
+        {(err || hint) && (
+          <p id={msgId} role={err ? "alert" : "status"} className={cx("mt-1 text-meta", err ? "text-danger-text" : "text-warning-text")}>
+            {err || hint}
+          </p>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -155,6 +192,7 @@ function PersonSheet({
         aria-hidden
       />
       <div
+        ref={boxRef}
         role="dialog"
         aria-modal="true"
         aria-label={person ? "Edit person" : "Add person"}
@@ -173,7 +211,7 @@ function PersonSheet({
             void save();
           }}
         >
-          {field("name", "Name", { maxLength: 100, autoCapitalize: "words", required: true })}
+          {field("name", "Name", { maxLength: 100, autoCapitalize: "words" })}
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
             {field("designation", "Designation", { maxLength: 100 })}
             {field("organisation", "Organisation", { maxLength: 100 })}
@@ -195,11 +233,6 @@ function PersonSheet({
             />
           </div>
 
-          {warn && (
-            <p className="text-meta text-warning-text" role="status">
-              {warn}
-            </p>
-          )}
           {error && (
             <p className="text-meta text-danger-text" role="alert">
               {error}
@@ -247,7 +280,8 @@ export function PeoplePage() {
   const offline = useConnectivity() === "offline";
   const [people, setPeople] = useState<Person[] | null>(null);
   const [error, setError] = useState("");
-  const [q, setQ] = useState("");
+  // A link from the command palette arrives as /people?q=name.
+  const [q, setQ] = useState(() => (typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("q") ?? "")));
   const [sheet, setSheet] = useState<{ person: Person | null; prefill?: Partial<Draft> } | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [adding, setAdding] = useState<string | null>(null);
@@ -382,7 +416,7 @@ export function PeoplePage() {
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by name, email, designation or area"
+              placeholder="Search by name, email, designation or organisation"
               autoComplete="off"
               className={cx(inputCls, "pl-11")}
             />
@@ -406,15 +440,16 @@ export function PeoplePage() {
                           <button
                             type="button"
                             onClick={() => setSheet({ person: p })}
-                            className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-muted"
+                            className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                           >
-                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent-soft text-ui font-semibold uppercase text-accent-text" aria-hidden>
-                              {p.name.trim().slice(0, 1)}
+                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent-soft text-meta font-semibold text-accent-text" aria-hidden>
+                              {initials(p.name)}
                             </span>
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-ui font-semibold">{p.name}</span>
-                              {personLine(p) && <span className="block truncate text-meta text-muted-foreground">{personLine(p)}</span>}
-                              {p.email && <span className="block truncate text-meta text-muted-foreground">{p.email}</span>}
+                              {(personLine(p) || p.email) && (
+                                <span className="block truncate text-meta text-muted-foreground">{[personLine(p), p.email].filter(Boolean).join(" · ")}</span>
+                              )}
                             </span>
                             {p.area && (
                               <span className="hidden max-w-[40%] shrink-0 min-[420px]:block">
