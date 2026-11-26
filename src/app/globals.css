@@ -400,6 +400,14 @@ h2 {
 .text-in {
   animation: text-in var(--dur-2) var(--ease-out);
 }
+/* A new transcript paragraph: a soft accent wash that fades out. */
+@keyframes seg-new {
+  from { background-color: var(--accent-soft); }
+  to { background-color: transparent; }
+}
+.seg-new {
+  animation: text-in var(--dur-2) var(--ease-out), seg-new 1.6s ease-out;
+}
 
 /* Reduced motion: OS setting and the in-app switch (html[data-motion="reduced"]). */
 @media (prefers-reduced-motion: reduce) {
