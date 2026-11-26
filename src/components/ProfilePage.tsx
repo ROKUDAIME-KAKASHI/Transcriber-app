@@ -4,12 +4,13 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ScreenNamingToggle } from "./ScreenNamingToggle";
 import { Check, ChevronRight, Copy, Download, RefreshCw, Share2, Users } from "lucide-react";
-import { Badge, Button, Panel, PanelHeader, Switch } from "@/components/ui";
+import { Badge, Button, Panel, PanelHeader, Segmented, Switch } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
 import { useOfflineReadiness } from "@/components/OfflineModelControl";
 import { useConnectivity } from "@/lib/connectivity";
 import { useMotionPref } from "@/lib/motionPref";
+import { useTheme } from "@/lib/themePref";
 import { useFlag } from "@/lib/flagsClient";
 import { useOverdueReminders } from "@/lib/overdueClient";
 import { useCalendarReady } from "@/lib/calendarClient";
@@ -376,6 +377,7 @@ function CalendarSection({ offline }: { offline: boolean }) {
 /* ---------- Preferences ---------- */
 function PreferencesSection() {
   const { pref, setPref } = useMotionPref();
+  const theme = useTheme();
   const tasksOn = useFlag("taskTracker");
   const plusOn = useFlag("trackerPlus");
   const [remind, setRemind] = useOverdueReminders();
@@ -383,6 +385,21 @@ function PreferencesSection() {
     <Panel aria-label="Preferences">
       <PanelHeader title="Preferences" />
       <div className="p-2">
+        <div className="px-3 pb-3 pt-2">
+          <p className="text-ui font-semibold">Theme</p>
+          <p className="mb-2 text-meta text-muted-foreground">System follows your device.</p>
+          <Segmented
+            label="Theme"
+            value={theme.pref}
+            onChange={theme.setPref}
+            options={[
+              { value: "system", label: "System" },
+              { value: "light", label: "Light" },
+              { value: "dark", label: "Dark" },
+            ]}
+            className="max-w-[360px]"
+          />
+        </div>
         <Switch
           label="Reduce motion"
           description="Fewer animations. Saves a little battery."

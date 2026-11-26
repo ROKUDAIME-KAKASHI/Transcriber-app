@@ -12,6 +12,8 @@ import { cx } from "./ui";
 import { tap } from "@/lib/haptics";
 import { prefersReducedMotion } from "@/lib/motionPref";
 import { useBackgroundRecording } from "@/hooks/useBackgroundRecording";
+import { ThemeToggle } from "./ThemeToggle";
+import { applyTheme, getThemePref } from "@/lib/themePref";
 import { RecordingPill } from "./RecordingPill";
 import { AppUpdateBanner } from "./AppUpdateBanner";
 import { useFlag } from "@/lib/flagsClient";
@@ -80,6 +82,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       { duration: 320, easing: "cubic-bezier(0.22,1,0.36,1)" }
     );
   }, [pathname]);
+  // Keep the browser theme-color in step with the saved theme (the head script runs before the tags may exist).
+  useEffect(() => applyTheme(getThemePref()), []);
   const signOutTitle = offline ? "Sign out needs internet" : "Sign out";
 
   return (
@@ -145,6 +149,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {email}
               </span>
             </Link>
+            <ThemeToggle />
             <button
               onClick={doSignOut}
               aria-disabled={offline}
@@ -164,6 +169,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Logo />
           <div className="ml-auto flex items-center gap-1">
           <ConnectivityPill />
+          <ThemeToggle />
           <Link
             href="/profile"
             aria-label="Profile"

@@ -28,7 +28,18 @@ function List({ title, items, empty }: { title: string; items: string[]; empty?:
 }
 
 /** "How the meeting went": purpose, key points, decisions, open questions and tone. Kept on this device. */
-export function SummaryTab({ meetingId, hasTranscript, model }: { meetingId: string; hasTranscript: boolean; model: string }) {
+export function SummaryTab({
+  meetingId,
+  hasTranscript,
+  model,
+  compact = false,
+}: {
+  meetingId: string;
+  hasTranscript: boolean;
+  model: string;
+  /** Shown at the top of the Minutes tab: with no summary yet, only a slim row (or nothing). */
+  compact?: boolean;
+}) {
   const { userId } = useLocalUser();
   const { summary } = useExtras(userId, meetingId);
   const gate = useFeatureGate("ai");
@@ -47,6 +58,19 @@ export function SummaryTab({ meetingId, hasTranscript, model }: { meetingId: str
       setBusy(false);
     }
   };
+
+  if (!summary && compact) {
+    if (!aiOn || !hasTranscript || !gate.enabled) return null;
+    return (
+      <Panel aria-label="Summary" className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <p className="text-ui text-muted-foreground">No summary yet.</p>
+        <Button size="lg" loading={busy} icon={<Sparkles className="h-4 w-4" aria-hidden />} onClick={() => void write()}>
+          {busy ? "Writing…" : "Write summary"}
+        </Button>
+        {error && <div className="w-full"><Notice tone="danger" icon={<AlertTriangle className="h-4 w-4" aria-hidden />} title={error} /></div>}
+      </Panel>
+    );
+  }
 
   if (!summary) {
     return (

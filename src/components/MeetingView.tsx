@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   ChevronLeft, ChevronDown, Pencil, Share2, Sparkles, Trash2, Check, X, Monitor, Smartphone, FileText, FileType,
-  FileDown, Copy,
+  FileDown, Copy, Search,
 } from "lucide-react";
 import { TEMPLATES, formatDuration, speakerLabel, transcriptToText, type TranscriptPart } from "@/lib/transcript";
 import * as haptics from "@/lib/haptics";
@@ -39,8 +39,9 @@ import { LinkedPlanCard } from "./LinkedPlanCard";
 import { MeetingTabBar, PANEL_ID, tabId } from "./MeetingTabBar";
 import { MinutesStatus } from "./MinutesStatus";
 import { SummaryTab } from "./SummaryTab";
+import { TalkTimeStrip } from "./TalkTimeStrip";
 import { AskTab } from "./AskTab";
-import { TAB_STORAGE_KEY, pickInitialTab, visibleTabs, withTabParam, type TabId } from "@/lib/meetingTabs";
+import { TAB_STORAGE_KEY, parseTabParam, pickInitialTab, visibleTabs, withTabParam, type TabId } from "@/lib/meetingTabs";
 import { GenError, applyOutcome, generateAll, retryNow, useJob } from "@/lib/minutesJob";
 import { useExtras, writeExtras } from "@/lib/meetingExtras";
 import { useFlag } from "@/lib/flagsClient";
@@ -95,6 +96,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   const [shareOpen, setShareOpen] = useState(false);
   const shareBtnRef = useRef<HTMLButtonElement>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
+  const [tq, setTq] = useState("");
+  const tqDeferred = useDeferredValue(tq);
   const [headerRenaming, setHeaderRenaming] = useState<number | null>(null);
   const [regenOpen, setRegenOpen] = useState(false);
   const chipRefs = useRef(new Map<number, HTMLButtonElement>());
@@ -112,6 +115,8 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
     }
   }, []);
   const tabInit = useRef(false);
+  // True once a link, a remembered tab or a tap chose the tab, so late-loading action items never override it.
+  const userPicked = useRef(false);
   useEffect(() => {
     // With the tabs switch off the page opens as it always did (document, else transcript): no saved tab, no ?tab=.
     if (tabInit.current || !tabsOn) return;
@@ -123,9 +128,24 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
       /* ignore */
     }
     const param = new URLSearchParams(window.location.search).get("tab");
-    setTabState(pickInitialTab({ param, saved, hasDoc: !!meeting.document, visible: tabs }));
+    userPicked.current = !!(parseTabParam(param) || parseTabParam(saved));
+    setTabState(pickInitialTab({ param, saved, hasDoc: !!meeting.document, hasActions: (extras.items?.length ?? 0) > 0, visible: tabs }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabsOn]);
+  // Saved action items open the page on that tab, unless the person already picked one.
+  useEffect(() => {
+    if (!tabsOn || !actionItemsOn) return;
+    let off = false;
+    fetch(`/api/meetings/${meeting.id}/action-items`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { items?: unknown[] } | null) => {
+        if (!off && j && Array.isArray(j.items) && j.items.length > 0 && tabInit.current && !userPicked.current) setTabState("actions");
+      })
+      .catch(() => {});
+    return () => {
+      off = true;
+    };
+  }, [tabsOn, actionItemsOn, meeting.id]);
   // If a switch hides the open tab (or the flags load late), move to one that is shown.
   useEffect(() => {
     if (!tabs.includes(tab)) setTabState(tabs[0]);
@@ -402,7 +422,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
   };
 
   const docName = docTemplate === "Report" ? "Report" : "Minutes";
-  const showingDoc = (tab === "minutes" || tab === "summary" || tab === "ask") && !!doc;
+  const showingDoc = (tab === "minutes" || tab === "ask") && !!doc;
   const currentText = showingDoc ? doc! : rawText;
   const currentName = showingDoc ? docName : "Transcript";
 
@@ -794,8 +814,9 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
         <MeetingTabBar
           tabs={tabs}
           value={tab}
-          labels={{ minutes: docName }}
+          labels={{ minutes: `Summary & ${docName.toLowerCase()}` }}
           onChange={(t) => {
+            userPicked.current = true;
             setTab(t);
             haptics.tap();
           }}
@@ -832,6 +853,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
         {tab === "minutes" ? (
           doc ? (
             <>
+              {tabsOn && <SummaryTab compact meetingId={meeting.id} hasTranscript={hasTranscript} model={model} />}
               <Panel className="px-5 py-6 sm:px-8 sm:py-8">
                 <article className="prose prose-stone max-w-[72ch] text-reading sm:text-base dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-h1:mb-3 prose-h1:mt-10 prose-h1:text-2xl first:prose-h1:mt-0 prose-h2:text-base prose-p:leading-[1.6] prose-li:my-1 prose-table:text-meta prose-th:bg-muted/60 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 [&_table]:block [&_table]:overflow-x-auto">
                   <Markdown remarkPlugins={[remarkGfm]}>{doc}</Markdown>
@@ -866,15 +888,27 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
             seed={extras.items}
             onSaved={() => writeExtras(userId, meeting.id, { items: null })}
           />
-        ) : tab === "summary" ? (
-          <SummaryTab meetingId={meeting.id} hasTranscript={hasTranscript} model={model} />
         ) : tab === "ask" && askOn ? (
           <AskTab meetingId={meeting.id} hasTranscript={hasTranscript} />
         ) : (
           <Panel className="px-5 py-6 sm:px-8 sm:py-8">
             <NamingReport userId={userId} meetingId={meeting.id} names={names} />
             {hasTranscript ? (
-              <TranscriptView parts={meeting.transcript} window="head" speakerNames={names} onRenameSpeaker={renameSpeaker} renameHint />
+              <>
+                <TalkTimeStrip parts={meeting.transcript} names={names} />
+                <label className="relative mb-4 block">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                  <span className="sr-only">Search this transcript</span>
+                  <input
+                    type="search"
+                    value={tq}
+                    onChange={(e) => setTq(e.target.value)}
+                    placeholder="Search this transcript"
+                    className={cx(inputCls, "h-11 pl-10")}
+                  />
+                </label>
+                <TranscriptView parts={meeting.transcript} window="head" speakerNames={names} onRenameSpeaker={renameSpeaker} renameHint query={tqDeferred} />
+              </>
             ) : (
               <p className="text-ui text-muted-foreground">No transcript was captured.</p>
             )}

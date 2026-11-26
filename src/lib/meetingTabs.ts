@@ -1,18 +1,18 @@
 /** Pure helpers for the tabs on the meeting page. No imports, so node:test can load them. */
 
-export type TabId = "transcript" | "minutes" | "summary" | "actions" | "ask";
+export type TabId = "transcript" | "minutes" | "actions" | "ask";
 
 export const TAB_STORAGE_KEY = "minutely.meetingTab";
 
 export const TAB_LABELS: Record<TabId, string> = {
   transcript: "Transcript",
   minutes: "Minutes",
-  summary: "Summary",
   actions: "Action items",
   ask: "Ask",
 };
 
-const ALL: TabId[] = ["transcript", "minutes", "summary", "actions", "ask"];
+/** Tab order with the switch on: what people want after a meeting comes first. */
+const ALL: TabId[] = ["minutes", "actions", "transcript", "ask"];
 
 export function isTabId(v: unknown): v is TabId {
   return typeof v === "string" && (ALL as string[]).includes(v);
@@ -27,26 +27,27 @@ export function visibleTabs(o: { tabs: boolean; actions: boolean; ask: boolean }
   return ALL.filter((t) => (t === "actions" ? o.actions : t === "ask" ? o.ask : true));
 }
 
-/** `?tab=` value to a tab; "document" and "tasks" are accepted as older names. */
+/** `?tab=` value to a tab; "summary" (now folded into Minutes), "document" and "tasks" are accepted as older names. */
 export function parseTabParam(v: string | null | undefined): TabId | null {
   if (!v) return null;
   const t = v.toLowerCase();
-  if (t === "document" || t === "mom") return "minutes";
+  if (t === "document" || t === "mom" || t === "summary") return "minutes";
   if (t === "tasks" || t === "action-items" || t === "actions") return "actions";
   return isTabId(t) ? t : null;
 }
 
-/** Which tab opens first: the link, else the last one used on this device, else minutes when there are some, else the transcript. */
+/** Which tab opens first: the link, else the last one used on this device, else action items when there are any, else minutes when there are some, else the transcript. */
 export function pickInitialTab(o: {
   param: string | null | undefined;
   saved: string | null | undefined;
   hasDoc: boolean;
+  hasActions?: boolean;
   visible: readonly TabId[];
 }): TabId {
   for (const c of [parseTabParam(o.param), parseTabParam(o.saved)]) {
     if (c && o.visible.includes(c)) return c;
   }
-  const fallback: TabId = o.hasDoc ? "minutes" : "transcript";
+  const fallback: TabId = o.hasActions && o.visible.includes("actions") ? "actions" : o.hasDoc ? "minutes" : "transcript";
   return o.visible.includes(fallback) ? fallback : o.visible[0];
 }
 
