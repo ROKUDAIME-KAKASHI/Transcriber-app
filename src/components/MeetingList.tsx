@@ -5,19 +5,21 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
-import { listMeetings, listPending } from "@/lib/local/repo";
+import { listMeetings, listPending, setTitle as setLocalTitle, tombstone } from "@/lib/local/repo";
 import { stopRecordingRemotely } from "@/lib/local/stopRemote";
 import { canStopFromList, isStaleRecording, stopConfirmText, type MeetingOrigin } from "@/lib/recordingState";
-import { getSyncSnapshot, isRecordingId, subscribeSync } from "@/lib/local/sync";
+import { getSyncSnapshot, isRecordingId, poke, subscribeSync } from "@/lib/local/sync";
 import { MeetingSkeleton } from "./MeetingLoader";
 import { UpcomingPlans } from "./UpcomingPlans";
 import { useLocalUser } from "./SyncProvider";
-import { Search, ChevronRight, Mic, Loader2 } from "lucide-react";
+import { Search, Mic, Loader2 } from "lucide-react";
 import { formatDuration } from "@/lib/transcript";
-import { dateGroup } from "@/lib/dateGroup";
+import { filterMeetings, formatHours, groupMeetings, listStats } from "@/lib/meetingListView";
+import { discardNativeAudio } from "@/lib/nativeRecorder";
 import { findDuplicateMeetings } from "@/lib/dedupe";
 import { useToast } from "./Toast";
 import { Badge, Button, LiveDot, Panel, cx, inputCls } from "./ui";
+import { DeleteDialog, RenameDialog, RowMenu } from "./MeetingRowActions";
 
 export interface MeetingRow {
   id: string;
@@ -34,6 +36,8 @@ export interface MeetingRow {
   serverUpdatedAt?: string | null;
   /** Recorded offline on this phone and not finished: the transcript is completed on the Record screen. */
   nativeCapture?: boolean;
+  /** Minutes or a report exist (from the loaded list data). */
+  hasMinutes?: boolean;
 }
 
 /** At most one chip per row: what needs attention first, else the nicest thing to know. Plain words, no jargon. */
@@ -57,7 +61,6 @@ function RowChip({ m, stale, syncing, duplicate }: { m: MeetingRow; stale: boole
   }
   if (m.sync === "pending") return <Badge tone="warning">Not uploaded yet</Badge>;
   if (duplicate) return <Badge tone="warning">Possible duplicate</Badge>;
-  if (m.template) return <Badge tone="accent">{m.template === "Report" ? "Report ready" : "Minutes ready"}</Badge>;
   return null;
 }
 
@@ -100,6 +103,7 @@ export function MeetingList() {
         lastWriteAt: l.lastWriteAt,
         serverUpdatedAt: l.serverUpdatedAt,
         nativeCapture: l.nativeCapture === 1,
+        hasMinutes: !!(l.template || l.document),
       });
     }
     return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
@@ -134,29 +138,54 @@ export function MeetingList() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const groups = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const shown = q ? merged.filter((m) => m.title.toLowerCase().includes(q)) : merged;
-    if (!mounted) return [{ label: "", items: shown }];
-    const out: { label: string; items: MeetingRow[] }[] = [];
-    for (const m of shown) {
-      const label = dateGroup(new Date(m.createdAt), new Date());
-      const last = out[out.length - 1];
-      if (last?.label === label) last.items.push(m);
-      else out.push({ label, items: [m] });
+  const groups = useMemo(
+    () => groupMeetings(filterMeetings(merged, query), mounted ? new Date() : null),
+    [merged, query, mounted],
+  );
+  const stats = useMemo(() => (mounted ? listStats(merged, new Date()) : null), [merged, mounted]);
+
+  const [renaming, setRenaming] = useState<MeetingRow | null>(null);
+  const [deleting, setDeleting] = useState<MeetingRow | null>(null);
+  // Same offline-first paths MeetingView uses: write locally and let sync push it, else call the API.
+  const renameMeeting = async (m: MeetingRow, title: string): Promise<boolean> => {
+    if (userId && (await setLocalTitle(userId, m.id, title))) {
+      poke(m.id);
+      return true;
     }
-    return out;
-  }, [merged, query, mounted]);
+    try {
+      const res = await fetch(`/api/meetings/${m.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+  const deleteMeeting = async (m: MeetingRow): Promise<boolean> => {
+    if (userId && (await tombstone(userId, m.id))) {
+      void discardNativeAudio(m.id);
+      poke(m.id);
+      return true;
+    }
+    return false;
+  };
 
   const header = (
     <div className="mb-6 flex items-end justify-between gap-4 sm:mb-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
         <p className="mt-1 text-meta text-muted-foreground">
-          {merged.length === 0
-            ? "Recordings from all your devices."
-            : `${merged.length} recording${merged.length === 1 ? "" : "s"} from all your devices`}
+          Your conversations, organised and ready to revisit.
         </p>
+        {stats && stats.total > 0 && (
+          <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted-foreground" suppressHydrationWarning>
+            <span><span className="num text-foreground">{stats.total}</span> meeting{stats.total === 1 ? "" : "s"}</span>
+            {stats.hours !== null && <span><span className="num text-foreground">{formatHours(stats.hours)}</span> recorded</span>}
+            {stats.thisWeek !== null && <span><span className="num text-foreground">{stats.thisWeek}</span> this week</span>}
+          </p>
+        )}
       </div>
       <Link href="/" className={cx(pillLink, "hidden sm:inline-flex")}>
         <Mic className="h-4 w-4" /> New recording
@@ -210,7 +239,7 @@ export function MeetingList() {
             </div>
           </div>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight">No meetings yet</h2>
-          <p className="mx-auto mt-2 max-w-[40ch] text-ui text-muted-foreground">Record your first meeting. It works offline too.</p>
+          <p className="mx-auto mt-2 max-w-[40ch] text-ui text-muted-foreground">No meetings yet. Press Record to capture your first one.</p>
           <Link href="/" className={cx(pillLink, "mt-6")}>
             <Mic className="h-4 w-4" /> Start recording
           </Link>
@@ -241,9 +270,9 @@ export function MeetingList() {
 
       {nothingMatches && (
         <div className="py-10 text-center">
-          <p className="text-ui text-muted-foreground">No meetings match “{query}”</p>
+          <p className="text-ui text-muted-foreground">No meetings match “{query.trim()}”.</p>
           <Button variant="ghost" className="mt-3" onClick={() => setQuery("")}>
-            Clear search
+            Clear
           </Button>
         </div>
       )}
@@ -259,7 +288,7 @@ export function MeetingList() {
                 {g.label}
               </h2>
             )}
-            <ul className="grid gap-3">
+            <ul className="divide-y divide-border/70 rounded-panel border border-border/70 bg-card">
               {g.items.map((m) => {
                 const idx = index++;
                 const stale = isStaleRecording(m, now);
@@ -270,25 +299,24 @@ export function MeetingList() {
                   stale,
                 });
                 return (
-                  <li key={m.id} className="stagger-item" style={{ "--i": idx } as CSSProperties}>
+                  <li key={m.id} className="relative stagger-item first:[&>a]:rounded-t-panel last:[&>a]:rounded-b-panel" style={{ "--i": idx } as CSSProperties}>
                     <Link
                       href={`/meeting?id=${m.id}`}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 rounded-panel border border-border/70 bg-card p-4 shadow-card transition-transform duration-[var(--dur-1)] hover:bg-muted/40 active:scale-[0.98] lg:p-5"
+                      className="block min-h-14 px-4 py-3 pr-14 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
                     >
-                      <span className="min-w-0">
-                        <span className="line-clamp-2 text-ui font-semibold">{m.title}</span>
-                        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-meta num text-muted-foreground" suppressHydrationWarning>
-                          {mounted && <span className="shrink-0 whitespace-nowrap">{day(m.createdAt)} · {time(m.createdAt)} ·</span>}
-                          <span className="shrink-0 whitespace-nowrap">{formatDuration(m.durationSec)}</span>
-                        </span>
+                      <span className="block truncate text-ui font-semibold">{m.title}</span>
+                      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-meta num text-muted-foreground" suppressHydrationWarning>
+                        {mounted && <span className="shrink-0 whitespace-nowrap">{day(m.createdAt)} · {time(m.createdAt)} ·</span>}
+                        <span className="shrink-0 whitespace-nowrap">{formatDuration(m.durationSec)}</span>
                       </span>
-                      <span className="flex items-center gap-3">
+                      <span className="mt-1.5 flex flex-wrap items-center gap-1.5 empty:hidden">
                         <RowChip m={m} stale={stale} syncing={sync.state === "syncing"} duplicate={dupIds.has(m.id)} />
-                        <ChevronRight className="hidden h-4 w-4 text-muted-foreground lg:block" />
+                        {m.hasMinutes && <Badge tone="accent">{m.template === "Report" ? "Report ready" : "Minutes ready"}</Badge>}
                       </span>
                     </Link>
+                    <RowMenu title={m.title} canDelete={m.status !== "RECORDING"} onRename={() => setRenaming(m)} onDelete={() => setDeleting(m)} />
                     {canStop && (
-                      <div className="mt-2 flex items-center justify-end gap-3">
+                      <div className="flex items-center justify-end gap-3 px-4 pb-3">
                         {stale && (
                           <span className="text-meta text-muted-foreground">
                             {m.nativeCapture ? "Recorded on this phone. Stop it to finish the transcript." : "No update for a while. It may be stuck."}
@@ -306,6 +334,8 @@ export function MeetingList() {
           </section>
         )
       )}
+      {renaming && <RenameDialog title={renaming.title} onSave={(t) => renameMeeting(renaming, t)} onClose={() => setRenaming(null)} />}
+      {deleting && <DeleteDialog title={deleting.title} onConfirm={() => deleteMeeting(deleting)} onClose={() => setDeleting(null)} />}
     </div>
   );
 }
