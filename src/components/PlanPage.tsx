@@ -699,7 +699,7 @@ export function PlanPage() {
                   aria-disabled={dirty}
                   onClick={(e) => dirty && e.preventDefault()}
                   className={cx(
-                    "inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-accent px-5 text-ui font-semibold text-accent-foreground shadow-[0_4px_14px_-6px_var(--accent)] hover:bg-accent/90 lg:min-h-10",
+                    "inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-accent px-5 text-ui font-semibold text-accent-foreground hover:bg-accent/90 lg:min-h-10",
                     dirty && "pointer-events-none opacity-50"
                   )}
                 >

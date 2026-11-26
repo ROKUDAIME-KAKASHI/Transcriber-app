@@ -64,7 +64,7 @@ function SyncChip({ m, syncing }: { m: MeetingRow; syncing: boolean }) {
 }
 
 const pillLink =
-  "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full bg-accent px-5 text-ui font-medium text-accent-foreground shadow-[0_4px_14px_-6px_var(--accent)] hover:bg-accent/90";
+  "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full bg-accent px-5 text-ui font-medium text-accent-foreground hover:bg-accent/90";
 
 export function MeetingList() {
   const { userId, available } = useLocalUser();
@@ -207,10 +207,6 @@ export function MeetingList() {
         <UpcomingPlans className="mb-6" />
         <Panel as="div" className="px-6 py-12 text-center">
           <div aria-hidden className="relative mx-auto h-40 w-40">
-            <div
-              className="absolute inset-0 rounded-full opacity-35 blur-2xl"
-              style={{ background: "radial-gradient(circle at 35% 35%, var(--glow-a), var(--glow-b))" }}
-            />
             <div className="glass absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full">
               <Mic className="h-7 w-7 text-accent" />
             </div>

@@ -567,7 +567,6 @@ export function Recorder() {
                 transition: "transform var(--dur-4) var(--spring), border-radius var(--dur-4) var(--spring)",
                 transform: busy ? "scale(0.818)" : undefined,
                 borderRadius: busy ? 22 : 44,
-                boxShadow: "0 0 0 6px color-mix(in oklab, var(--record-fill) 20%, transparent)",
               }}
               className={cx(
                 "relative z-10 grid h-22 w-22 place-items-center bg-record-fill text-white",

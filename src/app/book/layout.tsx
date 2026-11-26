@@ -19,7 +19,7 @@ export default async function BookLayout({ children }: { children: React.ReactNo
       <header className="border-b border-border/70 bg-card pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex h-14 w-full max-w-4xl items-center px-4 sm:px-6">
           <span className="inline-flex items-center gap-2.5 text-ui font-semibold tracking-tight">
-            <span className="grid h-7 w-7 place-items-center rounded-[10px] bg-accent text-accent-foreground">
+            <span className="grid h-7 w-7 place-items-center rounded-[8px] bg-accent text-accent-foreground">
               <AudioLines className="h-4 w-4" aria-hidden />
             </span>
             Minutely
