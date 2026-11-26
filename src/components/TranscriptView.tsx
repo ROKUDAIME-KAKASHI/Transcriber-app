@@ -218,8 +218,8 @@ function TranscriptViewImpl({
           const showSpeaker = chipShownAt(i);
           return (
             <div
-              key={i}
-              className={`min-w-0 border-l-[3px] pl-3${windowMode === "tail" ? " text-in" : ""}`}
+              key={windowMode === "tail" ? hidden + i : i}
+              className={`min-w-0 border-l-[3px] pl-3${windowMode === "tail" ? " text-in seg-new" : ""}`}
               style={{ borderColor: speakerColor(p.speaker) }}
             >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -260,7 +260,7 @@ function TranscriptViewImpl({
                   <span className="font-mono text-meta tabular-nums text-muted-foreground">{formatDuration(Math.floor(p.t))}</span>
                 )}
               </div>
-              <p className="mt-1 max-w-[68ch] break-words text-reading leading-[1.6] text-foreground sm:text-base">{searching ? highlightSegments(p.text, query).map((s, k) => (s.hit ? <mark key={k} className="rounded-[4px] bg-accent-soft px-0.5 text-foreground">{s.text}</mark> : s.text)) : p.text}</p>
+              <p className="mt-1 max-w-[70ch] break-words text-reading leading-[1.6] text-foreground sm:text-base">{searching ? highlightSegments(p.text, query).map((s, k) => (s.hit ? <mark key={k} className="rounded-[4px] bg-accent-soft px-0.5 text-foreground">{s.text}</mark> : s.text)) : p.text}</p>
             </div>
           );
         })}
@@ -269,7 +269,7 @@ function TranscriptViewImpl({
           <div className="min-w-0 border-l-[3px] border-border pl-3">
             <span className="font-mono text-meta text-muted-foreground">Now</span>
             <div className="min-w-0">
-              <p className="mt-1 max-w-[68ch] break-words text-reading leading-[1.6] text-muted-foreground sm:text-base" aria-label={interimText ? "Live transcription" : "Listening"}>
+              <p className="mt-1 max-w-[70ch] break-words text-reading leading-[1.6] text-muted-foreground sm:text-base" aria-label={interimText ? "Live transcription" : "Listening"}>
                 {interimText ? (
                   <>
                     {interimText.replace(/\s*…$/, "")}{" "}

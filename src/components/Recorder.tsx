@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
-  HardDrive, Info, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, FileText, ChevronDown, ArrowDown, TriangleAlert,
+  HardDrive, Info, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, Check, ChevronDown, ArrowDown, TriangleAlert,
 } from "lucide-react";
 import { useRecorder } from "@/hooks/useRecorder";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
@@ -23,9 +23,11 @@ import { OfflineModelControl, useOfflineReadiness, type OfflineReadiness } from 
 import { TranscriptView } from "./TranscriptView";
 import { NameSuggestions } from "./NameSuggestions";
 import { Badge, Button, FieldLabel, LiveDot, GateReason, Notice, Panel, PanelHeader, Segmented, Switch, cx, selectCls } from "./ui";
-import { Orb } from "./Orb";
+import { LevelCanvas } from "./LevelCanvas";
+import { RecordButton } from "./RecordButton";
 import { OverdueLine } from "./OverdueReminder";
 import { Waveform } from "./Waveform";
+import { followAfterScroll, inputStatusLines, isNearBottom, recordControlState, showJumpToLatest } from "@/lib/recordControl";
 import { RecordingControls, useFloatingBarFlag } from "./RecordingControls";
 import { useToast } from "./Toast";
 import { calmMode, CALM_BOOST_MS } from "@/lib/calmMode";
@@ -292,31 +294,26 @@ export function Recorder() {
     return () => io.disconnect();
   }, []);
 
-  // Track the newest line: only a user scroll (touch/wheel/key within 1 s) turns off follow-live.
+  // Follow the newest line: reaching the bottom resumes following; only a user scroll (touch/wheel/key within 1 s) stops it.
   useEffect(() => {
     const mark = () => {
       lastUserInput.current = Date.now();
     };
+    const box = scrollRef.current;
+    const onScroll = () => {
+      if (!box) return;
+      const user = Date.now() - lastUserInput.current < 1000;
+      setAtBottom((prev) => followAfterScroll(prev, isNearBottom(box), user));
+    };
     window.addEventListener("touchstart", mark, { passive: true });
     window.addEventListener("wheel", mark, { passive: true });
     window.addEventListener("keydown", mark);
-    const el = bottomRef.current;
-    let io: IntersectionObserver | undefined;
-    if (el && typeof IntersectionObserver !== "undefined") {
-      io = new IntersectionObserver(
-        ([e]) => {
-          if (e.isIntersecting) setAtBottom(true);
-          else if (Date.now() - lastUserInput.current < 1000) setAtBottom(false);
-        },
-        { root: scrollRef.current }
-      );
-      io.observe(el);
-    }
+    box?.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("touchstart", mark);
       window.removeEventListener("wheel", mark);
       window.removeEventListener("keydown", mark);
-      io?.disconnect();
+      box?.removeEventListener("scroll", onScroll);
     };
   }, []);
 
@@ -449,7 +446,16 @@ export function Recorder() {
     setBoostUntil(Date.now() + CALM_BOOST_MS);
   };
 
-  const stateLabel = busy ? (rec.isPaused ? "Paused" : "Recording") : starting ? "Getting ready" : "Ready";
+  const ctl = recordControlState({
+    busy, paused: rec.isPaused, starting, finishing: rec.finishing, saveState: rec.saveState,
+    meetingId: rec.meetingId, hasTranscript, statusMsg: rec.statusMsg,
+  });
+  const micName = mics.find((m) => m.deviceId === micId)?.label ?? "";
+  const inputLines = inputStatusLines({
+    state: ctl, micLabel: micName, phoneMic: nativeMode || nativeLocal,
+    soundToggle: soundToggle && !nativeMode, soundOn: alsoSound,
+  });
+
 
   const saveStatus = rec.meetingId && (
     <span className="inline-flex items-center gap-1.5">
@@ -463,23 +469,9 @@ export function Recorder() {
   );
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] lg:items-start lg:gap-8">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:items-start lg:gap-8">
       {/* ---------- Session controls ---------- */}
       <Panel as="section" aria-label="Recording controls" ref={heroRef} className="overflow-hidden lg:sticky lg:top-10">
-        {finished && (
-          // Phones: the transcript is below the fold after Stop, so offer the meeting up here.
-          <Link
-            href={`/meeting?id=${rec.meetingId}`}
-            className="flex items-center gap-3 rounded-t-modal border-b border-border px-4 py-3 text-ui hover:bg-muted/50 lg:hidden"
-          >
-            <FileText className="h-4 w-4 shrink-0 text-success-text" />
-            <span className="flex-1">
-              <span className="block font-medium">Meeting saved</span>
-              <span className="block text-meta text-muted-foreground">Open it for minutes and export</span>
-            </span>
-            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </Link>
-        )}
 
         {!busy && !starting && !prefillPlan && (
           <NextUpCard
@@ -502,108 +494,82 @@ export function Recorder() {
         )}
 
         <div
-          className="flex flex-col items-center px-6 py-8 text-center max-lg:min-h-[min(560px,70dvh)] max-lg:justify-center"
+          className={cx(
+            "flex flex-col items-center px-5 py-6 text-center lg:py-8",
+            !busy && "max-lg:min-h-[min(480px,64dvh)] max-lg:justify-center"
+          )}
           onClick={onHeroClick}
         >
-          <div className="flex items-center justify-center gap-2 text-meta font-semibold">
-            {busy && <LiveDot paused={rec.isPaused} solid={mode === "calm" || mode === "reduced"} />}
-            {starting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            <span
-              className={cx(
-                busy && !rec.isPaused && "text-record",
-                busy && rec.isPaused && "text-warning-text",
-                !busy && "text-muted-foreground",
-                busy && !rec.isPaused && mode === "live" && "live-blink"
-              )}
-            >
-              {stateLabel}
-            </span>
-          </div>
           {prefillTitle && !busy && !starting && (
-            <p className="mt-2 max-w-full truncate text-meta text-muted-foreground" title={prefillTitle}>
+            <p className="mb-3 max-w-full truncate text-meta text-muted-foreground" title={prefillTitle}>
               {prefillPlan ? "Recording: " : "Recording as: "}
               <span className="font-semibold text-foreground">{prefillTitle}</span>
               {prefillPlan && " · planned meeting"}
             </p>
           )}
-          <div
-            className={cx(
-              "mt-2 num text-display font-normal tracking-[-0.02em]",
-              busy || starting ? "text-foreground" : "text-muted-foreground"
-            )}
-          >
+          <div className={cx("num text-display font-normal tracking-[-0.02em]", busy || starting ? "text-foreground" : "text-muted-foreground")}>
             {formatDuration(rec.recordingSeconds)}
           </div>
 
-          <div className="relative mt-4 grid h-[280px] w-full place-items-center">
-            <div className="absolute inset-0 grid place-items-center">
-              <Orb level={rec.micLevel} mode={mode} />
+          <div className="mt-5 flex items-start justify-center gap-5">
+            <div className="mt-[20px] w-12">
+              {busy && (
+                <button
+                  type="button"
+                  onClick={rec.isPaused ? rec.resume : rec.pause}
+                  className="slide-in-left grid h-12 w-12 place-items-center rounded-full border border-border bg-card active:scale-95"
+                  aria-label={rec.isPaused ? "Resume recording" : "Pause recording"}
+                >
+                  {rec.isPaused ? <Play className="h-5 w-5 fill-current" /> : <Pause className="h-5 w-5 fill-current" />}
+                </button>
+              )}
             </div>
-            {busy && (
-              <button
-                onClick={rec.isPaused ? rec.resume : rec.pause}
-                className="slide-in-left absolute left-1/2 top-1/2 -ml-[124px] -mt-7 z-10 grid h-14 w-14 place-items-center rounded-full border border-border/70 bg-card shadow-card active:scale-95"
-                aria-label={rec.isPaused ? "Resume recording" : "Pause recording"}
-              >
-                {rec.isPaused ? <Play className="h-5 w-5 fill-current" /> : <Pause className="h-5 w-5 fill-current" />}
-              </button>
-            )}
-            <button
+            <RecordButton
+              state={ctl}
+              pulse={mode === "live"}
+              disabled={!busy && (starting || blocked || !gateStart.allowed)}
+              describedBy={!busy && !gateStart.allowed ? "start-gate-reason" : undefined}
               onClick={
                 busy
                   ? () => {
                       haptics.stop();
                       rec.stop();
                     }
-                  : starting || !gateStart.allowed
-                    ? undefined
-                    : () => {
-                        haptics.start();
-                        rec.start("mic");
-                      }
+                  : () => {
+                      haptics.start();
+                      rec.start("mic");
+                    }
               }
-              disabled={!busy && (starting || blocked || !gateStart.allowed)}
-              aria-disabled={!busy && (starting || blocked || !gateStart.allowed)}
-              aria-describedby={!busy && !gateStart.allowed ? "start-gate-reason" : undefined}
-              data-state={busy ? (rec.isPaused ? "paused" : "recording") : "idle"}
-              style={{
-                transition: "transform var(--dur-4) var(--spring), border-radius var(--dur-4) var(--spring)",
-                transform: busy ? "scale(0.818)" : undefined,
-                borderRadius: busy ? 22 : 44,
-              }}
-              className={cx(
-                "relative z-10 grid h-22 w-22 place-items-center bg-record-fill text-white",
-                !busy && "active:scale-95",
-                "disabled:cursor-not-allowed",
-                !busy && (blocked || !gateStart.allowed) && "opacity-40"
-              )}
-              aria-label={busy ? "Stop recording" : starting ? "Starting recording" : "Start recording"}
-            >
-              {busy && !rec.isPaused && mode === "live" && (
-                <span aria-hidden className="live-ring pointer-events-none absolute inset-0 rounded-[inherit] bg-record-fill opacity-40" />
-              )}
-              {busy ? (
-                <Square className="relative h-6 w-6 fill-current" />
-              ) : starting ? (
-                <Loader2 className="relative h-7 w-7 animate-spin" />
-              ) : (
-                <Mic className="relative h-7 w-7" />
-              )}
-            </button>
+            />
+            <div className="w-12" aria-hidden />
           </div>
 
-          <div className="mt-2 flex h-12 w-full justify-center">
-            {busy ? (
-              <Waveform level={rec.isPaused ? 0 : rec.micLevel} reduced={mode !== "live"} />
-            ) : (
-              !starting && (
-                <p className="self-center text-meta text-muted-foreground">
-                  Tap to record
-                  <span className="block">{privacyNote(effective)}</span>
-                </p>
-              )
-            )}
-          </div>
+          <LevelCanvas
+            className="mt-5 max-w-sm"
+            level={rec.micLevel}
+            state={busy ? (rec.isPaused ? "paused" : "live") : "idle"}
+            reduced={reduced || (busy && mode !== "live")}
+          />
+
+          <ul className="mt-3 space-y-0.5 text-meta text-muted-foreground" aria-label="Input status">
+            {inputLines.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+          <p className="mt-1 text-meta text-muted-foreground">{privacyNote(effective)}</p>
+
+          {ctl === "saved" && rec.meetingId && (
+            <div className="mt-4 flex w-full items-center gap-3 rounded-btn border border-border bg-success-soft px-4 py-3 text-left" role="status">
+              <Check className="h-4 w-4 shrink-0 text-success-text" aria-hidden />
+              <span className="min-w-0 flex-1 text-ui font-medium">Meeting saved</span>
+              <Link
+                href={`/meeting?id=${rec.meetingId}`}
+                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-btn px-3 text-ui font-semibold text-accent-text hover:bg-accent-soft"
+              >
+                Open meeting <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          )}
 
           {mode === "calm" && (
             <p className="mt-2 text-meta text-muted-foreground">
@@ -618,9 +584,17 @@ export function Recorder() {
             </p>
           )}
 
-          <p className="mx-auto mt-2 min-h-[1.25rem] max-w-[30ch] text-meta text-muted-foreground" aria-live="polite">
-            {rec.statusMsg === "Ready" ? "" : rec.statusMsg}
-          </p>
+          {ctl === "error" ? (
+            <div className="mt-3 w-full text-left" role="alert">
+              <Notice tone="danger" icon={<TriangleAlert className="h-4 w-4" />} title="Couldn’t record">
+                {rec.statusMsg}
+              </Notice>
+            </div>
+          ) : (
+            <p className="mx-auto mt-3 min-h-[1.25rem] max-w-[34ch] text-meta text-muted-foreground" aria-live="polite">
+              {rec.statusMsg === "Ready" ? "" : rec.statusMsg}
+            </p>
+          )}
 
           <div className="mt-2 flex min-h-11 items-center justify-center">
             {starting ? (
@@ -889,11 +863,17 @@ export function Recorder() {
           )}
           {!hasTranscript && !hasLive ? (
             <div className="flex h-full min-h-[40dvh] flex-col items-center justify-center gap-2 text-center">
-              <p className="text-ui font-medium">{busy ? "Listening…" : "No transcript yet"}</p>
+              {starting ? (
+                <p className="flex items-center gap-2 text-ui font-medium" role="status">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {rec.statusMsg === "Ready" ? "Getting ready…" : rec.statusMsg}
+                </p>
+              ) : busy ? (
+                <p className="text-ui font-medium">Listening…</p>
+              ) : (
+                <p className="max-w-[36ch] text-ui font-medium">Press record to start.</p>
+              )}
               <p className="max-w-[36ch] text-meta text-muted-foreground">
-                {busy
-                  ? "Words appear here as people speak."
-                  : "Start recording and the conversation appears here, saved to your account as you go."}
+                The transcript appears here as people speak.
               </p>
             </div>
           ) : (
@@ -913,16 +893,16 @@ export function Recorder() {
           <div ref={bottomRef} className="scroll-mb-48 lg:scroll-mb-6" />
         </div>
 
-        {busy && !atBottom && (
+        {showJumpToLatest(busy, atBottom) && (
           <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
             <button
               onClick={() => {
                 setAtBottom(true);
                 followLive();
               }}
-              className="pop-in pointer-events-auto inline-flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-ui font-medium text-accent-foreground shadow-float"
+              className="pop-in pointer-events-auto inline-flex min-h-11 items-center gap-1.5 rounded-full bg-accent px-4 text-ui font-medium text-accent-foreground shadow-float"
             >
-              <ArrowDown className="h-4 w-4" /> Jump to live
+              <ArrowDown className="h-4 w-4" /> Jump to latest
             </button>
           </div>
         )}
