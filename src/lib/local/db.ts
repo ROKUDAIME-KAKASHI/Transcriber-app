@@ -33,3 +33,16 @@ export function getLocalDb(userId: string): LocalDb {
   }
   return db;
 }
+
+/** Closes and deletes this user's IndexedDB (account deletion). Gives up waiting after 3 s if another tab holds it open. */
+export async function deleteLocalDb(userId: string): Promise<void> {
+  const db = cache.get(userId);
+  cache.delete(userId);
+  try {
+    db?.close();
+  } catch {
+    /* already closed */
+  }
+  if (typeof indexedDB === "undefined") return;
+  await Promise.race([Dexie.delete("transcriber-" + userId), new Promise<void>((r) => setTimeout(r, 3000))]);
+}

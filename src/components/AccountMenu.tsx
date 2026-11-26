@@ -6,6 +6,7 @@ import { CircleUser, LogOut, Moon, Sun, Users } from "lucide-react";
 import { useTheme } from "@/lib/themePref";
 import { toggleTheme } from "@/lib/theme";
 import { cx } from "./ui";
+import { useCustomName } from "@/lib/displayName";
 
 /** Phones and tablets: one account button in the top bar. Profile, People (when on), theme and sign out live here. */
 export function AccountMenu({
@@ -22,6 +23,7 @@ export function AccountMenu({
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const customName = useCustomName();
   const rootRef = useRef<HTMLDivElement>(null);
   const { pref, systemDark, setPref } = useTheme();
   const nextTheme = toggleTheme(pref, systemDark);
@@ -67,7 +69,7 @@ export function AccountMenu({
         >
           {email && (
             <p className="truncate px-3 py-2 text-meta text-muted-foreground" title={email}>
-              {email}
+              {customName ? `${customName} · ${email}` : email}
             </p>
           )}
           <Link role="menuitem" href="/profile" aria-current={pathname === "/profile" ? "page" : undefined} className={item}>

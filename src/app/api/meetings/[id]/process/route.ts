@@ -178,7 +178,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const document = unwrapFence(result.text);
     if (!document) throw new Error("The AI returned an empty response.");
 
-    await prisma.meeting.update({ where: { id }, data: { document, template } });
+    await prisma.meeting.update({ where: { id }, data: { document, template }, select: { id: true } });
     return Response.json({ document, template });
   } catch (error) {
     logServerError("POST /api/meetings/[id]/process", error);

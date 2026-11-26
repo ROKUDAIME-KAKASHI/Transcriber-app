@@ -53,7 +53,7 @@ export function NameSuggestions({
     if (await onRename(s.speaker, s.name)) toast(`${speakerLabel(s.speaker)} is now ${s.name}`, "success");
     else setError("Couldn't save the name. Try again.");
   };
-  const useAll = async () => {
+  const applyAll = async () => {
     setError(null);
     let ok = true;
     if (onRenameMany) ok = await onRenameMany(Object.fromEntries(suggestions.map((s) => [s.speaker, s.name])));
@@ -71,7 +71,7 @@ export function NameSuggestions({
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-meta font-semibold text-muted-foreground">Suggested names</h3>
             {suggestions.length > 1 && (
-              <Button variant="ghost" className="!min-h-11 px-3 text-meta lg:!min-h-9" onClick={() => void useAll()}>
+              <Button variant="ghost" className="!min-h-11 px-3 text-meta lg:!min-h-9" onClick={() => void applyAll()}>
                 Use all
               </Button>
             )}

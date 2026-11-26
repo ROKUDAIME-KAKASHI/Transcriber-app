@@ -13,7 +13,10 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:status": "prisma migrate status",
-    "postinstall": "prisma generate && node scripts/copy-ort.mjs && node scripts/copy-tesseract.mjs"
+    "postinstall": "prisma generate && node scripts/copy-ort.mjs && node scripts/copy-tesseract.mjs",
+    "lint": "eslint .",
+    "bundle-budget": "node scripts/bundle-budget.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.80",
@@ -59,6 +62,8 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.2.9",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "typescript": "^5"

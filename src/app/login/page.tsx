@@ -1,7 +1,8 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mic, AudioLines, Users, FileText } from "lucide-react";
 import { Button, FieldLabel, Panel, Segmented, inputCls } from "@/components/ui";
@@ -20,6 +21,11 @@ export default function LoginPage() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  useEffect(() => {
+    // /login?deleted=1 is where account deletion lands.
+    setDeleted(new URLSearchParams(window.location.search).get("deleted") === "1");
+  }, []);
   const router = useRouter();
   const { recheck } = useAuth();
   const online = useConnectivity() === "online";
@@ -117,6 +123,11 @@ export default function LoginPage() {
             </span>
             Minutely
           </div>
+          {deleted && (
+            <p className="mb-4 rounded-chip bg-muted px-3 py-2 text-ui" role="status">
+              Your account was deleted.
+            </p>
+          )}
           <h1 className="text-2xl font-semibold tracking-tight">{mode === "signin" ? "Sign in" : "Create your account"}</h1>
           <p className="mt-1.5 text-ui text-muted-foreground">
             {mode === "signin" ? "Welcome back. Your meetings are waiting." : "Free to start. Record your first meeting in a minute."}
@@ -175,6 +186,11 @@ export default function LoginPage() {
               </p>
             )}
           </form>
+          <p className="mt-6 text-center text-meta text-muted-foreground">
+            <Link href="/privacy" className="underline-offset-2 hover:underline">
+              Privacy
+            </Link>
+          </p>
         </Panel>
       </main>
     </div>

@@ -20,6 +20,7 @@ import { AppUpdateBanner } from "./AppUpdateBanner";
 import { useFlag } from "@/lib/flagsClient";
 import { OverdueBadge, OverdueReminder, useOverdueCount } from "./OverdueReminder";
 import { isNative } from "@/lib/native";
+import { refreshDisplayName, useCustomName } from "@/lib/displayName";
 
 // Loaded the first time it is opened, so it adds nothing to the first page load.
 const CommandPalette = dynamic(() => import("./CommandPalette"), { ssr: false });
@@ -64,6 +65,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, cachedUser } = useAuth();
   const offline = useConnectivity() === "offline";
   const email = user?.email ?? cachedUser?.email ?? "";
+  const customName = useCustomName();
+  useEffect(() => {
+    if (email) refreshDisplayName().catch(() => {});
+  }, [email]);
   const signOutNow = useSignOut();
   const doSignOut = () => {
     if (offline) return;
@@ -183,7 +188,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {email.slice(0, 1) || "?"}
               </span>
               <span className="min-w-0 flex-1 truncate text-meta text-muted-foreground" title={email}>
-                {email}
+                {customName ?? email}
               </span>
             </Link>
             <ThemeToggle />

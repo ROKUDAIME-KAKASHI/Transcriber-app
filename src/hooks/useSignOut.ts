@@ -7,6 +7,7 @@ import { markSignedOut } from "@/components/SyncProvider";
 import { useToast } from "@/components/Toast";
 import { useRecorderActions } from "@/components/RecorderProvider";
 import { isRecordingActive } from "@/lib/recordingFlag";
+import { cacheDisplayName } from "@/lib/displayName";
 
 /** Signs out through NextAuth, forgets the local user only after the server confirmed, then goes to /login. */
 export function useSignOut(): () => void {
@@ -24,6 +25,7 @@ export function useSignOut(): () => void {
       await signOut({ redirect: false })
       .then(() => {
         markSignedOut();
+        cacheDisplayName(""); // the next person on this device must not inherit this name
         router.replace("/login");
       })
       .catch(() => {

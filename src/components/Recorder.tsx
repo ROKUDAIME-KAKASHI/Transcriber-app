@@ -39,6 +39,8 @@ import { usePeople } from "@/lib/stakeholdersClient";
 import { useMotionPref } from "@/lib/motionPref";
 import * as haptics from "@/lib/haptics";
 import { privacyNote, settingsSummary } from "@/lib/recordSummary";
+import { RECORD_REMINDER } from "@/lib/privacyCore";
+import { useConsentGate } from "./ConsentDialog";
 
 const MIC_KEY = "transcriber.micId";
 const ENGINE_KEY = "transcriber.engine";
@@ -444,6 +446,7 @@ export function Recorder() {
     setBoostUntil(Date.now() + CALM_BOOST_MS);
   };
 
+  const consent = useConsentGate(effective);
   const ctl = recordControlState({
     busy, paused: rec.isPaused, starting, finishing: rec.finishing, saveState: rec.saveState,
     meetingId: rec.meetingId, hasTranscript, statusMsg: rec.statusMsg,
@@ -468,6 +471,7 @@ export function Recorder() {
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:items-start lg:gap-8">
+      {consent.dialog}
       {/* ---------- Session controls ---------- */}
       <Panel as="section" aria-label="Recording controls" ref={heroRef} className="overflow-hidden lg:sticky lg:top-10">
 
@@ -485,8 +489,10 @@ export function Recorder() {
               setPrefillPlan(true);
               // A call plan on a laptop: sound is on; start from the main button so the share picker opens from the user's own tap.
               if (soundToggle && planUrl) return;
-              haptics.start();
-              rec.start("mic");
+              consent.gate(() => {
+                haptics.start();
+                rec.start("mic");
+              });
             }}
           />
         )}
@@ -533,14 +539,17 @@ export function Recorder() {
                       haptics.stop();
                       rec.stop();
                     }
-                  : () => {
-                      haptics.start();
-                      rec.start("mic");
-                    }
+                  : () =>
+                      consent.gate(() => {
+                        haptics.start();
+                        rec.start("mic");
+                      })
               }
             />
             <div className="w-12" aria-hidden />
           </div>
+
+          {!busy && !starting && <p className="mt-3 text-meta text-muted-foreground">{RECORD_REMINDER}</p>}
 
           <LevelCanvas
             className="mt-5 max-w-sm"
@@ -672,6 +681,10 @@ export function Recorder() {
             </Notice>
           )}
 
+          {overridden && !locked && (
+            <Notice icon={<WifiOff className="h-4 w-4" />}>You&apos;re offline — using on-device.</Notice>
+          )}
+
           <div className={cx(busy && "max-lg:hidden")}>
             <button
               type="button"
@@ -735,13 +748,6 @@ export function Recorder() {
                       })
                     }
                   />
-                </div>
-              )}
-              {overridden && !locked && (
-                <div className="mt-3">
-                  <Notice icon={<WifiOff className="h-4 w-4" />}>
-                    Offline, using on-device. Your Cloud choice comes back when you&apos;re online.
-                  </Notice>
                 </div>
               )}
             </div>

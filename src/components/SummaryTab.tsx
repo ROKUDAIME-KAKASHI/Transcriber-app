@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { MeetingSummary } from "@/lib/combined";
 import { AlertTriangle, Sparkles } from "lucide-react";
 import { useFeatureGate } from "@/lib/featureGate";
 import { useFlag } from "@/lib/flagsClient";
@@ -41,7 +42,20 @@ export function SummaryTab({
   compact?: boolean;
 }) {
   const { userId } = useLocalUser();
-  const { summary } = useExtras(userId, meetingId);
+  const { summary: local } = useExtras(userId, meetingId);
+  // The saved copy on the server wins; the device copy is the fallback (offline, or the database update is not applied).
+  const [saved, setSaved] = useState<MeetingSummary | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/meetings/${meetingId}/summary`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { summary?: MeetingSummary | null } | null) => live && d?.summary && setSaved(d.summary))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [meetingId]);
+  const summary = saved ?? local;
   const gate = useFeatureGate("ai");
   const aiOn = useFlag("autoMinutes");
   const [busy, setBusy] = useState(false);
@@ -51,7 +65,9 @@ export function SummaryTab({
     setBusy(true);
     setError(null);
     try {
-      writeExtras(userId, meetingId, { summary: await generateSummaryOnly(meetingId, model) });
+      const next = await generateSummaryOnly(meetingId, model);
+      writeExtras(userId, meetingId, { summary: next });
+      setSaved(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't write the summary. Try again.");
     } finally {
@@ -79,7 +95,7 @@ export function SummaryTab({
         <div className="space-y-3 p-5">
           <p className="text-ui text-muted-foreground">
             A short look at how the meeting went: why it was held, the main points, decisions, open questions and the tone. It is
-            written together with the minutes{aiOn ? "" : " when automatic minutes are on"}, and kept on this device.
+            written together with the minutes{aiOn ? "" : " when automatic minutes are on"}.
           </p>
           {aiOn && (
             <>
@@ -123,7 +139,7 @@ export function SummaryTab({
           </section>
         )}
         {error && <Notice tone="danger" icon={<AlertTriangle className="h-4 w-4" aria-hidden />} title={error} />}
-        <p className="text-meta text-muted-foreground">Kept on this device. Regenerating the minutes writes a new summary.</p>
+        <p className="text-meta text-muted-foreground">Saved with the meeting. Regenerating the minutes writes a new summary.</p>
       </div>
     </Panel>
   );

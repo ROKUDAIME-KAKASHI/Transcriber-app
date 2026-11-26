@@ -41,6 +41,9 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: Lint
+        run: npm run lint
+
       - name: Tests
         run: npm test
 
@@ -49,3 +52,9 @@ jobs:
 
       - name: Check generated service worker and shells
         run: npm run check-build
+
+      - name: First-load JS budget
+        run: npm run bundle-budget
+
+      - name: Smoke test (no database)
+        run: npm run smoke
