@@ -6,13 +6,12 @@ import {
   Mic, Square, Pause, Play, Cloud, CloudOff, Loader2, ArrowRight, PlayCircle, MicOff, Zap, Languages, Users,
   HardDrive, Info, WifiOff, ShieldAlert, BatteryCharging, BatteryWarning, Check, ChevronDown, ArrowDown, TriangleAlert,
 } from "lucide-react";
-import { useRecorder } from "@/hooks/useRecorder";
+import { useRecorderActions, useRecorderState } from "./RecorderProvider";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
 import { isNativeApp, nativeCapabilities } from "@/lib/nativeRecorder";
 import { useFlag } from "@/lib/flagsClient";
 import { enqueueAuto } from "@/lib/minutesJob";
 import { useLocalUser } from "./SyncProvider";
-import { setWebRecording } from "@/lib/recordingFlag";
 import { formatDuration } from "@/lib/transcript";
 import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
 import { WHISPER_LANGUAGES } from "@/lib/speech/models";
@@ -112,6 +111,9 @@ function useMicrophones() {
 }
 
 export function Recorder() {
+  const recActions = useRecorderActions();
+  /** Coming back to a recording that carried on while this screen was closed: its engine is already fixed. */
+  const resumedBusy = !!recActions?.isBusy();
   const [micId, setMicId] = useState("");
   const { mics, refresh: refreshMics } = useMicrophones();
   /** The saved preference. Only ever written by the user's own selection. */
@@ -120,7 +122,7 @@ export function Recorder() {
   const [language, setLanguage] = useState("en");
   const deepgramGate = useFeatureGate("deepgram");
   // Once a recording is starting or running, the engine is frozen: connectivity flips never change it.
-  const [sessionLocked, setSessionLocked] = useState(false);
+  const [sessionLocked, setSessionLocked] = useState(resumedBusy);
   const computedEngine = effectiveEngine({
     saved: engine,
     lastOnDevice,
@@ -129,7 +131,7 @@ export function Recorder() {
   }) as RecordEngine;
   const conn = useConnectivity();
   const [modelStatus, setModelStatus] = useState<Record<string, OfflineReadiness>>({});
-  const frozenEngine = useRef<RecordEngine>(computedEngine);
+  const frozenEngine = useRef<RecordEngine>(resumedBusy && recActions ? (recActions.getOptions().engine as RecordEngine) : computedEngine);
   if (!sessionLocked) frozenEngine.current = computedEngine;
   const effective: RecordEngine = sessionLocked ? frozenEngine.current : computedEngine;
   const overridden = effective !== engine;
@@ -157,7 +159,13 @@ export function Recorder() {
     () => ({ platform: detectCallPlatform(callUrl)?.id ?? null, attendees: planAttendees, directory: directoryNames }),
     [callUrl, planAttendees, directoryNames],
   );
-  const webRec = useRecorder({ deviceId: micId, engine: effective, language, source: soundToggle && alsoSound ? "tab" : "mic", naming });
+  // The recorder itself lives in RecorderProvider (app level) so it keeps going when this screen is left.
+  // This screen only chooses its settings; the provider ignores changes while a recording is busy.
+  const webRec = useRecorderState();
+  const recSource = soundToggle && alsoSound ? "tab" : "mic";
+  useEffect(() => {
+    recActions?.setOptions({ deviceId: micId, engine: effective, language, source: recSource, naming });
+  }, [recActions, micId, effective, language, recSource, naming]);
   const callSilent = !!webRec.callSilent;
   const nativeRec = useNativeRecorder({ language });
   // Android app: cloud mode records in a native service that keeps going with the screen off.
@@ -177,10 +185,6 @@ export function Recorder() {
   const nativeLocal = inApp && localCapture && (lockedRecordingOn || nativeRec.isRecording || nativeRec.isStarting) && onDevice !== null;
   const nativeMode = inApp && (effective === "deepgram" || nativeRec.isRecording || nativeRec.isStarting);
   const rec = nativeMode ? nativeRec : webRec;
-  useEffect(() => {
-    setWebRecording(rec.isRecording);
-  }, [rec.isRecording]);
-  useEffect(() => () => setWebRecording(false), []);
   const battery = useBatteryRestriction(inApp);
   const bottomRef = useRef<HTMLDivElement>(null);
   /** The transcript's own scroll box (bounded on phones too, so a long meeting never runs off the page). */

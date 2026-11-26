@@ -2333,8 +2333,9 @@ export function useRecorder(opts: {
     return () => window.removeEventListener("pagehide", onUnload);
   }, [save]);
 
-  // Leaving the Record screen (e.g. tapping "Meetings" in the tab bar) used to leave the mic and
-  // timers running with no Stop button. Stop and save instead; cancel a start in progress.
+  // The hook now lives in RecorderProvider (app level), so moving between pages never unmounts it and
+  // recording carries on. This cleanup only runs on a full unload / provider teardown: stop and save
+  // (or detach a native capture), cancel a start in progress.
   useEffect(() => {
     return () => {
       if (nativeRef.current && wantRecordingRef.current) detachNative(); // capture carries on in the service
