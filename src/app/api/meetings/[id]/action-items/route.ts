@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { SaveBody } from "@/lib/actionItems";
+import { lenientServerNow, validateDeadline } from "@/lib/deadline";
 import { actionItemsMissing, isActionItemsMissing } from "@/lib/actionItemsDb";
 import { recordEvents, withLive } from "@/lib/actionItemHistory";
 import { skipExactDuplicates } from "@/lib/dedupe";
@@ -50,6 +51,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const parsed = SaveBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return Response.json({ error: "Invalid tasks" }, { status: 400 });
+  // New tasks: a due date can't be in the past or more than 5 years out.
+  for (const it of parsed.data.items) {
+    const bad = validateDeadline(it.dueDate, { now: lenientServerNow() });
+    if (bad) return Response.json({ error: bad }, { status: 400 });
+  }
   try {
     if (!(await ownsMeeting(id, userId))) return Response.json({ error: "Meeting not found" }, { status: 404 });
     // Skip tasks already saved for this meeting, and repeats inside this request. Nothing is ever deleted here.
@@ -71,8 +77,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
       const created = await withOwnerLink((link) =>
         prisma.actionItem.createManyAndReturn({
-          data: fresh.map(({ ownerStakeholderId, ...i }) => ({
+          data: fresh.map(({ ownerStakeholderId, dueDate, ...i }) => ({
             ...i,
+            ...(dueDate ? { dueDate: new Date(`${dueDate}T00:00:00.000Z`) } : {}),
             meetingId: id,
             userId,
             ...(link && ownerStakeholderId && valid.has(ownerStakeholderId) ? { ownerStakeholderId } : {}),

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { actionItemsMissing, isActionItemsMissing } from "@/lib/actionItemsDb";
 import { PatchBody } from "@/lib/taskTracker";
+import { lenientServerNow, validateDeadline } from "@/lib/deadline";
 import { recordEvents, withLive } from "@/lib/actionItemHistory";
 import { diffTask, historyValue, type EventDraft } from "@/lib/taskHistory";
 import { livePerson, trackerPlusOn, withOwnerLink } from "@/lib/trackerPlusDb";
@@ -23,6 +24,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ itemId
     // Owner link (tracker upgrades): a picked person sets the id and the name; typing free text clears the id,
     // even from an older cached page that doesn't send it. Without the upgrades or the column, only the text is saved.
     const { ownerStakeholderId: requested, ...fields } = parsed.data;
+    // A new or changed due date is checked; an unchanged old one keeps saving.
+    if (fields.dueDate) {
+      const bad = validateDeadline(fields.dueDate.toISOString().slice(0, 10), {
+        previous: before?.dueDate ? before.dueDate.toISOString() : null,
+        now: lenientServerNow(),
+      });
+      if (bad) return Response.json({ error: bad }, { status: 400, headers: NO_STORE });
+    }
     let linkValue: string | null | undefined;
     if (await trackerPlusOn()) {
       if (typeof requested === "string") {

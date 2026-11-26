@@ -187,9 +187,11 @@ export function MeetingList() {
           </p>
         )}
       </div>
-      <Link href="/" className={cx(pillLink, "hidden sm:inline-flex")}>
-        <Mic className="h-4 w-4" /> New recording
-      </Link>
+      {merged.length > 0 && (
+        <Link href="/" className={cx(pillLink, "hidden sm:inline-flex")}>
+          <Mic className="h-4 w-4" /> New recording
+        </Link>
+      )}
     </div>
   );
 
@@ -232,18 +234,7 @@ export function MeetingList() {
       <>
         {header}
         <UpcomingPlans className="mb-6" />
-        <Panel as="div" className="px-6 py-12 text-center">
-          <div aria-hidden className="relative mx-auto h-40 w-40">
-            <div className="glass absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full">
-              <Mic className="h-7 w-7 text-accent-text" />
-            </div>
-          </div>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight">No meetings yet</h2>
-          <p className="mx-auto mt-2 max-w-[40ch] text-ui text-muted-foreground">No meetings yet. Press Record to capture your first one.</p>
-          <Link href="/" className={cx(pillLink, "mt-6")}>
-            <Mic className="h-4 w-4" /> Start recording
-          </Link>
-        </Panel>
+        <p className="px-6 py-16 text-center text-ui text-muted-foreground">No meetings yet.</p>
       </>
     );
   }

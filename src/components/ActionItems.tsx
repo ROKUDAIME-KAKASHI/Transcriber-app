@@ -9,6 +9,7 @@ import Link from "next/link";
 import { STATUS_LABEL, type TaskStatus } from "@/lib/taskTracker";
 import { splitLongPhrases } from "@/lib/actionItems";
 import { matchTask } from "@/lib/dedupe";
+import { localToday, maxDeadline, validateDeadline } from "@/lib/deadline";
 import { useToast } from "./Toast";
 import { AgendaButton, FollowUpAgendaSheet } from "./FollowUpAgenda";
 import { PlanNextButton } from "./PlanNextButton";
@@ -31,10 +32,18 @@ interface Row {
   owner: string;
   /** Set when the owner was picked from People; typing free text clears it. */
   ownerId: string | null;
+  /** YYYY-MM-DD from the date picker, or "". */
   deadline: string;
+  /** What the meeting said ("by Friday"), shown as a hint. */
+  said: string;
   quote: string;
   verified: boolean;
 }
+
+/** A model-written deadline that is already a plain date can pre-fill the date picker; "by Friday" cannot. */
+const isoDay = (t: string | null | undefined) => (t && /^\d{4}-\d{2}-\d{2}$/.test(t.trim()) ? t.trim() : "");
+const dayLabel = (day: string) =>
+  new Date(`${day}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
 const STATUS_TONE = { NOT_STARTED: "neutral", IN_PROGRESS: "accent", BLOCKED: "danger", DONE: "success" } as const;
 
@@ -129,7 +138,8 @@ export function ActionItems({
         task: i.task,
         owner: i.owner ?? "",
         ownerId: null,
-        deadline: i.deadlineText ?? "",
+        deadline: isoDay(i.deadlineText),
+        said: i.deadlineText ?? "",
         quote: i.sourceQuote,
         verified: i.verified,
       }))
@@ -163,7 +173,8 @@ export function ActionItems({
           task: i.task,
           owner: i.owner ?? "",
           ownerId: null,
-          deadline: i.deadlineText ?? "",
+          deadline: isoDay(i.deadlineText),
+          said: i.deadlineText ?? "",
           quote: i.sourceQuote,
           verified: i.verified,
         }))
@@ -181,13 +192,14 @@ export function ActionItems({
   const add = () =>
     setRows((rs) => [
       ...(rs ?? []),
-      { key: keyRef.current++, checked: true, task: "", owner: "", ownerId: null, deadline: "", quote: "", verified: true },
+      { key: keyRef.current++, checked: true, task: "", owner: "", ownerId: null, deadline: "", said: "", quote: "", verified: true },
     ]);
 
   const approved = (rows ?? []).filter((r) => r.checked && r.task.trim());
+  const deadlineBad = approved.some((r) => validateDeadline(r.deadline));
 
   const save = async () => {
-    if (!approved.length || saving) return;
+    if (!approved.length || saving || deadlineBad) return;
     setError(null);
     setSaving(true);
     try {
@@ -199,7 +211,8 @@ export function ActionItems({
             task: r.task.trim().slice(0, 300),
             owner: r.owner.trim() || null,
             ownerStakeholderId: r.owner.trim() ? r.ownerId : null,
-            deadlineText: r.deadline.trim() || null,
+            deadlineText: r.deadline ? dayLabel(r.deadline) : r.said.trim() || null,
+            dueDate: r.deadline || null,
             sourceQuote: r.quote,
           })),
         }),
@@ -351,12 +364,22 @@ export function ActionItems({
                           </label>
                           <input
                             id={`ai-deadline-${r.key}`}
-                            maxLength={100}
+                            type="date"
+                            min={localToday()}
+                            max={maxDeadline()}
                             value={r.deadline}
                             onChange={(e) => update(r.key, { deadline: e.target.value })}
-                            className={inputCls}
-                            placeholder="Not specified"
+                            aria-invalid={!!validateDeadline(r.deadline)}
+                            aria-describedby={`ai-deadline-note-${r.key}`}
+                            className={cx(inputCls, "num")}
                           />
+                          <p id={`ai-deadline-note-${r.key}`} className="mt-1 text-meta empty:hidden">
+                            {validateDeadline(r.deadline) ? (
+                              <span className="text-danger-text" role="alert">{validateDeadline(r.deadline)}</span>
+                            ) : r.said && !r.deadline ? (
+                              <span className="text-muted-foreground">Said: {r.said}</span>
+                            ) : null}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -395,7 +418,7 @@ export function ActionItems({
               <Button
                 variant="primary"
                 loading={saving}
-                disabled={!approved.length}
+                disabled={!approved.length || deadlineBad}
                 onClick={() => void save()}
                 className="sm:ml-auto"
               >

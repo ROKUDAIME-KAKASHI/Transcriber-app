@@ -213,6 +213,8 @@ export const SaveBody = z.object({
         /** The People entry picked as owner (ignored when the tracker upgrades are off or the person is unknown). */
         ownerStakeholderId: z.string().trim().min(1).max(64).nullish(),
         deadlineText: optText(100),
+        /** A picked due date (YYYY-MM-DD). The route checks it against the deadline rules. */
+        dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
         sourceQuote: z.string().max(1000),
       })
     )
