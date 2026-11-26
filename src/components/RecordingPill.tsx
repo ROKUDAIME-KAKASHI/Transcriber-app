@@ -26,7 +26,7 @@ export function RecordingPill() {
   const away = pathname !== "/";
   const web = useRecorderStateOptional();
   const actions = useRecorderActions();
-  const bg = useBackgroundRecording(away);
+  const bg = useBackgroundRecording(away && !web?.isRecording);
   if (!away) return null;
   if (web?.isRecording && actions) {
     return (
