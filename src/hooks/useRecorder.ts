@@ -39,6 +39,7 @@ import {
 import { CALL_SILENCE, initialSilence, stepSilence, type SilenceState } from "@/lib/guidedCall";
 import { DUCK_GAIN, DUCK_FALL_TC, DUCK_RISE_TC, initialDuck, stepDuck, type DuckState } from "@/lib/callDuck";
 import { recordNamingRename, saveNamingStats, screenNamingAllowedNow } from "@/lib/naming/client";
+import { cachedDisplayName, refreshDisplayName } from "@/lib/displayName";
 import type { NamerState, PhraseInfo, ScreenNamer } from "@/lib/naming/screenNamer";
 import type { PlatformId } from "@/lib/naming/highlight";
 import { remapStats, type NamingStats } from "@/lib/naming/stats";
@@ -2043,7 +2044,10 @@ export function useRecorder(opts: {
     try {
       const { ScreenNamer: Namer } = await import("@/lib/naming/screenNamer");
       if (!wantRecordingRef.current || videoTrackRef.current !== track) return;
+      const meLabel = await Promise.race([refreshDisplayName(), new Promise<string>((r) => setTimeout(() => r(cachedDisplayName()), 1500))]).catch(() => cachedDisplayName());
+      if (!wantRecordingRef.current || videoTrackRef.current !== track) return;
       const namer = new Namer({
+        meLabel,
         track,
         platform: nopts?.platform ?? null,
         attendees: nopts?.attendees ?? [],

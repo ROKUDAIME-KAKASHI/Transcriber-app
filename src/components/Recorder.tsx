@@ -672,6 +672,10 @@ export function Recorder() {
             </Notice>
           )}
 
+          {overridden && !locked && (
+            <Notice icon={<WifiOff className="h-4 w-4" />}>You&apos;re offline — using on-device.</Notice>
+          )}
+
           <div className={cx(busy && "max-lg:hidden")}>
             <button
               type="button"
@@ -735,13 +739,6 @@ export function Recorder() {
                       })
                     }
                   />
-                </div>
-              )}
-              {overridden && !locked && (
-                <div className="mt-3">
-                  <Notice icon={<WifiOff className="h-4 w-4" />}>
-                    Offline, using on-device. Your Cloud choice comes back when you&apos;re online.
-                  </Notice>
                 </div>
               )}
             </div>

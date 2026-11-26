@@ -11,6 +11,7 @@ Until now the schema was applied with `prisma db push`. From now on every schema
 | `prisma/migrations/2_history` | Phase 11: `ActionItem.deletedAt` (soft delete) and the `ActionItemEvent` change-history table |
 | `prisma/migrations/3_stakeholders` | Phase 12: the `Stakeholder` table (People directory) |
 | `prisma/migrations/4_planned_meetings` | Phase 13: `MeetingSeries`, `PlannedMeeting` and `PlannedAttendee` tables |
+| `prisma/migrations/8_polish` | `User.displayName` and `Meeting.summary` (two nullable columns) |
 | `prisma/migrations/migration_lock.toml` | Says the provider is postgresql |
 
 ## Step 0 (read-only): check the live database really matches `0_init`
@@ -106,9 +107,21 @@ Additive only: one new nullable column, `ActionItem.ownerStakeholderId` (TEXT, n
 
 Until it is applied the tracker behaves exactly as before: every task query falls back to the old columns when the database says the new one is missing (P2022), owners stay plain text, the series chip, "Link owners to People" and the owner-by-person filter do not appear. The switch-only parts (Timeline view, the Tasks badge, the daily reminder, the Record line, Series progress) need no new column and work straight away. The whole set can be switched off any time in Admin, Feature switches ("Tracker upgrades"); the task list then returns exactly the old fields.
 
+## Apply 8_polish (polish pass)
+
+Additive only: two nullable columns, no default, no index: `User.displayName` (TEXT) and `Meeting.summary` (TEXT, the summary as JSON). No table is created, changed in meaning or dropped.
+
+1. On a Neon preview branch first: `npx prisma migrate deploy` with that branch's `DATABASE_URL` / `DATABASE_URL_UNPOOLED`.
+2. After the pull request is merged, the same command against production. **Owner step: run `npm run db:migrate` against production once the code is live (or before; either order is safe).**
+3. `npm run db:status` should say "Database schema is up to date".
+
+Until it is applied the app still works exactly as before. No existing query selects the new columns (every read of `Meeting` and `User` has an explicit `select`, and writes that return a row use `select: { id: true }`), so nothing hits P2022. Only the new helpers in `src/lib/polishDb.ts` touch the columns, and each catches P2021/P2022: the summary stays on the device (as before) and the display name stays "You" (saving it answers 503 "needs a database update").
+
+When you add a read of a `Meeting` or `User` row, give it an explicit `select`; a bare `findMany()` or `update()` would select every column, including ones production may not have yet.
+
 ### Brand new databases (for example a fresh Neon preview branch)
 
-A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, `4_planned_meetings`, `5_prework`, `6_calendar`, then `7_tracker`).
+A Neon branch copied from production already has the tables and the `_prisma_migrations` rows, so nothing to do after the baseline above. For a completely empty database just run `npm run db:migrate` (applies `0_init`, `1_safety`, `2_history`, `3_stakeholders`, `4_planned_meetings`, `5_prework`, `6_calendar`, `7_tracker`, then `8_polish`).
 
 ## From now on
 

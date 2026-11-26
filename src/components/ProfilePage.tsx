@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ScreenNamingToggle } from "./ScreenNamingToggle";
 import { Check, ChevronRight, Copy, Download, RefreshCw, Share2, Users } from "lucide-react";
-import { Badge, Button, DeviceTag, Panel, PanelHeader, Segmented, Switch } from "@/components/ui";
+import { Badge, Button, DeviceTag, FieldLabel, Panel, PanelHeader, Segmented, Switch, inputCls } from "@/components/ui";
+import { cacheDisplayName, cachedDisplayName, refreshDisplayName } from "@/lib/displayName";
+import { cleanDisplayName } from "@/lib/polishCore";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
 import { useOfflineReadiness } from "@/components/OfflineModelControl";
@@ -42,6 +44,74 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 /* ---------- Account ---------- */
+/** "Your name": what your own voice is called in speaker labels (instead of "You"). */
+function NameField({ offline }: { offline: boolean }) {
+  const toast = useToast();
+  const [value, setValue] = useState(() => (cachedDisplayName() === "You" ? "" : cachedDisplayName()));
+  const [saved, setSaved] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    refreshDisplayName()
+      .then((n) => {
+        const v = n === "You" ? "" : n;
+        setValue(v);
+        setSaved(v);
+      })
+      .catch(() => {});
+  }, []);
+  const save = async () => {
+    const clean = cleanDisplayName(value);
+    if (!clean.ok) return setError(clean.error);
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/profile/name", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: clean.name ?? "" }) });
+      const d = (await res.json().catch(() => null)) as { name?: string; error?: string } | null;
+      if (!res.ok || !d?.name) throw new Error(d?.error || "Couldn't save your name. Try again.");
+      cacheDisplayName(d.name);
+      const v = d.name === "You" ? "" : d.name;
+      setValue(v);
+      setSaved(v);
+      toast("Name saved");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save your name. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <FieldLabel htmlFor="display-name">Your name</FieldLabel>
+      <div className="flex gap-2">
+        <input
+          id="display-name"
+          className={inputCls}
+          value={value}
+          maxLength={40}
+          placeholder="You"
+          autoComplete="name"
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(null);
+          }}
+        />
+        <Button type="submit" variant="secondary" loading={busy} disabled={offline || value.trim() === saved}>
+          Save
+        </Button>
+      </div>
+      <p className={error ? "mt-1 text-meta text-danger-text" : "mt-1 text-meta text-muted-foreground"}>
+        {error ?? "Shown instead of \"You\" when your own voice is named on a call."}
+      </p>
+    </form>
+  );
+}
+
 function AccountSection({ offline }: { offline: boolean }) {
   const { user, cachedUser } = useAuth();
   const email = user?.email ?? cachedUser?.email ?? "";
@@ -65,6 +135,7 @@ function AccountSection({ offline }: { offline: boolean }) {
             {offline && <p className="text-meta text-muted-foreground">Offline. Showing your saved account.</p>}
           </div>
         </div>
+        <NameField offline={offline} />
         {confirming ? (
           <div className="rounded-chip bg-muted p-3">
             <p className="text-ui font-semibold">Sign out of Minutely?</p>

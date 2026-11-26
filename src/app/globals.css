@@ -290,15 +290,6 @@ h2 {
     transform: none;
   }
 }
-@keyframes orb-breathe {
-  0%,
-  100% {
-    transform: scale(0.96);
-  }
-  50% {
-    transform: scale(1.04);
-  }
-}
 @keyframes live-ring {
   from {
     transform: scale(1);
@@ -373,9 +364,6 @@ h2 {
 .stagger-item {
   animation: fade-up 240ms ease-out both;
   animation-delay: calc(min(var(--i, 0), 8) * 30ms);
-}
-.orb-breathe {
-  animation: orb-breathe 4s ease-in-out infinite;
 }
 .live-ring {
   animation: live-ring 1.6s ease-out infinite;

@@ -56,6 +56,8 @@ export interface NamerOptions {
   getTabAnalyser: () => AnalyserNode | null;
   loadReader: NameReaderFactory;
   now?: () => number;
+  /** What the user's own voice is called (their display name). Defaults to "You". */
+  meLabel?: string;
 }
 
 export interface PhraseInfo {
@@ -225,7 +227,7 @@ export class ScreenNamer {
         this.stats.auto = this.stats.auto.filter((e) => !(e.cluster === c && e.source === "me"));
       }
     }
-    const plan = planMe(cluster, ME_LABEL, this.context());
+    const plan = planMe(cluster, this.o.meLabel || ME_LABEL, this.context());
     if (plan.kind !== "set") return;
     this.commit(cluster, { name: plan.name, level: plan.level, source: "me" }, 0);
   }

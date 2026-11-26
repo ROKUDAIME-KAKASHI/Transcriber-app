@@ -265,6 +265,27 @@ function TaskTrackerInner() {
   };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = selectedId ? (all.find((t) => t.id === selectedId) ?? null) : null;
+  // Browser Back closes the task panel: one history entry while it is open. Closing it any other way (Esc, the
+  // Android back key, the backdrop) pops that entry again, so there is never a leftover or a double entry.
+  const panelEntry = useRef(false);
+  useEffect(() => {
+    if (selectedId && !panelEntry.current) {
+      panelEntry.current = true;
+      window.history.pushState({ ...window.history.state, taskPanel: true }, "");
+    } else if (!selectedId && panelEntry.current) {
+      panelEntry.current = false;
+      if (window.history.state?.taskPanel) window.history.back();
+    }
+  }, [selectedId]);
+  useEffect(() => {
+    const onPop = () => {
+      if (!panelEntry.current) return;
+      panelEntry.current = false;
+      setSelectedId(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const jumpToDuplicate = (id: string) => {
     setSelectedId(null);
     setView("list");

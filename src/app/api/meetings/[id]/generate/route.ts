@@ -8,6 +8,7 @@ import { isFlagOn } from "@/lib/flags";
 import { planPromptBlock } from "@/lib/planning";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { FailureLimiter } from "@/lib/adminAuthCore";
+import { saveSummary } from "@/lib/polishDb";
 import { logServerError } from "@/lib/serverLog";
 import { transcriptToText } from "@/lib/transcript";
 import { labelledLines, loadMeetingForAi } from "@/lib/meetingForAi";
@@ -92,6 +93,7 @@ async function run(userId: string, id: string, opts: z.infer<typeof Body>): Prom
       });
       const summary = parseSummaryOnly(r.text);
       if (!summary) return Response.json({ error: "The AI reply could not be read. Try again." }, { status: 502 });
+      await saveSummary(id, userId, summary).catch((e) => logServerError("POST /api/meetings/[id]/generate save summary", e));
       return Response.json({ summary });
     }
 
@@ -131,6 +133,7 @@ async function run(userId: string, id: string, opts: z.infer<typeof Body>): Prom
       if (now?.document) return Response.json({ document: now.document, template: now.template ?? "MOM", alreadyDone: true });
       return Response.json({ error: "Meeting not found" }, { status: 404 });
     }
+    if (parsed.summary) await saveSummary(id, userId, parsed.summary).catch((e) => logServerError("POST /api/meetings/[id]/generate save summary", e));
     return Response.json({
       document: parsed.minutes,
       template: opts.template,
