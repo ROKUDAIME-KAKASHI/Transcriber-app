@@ -6,7 +6,7 @@ export const TAB_STORAGE_KEY = "minutely.meetingTab";
 
 export const TAB_LABELS: Record<TabId, string> = {
   transcript: "Transcript",
-  minutes: "Summary & minutes",
+  minutes: "Minutes",
   actions: "Action items",
   ask: "Ask",
 };
