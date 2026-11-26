@@ -11,6 +11,7 @@ import { formatDuration } from "@/lib/transcript";
 import { MeetingRecorder } from "@/lib/nativeRecorder";
 import * as haptics from "@/lib/haptics";
 import { useBackgroundRecording, type BackgroundRecording } from "@/hooks/useBackgroundRecording";
+import { useToast } from "./Toast";
 import { useRecorderActions, useRecorderStateOptional } from "./RecorderProvider";
 
 /**
@@ -94,6 +95,7 @@ function Pill({
 }) {
   const { reduced } = useMotionPref();
   const router = useRouter();
+  const toast = useToast();
   const [stopping, setStopping] = useState(false);
   useFloatingBarFlag(true);
 
@@ -101,11 +103,15 @@ function Pill({
     if (stopping) return;
     setStopping(true);
     haptics.stop();
-    Promise.resolve(onStop())
-      .then(() => {
-        if (goToRecord) router.push("/");
-      })
-      .catch(() => setStopping(false));
+    const done = Promise.resolve(onStop());
+    // The app recorder saves in the background: open Record now, it shows the saving state.
+    if (goToRecord) router.push("/");
+    done
+      .then(() => {})
+      .catch(() => {
+        setStopping(false);
+        toast("Couldn't stop the recording. Open Record and try again.", "danger");
+      });
   };
 
   return (
