@@ -46,7 +46,7 @@ export function NextUpCard({ onRecord, disabled, className }: { onRecord: (plan:
   if (!plan) return null;
   return (
     <div className={cx("flex items-center gap-3 border-b border-border px-4 py-3", className)}>
-      <CalendarClock className="h-4 w-4 shrink-0 text-accent" aria-hidden />
+      <CalendarClock className="h-4 w-4 shrink-0 text-accent-text" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-meta text-muted-foreground">Next up</p>
         <p className="truncate text-ui font-semibold">{plan.title}</p>

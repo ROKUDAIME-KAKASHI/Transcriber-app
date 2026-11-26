@@ -90,7 +90,7 @@ export function TaskTimeline({
                         <Badge tone={t.owner ? "accent" : "neutral"}>{t.owner || "Unassigned"}</Badge>
                       </span>
                       <Badge tone={STATUS_TONE[t.status]}>{STATUS_LABEL[t.status]}</Badge>
-                      <span className={cx("min-w-[6.5rem] text-meta tabular-nums lg:text-right", late ? "font-semibold text-danger" : "text-muted-foreground")}>
+                      <span className={cx("min-w-[6.5rem] text-meta tabular-nums lg:text-right", late ? "font-semibold text-danger-text" : "text-muted-foreground")}>
                         {day ? dayLabel(day) : t.deadlineText ? `Said: ${t.deadlineText}` : "No date"}
                       </span>
                     </div>

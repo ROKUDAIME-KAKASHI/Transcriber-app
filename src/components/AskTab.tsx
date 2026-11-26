@@ -147,11 +147,11 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
                           )}
                         </p>
                         {qt.verified ? (
-                          <span className="inline-flex items-center gap-1 text-success">
+                          <span className="inline-flex items-center gap-1 text-success-text">
                             <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Found in transcript
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-warning">
+                          <span className="inline-flex items-center gap-1 text-warning-text">
                             <AlertTriangle className="h-3.5 w-3.5" aria-hidden /> Quote not found in transcript
                           </span>
                         )}
@@ -166,7 +166,7 @@ export function AskTab({ meetingId, hasTranscript }: { meetingId: string; hasTra
         </ul>
         {busy && (
           <p role="status" className="flex items-center gap-2 text-meta text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden />
+            <Loader2 className="h-4 w-4 animate-spin text-accent-text" aria-hidden />
             Looking through the transcript…
           </p>
         )}

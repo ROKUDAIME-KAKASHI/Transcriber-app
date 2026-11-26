@@ -44,7 +44,7 @@ export function AppUpdateBanner() {
 
   return (
     <div role="status" className="mb-4 flex items-start gap-3 rounded-chip border border-accent/30 bg-accent-soft px-4 py-3 text-ui">
-      <Download className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
+      <Download className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="font-semibold">A new version of the app is available</p>
         <p className="mt-0.5 text-meta text-muted-foreground">

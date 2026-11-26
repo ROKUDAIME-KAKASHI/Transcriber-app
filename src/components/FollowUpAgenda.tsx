@@ -273,7 +273,7 @@ export function FollowUpAgendaSheet({
           aria-modal="true"
           aria-labelledby="agenda-title"
           className={cx(
-            "pointer-events-auto safe-bottom flex max-h-[90dvh] w-full flex-col rounded-t-panel border border-border/70 bg-card shadow-float transition-[transform,opacity] motion-reduce:transition-none lg:max-w-2xl lg:rounded-panel",
+            "pointer-events-auto safe-bottom flex max-h-[90dvh] w-full flex-col rounded-t-modal border border-border/70 bg-card shadow-float transition-[transform,opacity] motion-reduce:transition-none lg:max-w-2xl lg:rounded-modal",
             shown ? "translate-y-0 opacity-100 duration-[var(--dur-3)] ease-[var(--ease-in-out)]" : "translate-y-8 opacity-0 duration-150 ease-in"
           )}
         >
@@ -301,7 +301,7 @@ export function FollowUpAgendaSheet({
               className={cx(inputCls, "min-h-40 resize-none overflow-hidden py-3 leading-6")}
             />
             {error && (
-              <p className="text-meta text-danger" role="alert">
+              <p className="text-meta text-danger-text" role="alert">
                 {error}
               </p>
             )}

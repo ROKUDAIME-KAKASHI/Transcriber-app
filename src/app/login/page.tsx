@@ -89,7 +89,7 @@ export default function LoginPage() {
           <ul className="mt-10 space-y-6">
             {features.map(({ icon: Icon, title, text }) => (
               <li key={title} className="flex gap-4">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-chip bg-accent-soft text-accent">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-chip bg-accent-soft text-accent-text">
                   <Icon className="h-4 w-4" />
                 </span>
                 <span>
@@ -156,7 +156,7 @@ export default function LoginPage() {
               </div>
             )}
             {error && (
-              <p className="text-meta text-danger" role="alert">
+              <p className="text-meta text-danger-text" role="alert">
                 {error}
               </p>
             )}

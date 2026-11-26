@@ -56,15 +56,15 @@ function Pill({ state }: { state: BackgroundRecording }) {
   };
 
   return (
-    <div className="pop-in glass fixed inset-x-4 bottom-[calc(88px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-30 mx-auto flex h-12 max-w-sm items-center gap-2 rounded-full pl-4 pr-1 shadow-float lg:bottom-6 lg:left-auto lg:right-6 lg:mx-0">
+    <div className="pop-in glass fixed inset-x-4 bottom-[calc(76px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-30 mx-auto flex h-12 max-w-sm items-center gap-2 rounded-full pl-4 pr-1 shadow-float lg:bottom-6 lg:left-auto lg:right-6 lg:mx-0">
       <Link
         href="/"
         aria-label="Back to recording"
         className="flex h-full min-w-0 flex-1 items-center gap-3 rounded-full transition-transform duration-[var(--dur-1)] active:scale-[0.96]"
       >
         <LiveDot paused={paused} />
-        <span className="font-mono text-ui font-semibold tabular-nums">{formatDuration(state.seconds)}</span>
-        {paused && <span className="text-meta font-semibold text-warning">Paused</span>}
+        <span className="num text-ui font-semibold">{formatDuration(state.seconds)}</span>
+        {paused && <span className="text-meta font-semibold text-warning-text">Paused</span>}
         <Waveform level={paused ? 0 : state.level} bars={10} height={20} reduced={reduced} className="ml-auto" />
       </Link>
       <RecordingControls paused={paused} onPause={pause} onResume={resume} onStop={stop} disabled={stopping} />

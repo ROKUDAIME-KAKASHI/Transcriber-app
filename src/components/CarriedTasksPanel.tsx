@@ -118,7 +118,7 @@ export function CarriedTasksPanel({ planId, agenda }: { planId: string; agenda: 
           </ul>
         )}
         <p className="mt-3 text-meta text-muted-foreground">
-          Changes here update the task everywhere. <Link href="/tasks" className="font-semibold text-accent underline underline-offset-2">Open Tasks</Link>
+          Changes here update the task everywhere. <Link href="/tasks" className="font-semibold text-accent-text underline underline-offset-2">Open Tasks</Link>
         </p>
       </div>
     </Panel>

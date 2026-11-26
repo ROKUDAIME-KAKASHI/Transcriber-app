@@ -185,7 +185,7 @@ export function PersonPicker({ id, value, onChange, onCommit, placeholder, maxLe
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => choose(options.length)}
               className={cx(
-                "flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1.5 text-ui font-semibold text-accent",
+                "flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1.5 text-ui font-semibold text-accent-text",
                 options.length > 0 && "border-t border-border/70",
                 active === options.length ? "bg-accent-soft" : "hover:bg-muted"
               )}

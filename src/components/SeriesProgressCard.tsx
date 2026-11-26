@@ -76,7 +76,7 @@ export function SeriesProgressCard({ seriesId }: { seriesId: string }) {
               type="button"
               onClick={() => setOpen((o) => !o)}
               aria-expanded={open}
-              className="inline-flex min-h-11 items-center gap-1 rounded-btn text-ui font-semibold text-accent hover:underline"
+              className="inline-flex min-h-11 items-center gap-1 rounded-btn text-ui font-semibold text-accent-text hover:underline"
             >
               By meeting
               <ChevronDown className={cx("h-4 w-4 transition-transform duration-[var(--dur-2)]", open && "rotate-180")} aria-hidden />
@@ -87,7 +87,7 @@ export function SeriesProgressCard({ seriesId }: { seriesId: string }) {
           {data.total > 0 && (
             <Link
               href={`/tasks?series=${encodeURIComponent(seriesId)}&status=all`}
-              className="inline-flex min-h-11 items-center text-ui font-semibold text-accent underline-offset-2 hover:underline"
+              className="inline-flex min-h-11 items-center text-ui font-semibold text-accent-text underline-offset-2 hover:underline"
             >
               View tasks
             </Link>

@@ -72,14 +72,14 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
   return (
     <Panel aria-label="Planned meeting" className={cx("p-4", className)}>
       <div className="flex items-start gap-3">
-        <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
+        <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" aria-hidden />
         <div className="min-w-0 flex-1 space-y-1.5">
           <p className="text-meta font-semibold text-muted-foreground">Planned meeting</p>
           <p className="text-ui font-semibold">{plan.title}</p>
           {followOn && previous && (
             <p className="text-meta text-muted-foreground">
               Follow-up of{" "}
-              <Link href={`/meetings/${encodeURIComponent(previous.meetingId)}`} className="font-semibold text-accent underline underline-offset-2">
+              <Link href={`/meetings/${encodeURIComponent(previous.meetingId)}`} className="font-semibold text-accent-text underline underline-offset-2">
                 {previous.title}
               </Link>
             </p>
@@ -94,7 +94,7 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
             <p className="flex items-center gap-1.5 text-meta text-muted-foreground">
               <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
               {isHttpUrl(plan.callUrl) ? (
-                <a href={plan.callUrl} target="_blank" rel="noopener noreferrer" className="min-w-0 break-all font-semibold text-accent underline underline-offset-2">
+                <a href={plan.callUrl} target="_blank" rel="noopener noreferrer" className="min-w-0 break-all font-semibold text-accent-text underline underline-offset-2">
                   {plan.callUrl}
                 </a>
               ) : (
@@ -111,7 +111,7 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
           {plan.series && (
             <p className="flex items-center gap-1.5 text-meta text-muted-foreground">
               <Repeat className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <Link href={`/plan?id=${plan.id}`} className="font-semibold text-accent underline underline-offset-2">
+              <Link href={`/plan?id=${plan.id}`} className="font-semibold text-accent-text underline underline-offset-2">
                 {plan.series.title}
               </Link>
             </p>
@@ -139,7 +139,7 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
                 type="button"
                 aria-expanded={open}
                 onClick={() => setOpen((v) => !v)}
-                className="inline-flex min-h-11 items-center gap-1 text-meta font-semibold text-accent"
+                className="inline-flex min-h-11 items-center gap-1 text-meta font-semibold text-accent-text"
               >
                 Agenda <ChevronDown className={cx("h-4 w-4 transition-transform", open && "rotate-180")} aria-hidden />
               </button>
@@ -147,7 +147,7 @@ export function LinkedPlanCard({ meetingId, className }: { meetingId: string; cl
             </div>
           )}
         </div>
-        <Link href={`/plan?id=${plan.id}`} className="inline-flex min-h-11 shrink-0 items-center px-2 text-meta font-semibold text-accent">
+        <Link href={`/plan?id=${plan.id}`} className="inline-flex min-h-11 shrink-0 items-center px-2 text-meta font-semibold text-accent-text">
           Open
         </Link>
       </div>

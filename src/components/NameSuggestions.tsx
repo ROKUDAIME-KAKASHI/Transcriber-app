@@ -160,7 +160,7 @@ export function NameSuggestions({
         </Button>
         <GateReason id="name-ai-reason" reason={aiHint} />
         {aiError && (
-          <p className="mt-2 text-meta text-danger" role="alert">
+          <p className="mt-2 text-meta text-danger-text" role="alert">
             {aiError}
           </p>
         )}
@@ -169,7 +169,7 @@ export function NameSuggestions({
         )}
       </div>
       {error && (
-        <p className="mt-2 text-meta text-danger" role="alert">
+        <p className="mt-2 text-meta text-danger-text" role="alert">
           {error}
         </p>
       )}

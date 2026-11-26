@@ -458,7 +458,7 @@ export function PlanPage() {
 
       {recorded && plan?.meetingId && (
         <Notice tone="success" title="This meeting has been recorded">
-          <Link href={`/meeting?id=${plan.meetingId}`} className="font-semibold text-accent underline underline-offset-2">
+          <Link href={`/meeting?id=${plan.meetingId}`} className="font-semibold text-accent-text underline underline-offset-2">
             Open the recording
           </Link>
         </Notice>
@@ -490,7 +490,7 @@ export function PlanPage() {
           </div>
           {conflictText && (
             <p role="status" className="flex items-start gap-2 rounded-chip border border-warning/30 bg-warning-soft px-3 py-2 text-ui">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-text" aria-hidden />
               <span>
                 {conflictText}. <span className="text-muted-foreground">You can still save.</span>
               </span>
@@ -508,7 +508,7 @@ export function PlanPage() {
           <div>
             <p className="text-meta text-muted-foreground">
               Times in {form.timeZone.replace(/_/g, " ")} ·{" "}
-              <button type="button" className="font-semibold text-accent" onClick={() => setEditingTz((v) => !v)} aria-expanded={editingTz}>
+              <button type="button" className="font-semibold text-accent-text" onClick={() => setEditingTz((v) => !v)} aria-expanded={editingTz}>
                 Change
               </button>
             </p>
@@ -525,7 +525,7 @@ export function PlanPage() {
                   ))}
                 </select>
                 {form.timeZone !== browserTz && (
-                  <button type="button" className="text-meta font-semibold text-accent" onClick={() => set("timeZone", browserTz)}>
+                  <button type="button" className="text-meta font-semibold text-accent-text" onClick={() => set("timeZone", browserTz)}>
                     Use this device&apos;s zone ({browserTz.replace(/_/g, " ")})
                   </button>
                 )}
@@ -678,7 +678,7 @@ export function PlanPage() {
 
       <div className="sticky bottom-[calc(92px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-10 space-y-2 lg:static">
         {formError && (
-          <p className="rounded-chip bg-card px-3 py-2 text-meta text-danger shadow-card" role="alert">
+          <p className="rounded-chip bg-card px-3 py-2 text-meta text-danger-text shadow-card" role="alert">
             {formError}
           </p>
         )}

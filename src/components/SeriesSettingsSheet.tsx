@@ -150,8 +150,8 @@ export function SeriesSettingsSheet({
         aria-modal
         aria-label={`Series settings: ${series.title}`}
         className={cx(
-          "safe-bottom fixed inset-x-0 bottom-0 z-40 max-h-[85vh] overflow-y-auto rounded-t-panel border border-border/70 bg-card p-4 shadow-float transition-[transform,opacity] duration-[var(--dur-3)] ease-[var(--ease-in-out)]",
-          "lg:inset-x-auto lg:bottom-auto lg:left-1/2 lg:top-1/2 lg:w-[28rem] lg:-translate-x-1/2 lg:rounded-panel",
+          "safe-bottom fixed inset-x-0 bottom-0 z-40 max-h-[85vh] overflow-y-auto rounded-t-modal border border-border/70 bg-card p-4 shadow-float transition-[transform,opacity] duration-[var(--dur-3)] ease-[var(--ease-in-out)]",
+          "lg:inset-x-auto lg:bottom-auto lg:left-1/2 lg:top-1/2 lg:w-[28rem] lg:-translate-x-1/2 lg:rounded-modal",
           shown ? "translate-y-0 opacity-100 lg:-translate-y-1/2" : "translate-y-full opacity-0 lg:-translate-y-[45%]"
         )}
       >
@@ -209,7 +209,7 @@ export function SeriesSettingsSheet({
           )}
 
           <div aria-live="polite">
-            {msg && <p className="text-meta font-semibold text-success">{msg}</p>}
+            {msg && <p className="text-meta font-semibold text-success-text">{msg}</p>}
             {error && (
               <Notice tone="danger" title="Couldn't save">
                 {error}

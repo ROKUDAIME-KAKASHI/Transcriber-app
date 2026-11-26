@@ -21,9 +21,9 @@ export function useToast(): ToastFn {
 }
 
 const ICONS = {
-  success: <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />,
-  warning: <CloudOff className="h-4 w-4 text-warning" aria-hidden />,
-  danger: <AlertCircle className="h-4 w-4 text-danger" aria-hidden />,
+  success: <CheckCircle2 className="h-4 w-4 text-success-text" aria-hidden />,
+  warning: <CloudOff className="h-4 w-4 text-warning-text" aria-hidden />,
+  danger: <AlertCircle className="h-4 w-4 text-danger-text" aria-hidden />,
   neutral: <Info className="h-4 w-4 text-muted-foreground" aria-hidden />,
 } as const;
 
@@ -81,7 +81,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <Link
                 href={current.action.href}
                 onClick={() => setCurrent(null)}
-                className="-mr-2 inline-flex min-h-9 items-center rounded-full px-2 text-accent underline-offset-2 hover:underline"
+                className="-mr-2 inline-flex min-h-9 items-center rounded-full px-2 text-accent-text underline-offset-2 hover:underline"
               >
                 {current.action.label}
               </Link>

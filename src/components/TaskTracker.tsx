@@ -27,9 +27,9 @@ type View = "list" | "timeline";
 
 const STATUS_TONE: Record<TaskStatus, string> = {
   NOT_STARTED: "bg-muted text-foreground",
-  IN_PROGRESS: "bg-accent-soft text-accent",
-  BLOCKED: "bg-danger-soft text-danger",
-  DONE: "bg-success-soft text-success",
+  IN_PROGRESS: "bg-accent-soft text-accent-text",
+  BLOCKED: "bg-danger-soft text-danger-text",
+  DONE: "bg-success-soft text-success-text",
 };
 
 const fieldCls =
@@ -146,7 +146,7 @@ function TaskItem({
               <button
                 type="button"
                 onClick={() => onJump(dupOf)}
-                className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-chip bg-warning-soft px-2 text-meta font-semibold text-warning hover:opacity-90"
+                className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-chip bg-warning-soft px-2 text-meta font-semibold text-warning-text hover:opacity-90"
               >
                 <Copy className="h-3 w-3" aria-hidden /> Possible duplicate. Show the other
               </button>
@@ -232,7 +232,7 @@ function TaskItem({
               type="button"
               onClick={() => onSeries(item.series!.id)}
               aria-label={`Show tasks from the series ${item.series.title}`}
-              className="mt-1 inline-flex h-6 max-w-full items-center rounded-full bg-accent-soft px-2 text-meta font-semibold text-accent hover:opacity-90"
+              className="mt-1 inline-flex h-6 max-w-full items-center rounded-full bg-accent-soft px-2 text-meta font-semibold text-accent-text hover:opacity-90"
             >
               <span className="truncate">{item.series.title}</span>
             </button>
@@ -509,7 +509,7 @@ function TaskTrackerInner() {
         </Notice>
       )}
       {error && !offline && (
-        <p className="text-meta text-danger" role="alert">
+        <p className="text-meta text-danger-text" role="alert">
           {error}
         </p>
       )}
@@ -579,7 +579,7 @@ function TaskTrackerInner() {
                     onClick={() => setStatus(s)}
                     className={cx(
                       "inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-ui font-semibold transition-[background-color,transform] duration-[var(--dur-1)] active:scale-[0.96] lg:min-h-9",
-                      on ? "bg-accent-soft text-accent" : "bg-muted text-muted-foreground hover:text-foreground"
+                      on ? "bg-accent-soft text-accent-text" : "bg-muted text-muted-foreground hover:text-foreground"
                     )}
                   >
                     {STATUS_FILTER_LABEL[s]}

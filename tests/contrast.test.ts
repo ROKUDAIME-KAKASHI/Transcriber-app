@@ -55,9 +55,9 @@ function check(t: Record<string, string>, fg: string, bg: string, min: number, n
   assert.ok(r >= min, `${name}: ${fg} on ${bg} = ${r.toFixed(2)} < ${min}`);
 }
 
-test("background tokens are the tinted Aurora Ink values", () => {
-  assert.equal(light.background, "#f7f7fb");
-  assert.equal(dark.background, "#0e0f17");
+test("background tokens are the tinted R1 palette values", () => {
+  assert.equal(light.background, "#f6f5f1");
+  assert.equal(dark.background, "#111827");
 });
 
 for (const [name, t] of themes) {
@@ -69,14 +69,15 @@ for (const [name, t] of themes) {
 
   test(`${name}: accent pairs pass AA`, () => {
     check(t, "accent-foreground", "accent", 4.5, name);
-    check(t, "accent", "background", 4.5, name);
-    check(t, "accent", "card", 4.5, name);
+    for (const bg of ["background", "card", "muted", "accent-soft"]) check(t, "accent-text", bg, 4.5, name);
+    check(t, "accent", "background", 3, name); // fill/border, non-text
   });
 
   test(`${name}: status colours pass AA`, () => {
-    for (const c of ["danger", "success", "warning"]) {
+    for (const c of ["danger-text", "success-text", "warning-text"]) {
       check(t, c, "card", 4.5, name);
       check(t, c, "background", 4.5, name);
+      check(t, c, "muted", 4.5, name);
     }
   });
 

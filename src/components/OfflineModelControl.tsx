@@ -168,7 +168,7 @@ export function OfflineModelControl({
 
         {status === "error" && (
           <>
-            <p role="alert" className="text-meta text-danger">
+            <p role="alert" className="text-meta text-danger-text">
               Couldn&apos;t finish the download. Check your connection and try again.
             </p>
             {failReason && <p className="text-meta text-muted-foreground break-words">Details: {failReason}</p>}

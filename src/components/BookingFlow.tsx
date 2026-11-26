@@ -217,7 +217,7 @@ export function BookingFlow({ handle, events, initialSlug, hostTimeZone, agenda 
       {agenda && (
         <Panel className="p-4">
           <h2 className="flex items-center gap-2 text-ui font-semibold">
-            <ListChecks className="h-4 w-4 text-accent" aria-hidden />
+            <ListChecks className="h-4 w-4 text-accent-text" aria-hidden />
             Agenda for this meeting
           </h2>
           <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-line text-ui text-muted-foreground">{agenda.text}</p>
@@ -257,7 +257,7 @@ export function BookingFlow({ handle, events, initialSlug, hostTimeZone, agenda 
 
         {loadError ? (
           <div className="space-y-3">
-            <p className="text-ui text-danger" role="alert">
+            <p className="text-ui text-danger-text" role="alert">
               {loadError}
             </p>
             <Button onClick={() => setRefresh((n) => n + 1)}>Try again</Button>
@@ -300,7 +300,7 @@ export function BookingFlow({ handle, events, initialSlug, hostTimeZone, agenda 
         <div>
           <p className="text-meta text-muted-foreground">
             Times in {tz.replace(/_/g, " ")} ·{" "}
-            <button type="button" className="font-semibold text-accent" onClick={() => setEditingTz((v) => !v)} aria-expanded={editingTz}>
+            <button type="button" className="font-semibold text-accent-text" onClick={() => setEditingTz((v) => !v)} aria-expanded={editingTz}>
               Change
             </button>
           </p>
@@ -346,7 +346,7 @@ export function BookingFlow({ handle, events, initialSlug, hostTimeZone, agenda 
             </label>
           </div>
           {formError && (
-            <p className="text-meta text-danger" role="alert">
+            <p className="text-meta text-danger-text" role="alert">
               {formError}
             </p>
           )}

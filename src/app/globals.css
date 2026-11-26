@@ -2,30 +2,35 @@
 @plugin "@tailwindcss/typography";
 
 /*
- * Aurora Ink design tokens.
- * - Tinted near-black (#0E0F17) dark and soft cool-white (#F7F7FB) light, one indigo accent.
+ * Semantic design tokens (redesign R1).
+ * - Warm paper light (#F6F5F1) and navy dark (#111827), one blue accent. `-text` tokens are the AA-safe text versions of fill colours.
  *   Colour comes from content (speakers, state), not chrome.
  * - Existing token names keep their meaning, so components re-theme without edits.
  * - Fonts are self-hosted by next/font at build time (COEP require-corp safe): no remote @import here.
  */
 :root {
   color-scheme: light dark;
-  --background: #f7f7fb;
+  --background: #f6f5f1;
   --card: #ffffff;
-  --muted: #eff0f6;
-  --border: #e2e4ee;
-  --foreground: #14151f;
-  --muted-foreground: #5b5f73;
-  --accent: #1c68e0;
+  --muted: #f0f1f5;
+  --border: #e5e7eb;
+  --foreground: #202b3c;
+  /* Secondary text: #697386 is 4.2:1 on the page, so text uses this slightly darker value. */
+  --muted-foreground: #646d7f;
+  --accent: #356ae6;
   --accent-foreground: #ffffff;
-  --record: #c9353b;
-  --record-fill: #e5484d;
-  --danger: #c9353b;
-  --success: #1a7f5a;
-  --warning: #a15c00;
+  --accent-text: #305fcf;
+  --record: #ae4d4d;
+  --record-fill: #dc6262;
+  --danger: #dc6262;
+  --danger-text: #ae4d4d;
+  --success: #16a58a;
+  --success-text: #107a66;
+  --warning: #e7a34b;
+  --warning-text: #8d632e;
 
   /* Speaker colours (content, not chrome). */
-  --speaker-0: #1c68e0;
+  --speaker-0: #305fcf;
   --speaker-1: #0b7d70;
   --speaker-2: #b25a08;
   --speaker-3: #c23a72;
@@ -33,17 +38,17 @@
   --speaker-5: #0a7ea4;
 
   --surface-2: var(--muted);
-  --accent-soft: color-mix(in oklab, var(--accent) 12%, var(--card));
+  --accent-soft: #dce7ff;
   --warning-soft: color-mix(in oklab, var(--warning) 10%, var(--card));
   --success-soft: color-mix(in oklab, var(--success) 10%, var(--card));
   --danger-soft: color-mix(in oklab, var(--danger) 10%, var(--card));
-  --glow-a: rgb(28 104 224 / 0.3);
+  --glow-a: rgb(53 106 230 / 0.3);
   --glow-b: rgb(20 184 196 / 0.3);
 
   --elev-card: none; /* no shadows: hairline borders separate cards */
-  --elev-float: 0 0 0 1px var(--border);
+  --elev-float: 0 1px 2px rgb(32 43 60 / 0.08); /* the one subtle shadow: menus, dialogs */
   --glass: var(--card);
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235B5F73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23646D7F' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 
   /* Motion tokens (theme independent). */
   --dur-1: 120ms;
@@ -57,37 +62,41 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --background: #0e0f17;
-    --card: #171926;
-    --muted: #20233a;
-    --border: #2a2d44;
-    --foreground: #edeef5;
-    --muted-foreground: #9a9db3;
-    --accent: #4c8df6;
-    --accent-foreground: #0e0f17;
-    --record: #ff6369;
-    --record-fill: #e5484d;
-    --danger: #ff6369;
-    --success: #3dd68c;
-    --warning: #f5b544;
+    --background: #111827;
+    --card: #1b2433;
+    --muted: #253145;
+    --border: #36445a;
+    --foreground: #f3f4f6;
+    --muted-foreground: #9ca3af;
+    --accent: #5b87f0;
+    --accent-foreground: #0b1220;
+    --accent-text: #7aa2f7;
+    --record: #f28c8c;
+    --record-fill: #dc6262;
+    --danger: #e87474;
+    --danger-text: #f28c8c;
+    --success: #25b99c;
+    --success-text: #34d3b3;
+    --warning: #eaad5c;
+    --warning-text: #f0b45f;
 
-    --speaker-0: #4c8df6;
+    --speaker-0: #7aa2f7;
     --speaker-1: #3ccfbc;
     --speaker-2: #f4a955;
     --speaker-3: #f483ae;
     --speaker-4: #b0d163;
     --speaker-5: #5cc8ee;
 
-    --accent-soft: color-mix(in oklab, var(--accent) 16%, var(--card));
+    --accent-soft: #1f2d4d;
     --warning-soft: color-mix(in oklab, var(--warning) 16%, var(--card));
     --success-soft: color-mix(in oklab, var(--success) 16%, var(--card));
     --danger-soft: color-mix(in oklab, var(--danger) 16%, var(--card));
-    --glow-a: rgb(76 141 246 / 0.35);
+    --glow-a: rgb(91 135 240 / 0.35);
     --glow-b: rgb(34 211 238 / 0.35);
 
     --elev-card: none;
-    --elev-float: 0 0 0 1px var(--border);
-    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239A9DB3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    --elev-float: 0 1px 2px rgb(0 0 0 / 0.4);
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 }
 
@@ -97,37 +106,41 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #0e0f17;
-  --card: #171926;
-  --muted: #20233a;
-  --border: #2a2d44;
-  --foreground: #edeef5;
-  --muted-foreground: #9a9db3;
-  --accent: #4c8df6;
-  --accent-foreground: #0e0f17;
-  --record: #ff6369;
-  --record-fill: #e5484d;
-  --danger: #ff6369;
-  --success: #3dd68c;
-  --warning: #f5b544;
+  --background: #111827;
+  --card: #1b2433;
+  --muted: #253145;
+  --border: #36445a;
+  --foreground: #f3f4f6;
+  --muted-foreground: #9ca3af;
+  --accent: #5b87f0;
+  --accent-foreground: #0b1220;
+  --accent-text: #7aa2f7;
+  --record: #f28c8c;
+  --record-fill: #dc6262;
+  --danger: #e87474;
+  --danger-text: #f28c8c;
+  --success: #25b99c;
+  --success-text: #34d3b3;
+  --warning: #eaad5c;
+  --warning-text: #f0b45f;
 
-  --speaker-0: #4c8df6;
+  --speaker-0: #7aa2f7;
   --speaker-1: #3ccfbc;
   --speaker-2: #f4a955;
   --speaker-3: #f483ae;
   --speaker-4: #b0d163;
   --speaker-5: #5cc8ee;
 
-  --accent-soft: color-mix(in oklab, var(--accent) 16%, var(--card));
+  --accent-soft: #1f2d4d;
   --warning-soft: color-mix(in oklab, var(--warning) 16%, var(--card));
   --success-soft: color-mix(in oklab, var(--success) 16%, var(--card));
   --danger-soft: color-mix(in oklab, var(--danger) 16%, var(--card));
-  --glow-a: rgb(76 141 246 / 0.35);
+  --glow-a: rgb(91 135 240 / 0.35);
   --glow-b: rgb(34 211 238 / 0.35);
 
   --elev-card: none;
-  --elev-float: 0 0 0 1px var(--border);
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239A9DB3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --elev-float: 0 1px 2px rgb(0 0 0 / 0.4);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* `dark:` utilities follow data-theme when set, else the system. */
@@ -151,6 +164,10 @@
   --color-border: var(--border);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-text: var(--accent-text);
+  --color-danger-text: var(--danger-text);
+  --color-success-text: var(--success-text);
+  --color-warning-text: var(--warning-text);
   --color-danger: var(--danger);
   --color-success: var(--success);
   --color-warning: var(--warning);
@@ -179,8 +196,9 @@
   --text-display--line-height: 1;
 
   --radius-chip: 8px;
-  --radius-btn: 12px;
-  --radius-panel: 20px;
+  --radius-btn: 10px;
+  --radius-panel: 12px;
+  --radius-modal: 16px;
 
   --shadow-card: var(--elev-card);
   --shadow-float: var(--elev-float);
@@ -237,6 +255,12 @@ h2 {
 .scroll-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+}
+
+/* Geist Mono + tabular figures for timers, durations, dates and times. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Opaque surface for floating bars and pills (no blur). */
