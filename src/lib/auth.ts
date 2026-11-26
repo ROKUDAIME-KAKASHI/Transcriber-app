@@ -2,6 +2,7 @@ import { AuthOptions, getServerSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { EMAIL_DOMAIN_MESSAGE, isAllowedEmailDomain } from "@/lib/emailRule";
 
 export const authOptions: AuthOptions = {
   providers: [
@@ -19,7 +20,8 @@ export const authOptions: AuthOptions = {
           // Explicit select: the User table may not have the scheduling columns until `prisma db push` has run.
           select: { id: true, email: true, password: true },
         });
-        if (!user) throw new Error("No account found with this email.");
+        // Existing accounts on any domain keep working; the domain rule only blocks new ones.
+        if (!user) throw new Error(isAllowedEmailDomain(email) ? "No account found with this email." : EMAIL_DOMAIN_MESSAGE);
         const ok = await bcrypt.compare(credentials.password, user.password);
         if (!ok) throw new Error("Incorrect password.");
         return { id: user.id, email: user.email };

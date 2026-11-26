@@ -7,6 +7,9 @@ import { Mic, AudioLines, Users, FileText } from "lucide-react";
 import { Button, FieldLabel, Panel, Segmented, inputCls } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 import { isReachable, useConnectivity } from "@/lib/connectivity";
+import { PasswordChecklist, PasswordInput } from "@/components/PasswordInput";
+import { EMAIL_DOMAIN_MESSAGE, isAllowedEmailDomain } from "@/lib/emailRule";
+import { passwordProblem } from "@/lib/passwordRule";
 
 const UNREACHABLE = "Couldn't reach the server. Check your connection and try again.";
 
@@ -26,7 +29,9 @@ export default function LoginPage() {
     setError("");
 
     if (mode === "register") {
-      if (password.length < 6) return setError("Password must be at least 6 characters long.");
+      if (!isAllowedEmailDomain(email)) return setError(EMAIL_DOMAIN_MESSAGE);
+      const weak = passwordProblem(password);
+      if (weak) return setError(weak);
       if (password !== confirm) return setError("Passwords do not match.");
     }
 
@@ -46,7 +51,7 @@ export default function LoginPage() {
 
       const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
-        setError(res.error.includes("No account") || res.error.includes("Incorrect") ? res.error : "Sign in failed.");
+        setError(res.error.includes("No account") || res.error.includes("Incorrect") || res.error === EMAIL_DOMAIN_MESSAGE ? res.error : "Sign in failed.");
         return;
       }
       // AuthProvider lives in the root layout and still holds the pre-sign-in "no session" probe.
@@ -138,21 +143,22 @@ export default function LoginPage() {
             </div>
             <div>
               <FieldLabel htmlFor="password">Password</FieldLabel>
-              <input
+              <PasswordInput
                 id="password"
-                className={inputCls}
-                type="password"
-                placeholder={mode === "register" ? "At least 6 characters" : "Your password"}
+                placeholder={mode === "register" ? "At least 8 characters" : "Your password"}
                 autoComplete={mode === "signin" ? "current-password" : "new-password"}
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
+                aria-describedby={mode === "register" ? "pw-rules" : undefined}
               />
+              {mode === "register" && <PasswordChecklist id="pw-rules" password={password} />}
             </div>
             {mode === "register" && (
               <div>
                 <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
-                <input id="confirm" className={inputCls} type="password" placeholder="Type it again" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+                <PasswordInput id="confirm" placeholder="Type it again" autoComplete="new-password" required value={confirm} onChange={setConfirm} />
+                {confirm && password !== confirm && <p className="mt-1.5 text-meta text-danger-text">Passwords do not match.</p>}
               </div>
             )}
             {error && (
