@@ -280,7 +280,8 @@ export function PeoplePage() {
   const offline = useConnectivity() === "offline";
   const [people, setPeople] = useState<Person[] | null>(null);
   const [error, setError] = useState("");
-  const [q, setQ] = useState("");
+  // A link from the command palette arrives as /people?q=name.
+  const [q, setQ] = useState(() => (typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("q") ?? "")));
   const [sheet, setSheet] = useState<{ person: Person | null; prefill?: Partial<Draft> } | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [adding, setAdding] = useState<string | null>(null);

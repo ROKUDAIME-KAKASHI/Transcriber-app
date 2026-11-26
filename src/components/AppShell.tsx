@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import { ConnectivityPill } from "./ConnectivityPill";
 import { useConnectivity } from "@/lib/connectivity";
 import { useSignOut } from "@/hooks/useSignOut";
-import { Mic, LayoutList, ListChecks, CalendarClock, Users, LogOut, AudioLines, CircleUser } from "lucide-react";
+import { Mic, LayoutList, ListChecks, CalendarClock, Users, LogOut, AudioLines, Search } from "lucide-react";
 import { cx } from "./ui";
 import { tap } from "@/lib/haptics";
 import { prefersReducedMotion } from "@/lib/motionPref";
@@ -19,6 +20,10 @@ import { RecordingPill } from "./RecordingPill";
 import { AppUpdateBanner } from "./AppUpdateBanner";
 import { useFlag } from "@/lib/flagsClient";
 import { OverdueBadge, OverdueReminder, useOverdueCount } from "./OverdueReminder";
+import { isNative } from "@/lib/native";
+
+// Loaded the first time it is opened, so it adds nothing to the first page load.
+const CommandPalette = dynamic(() => import("./CommandPalette"), { ssr: false });
 
 const NAV = [
   { href: "/", label: "Record", icon: Mic },
@@ -87,6 +92,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => applyTheme(getThemePref()), []);
   const signOutTitle = offline ? "Sign out needs internet" : "Sign out";
 
+  // Ctrl/Cmd+K, laptops only: not on phones (narrow or touch) and not in the Android app.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [mac, setMac] = useState(false);
+  const [paletteOk, setPaletteOk] = useState(false);
+  useEffect(() => {
+    setMac(/mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent));
+    setPaletteOk(!isNative());
+  }, []);
+  useEffect(() => {
+    const laptop = () => !isNative() && window.matchMedia("(min-width: 1024px) and (pointer: fine)").matches;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k" && laptop()) {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div className="min-h-dvh">
       {/* Sidebar (laptops) */}
@@ -95,7 +120,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Logo />
           <ConnectivityPill className="mt-1" />
         </div>
-        <nav className="mt-6 flex flex-col gap-0.5" aria-label="Main">
+        {paletteOk && (
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Open command palette"
+            aria-keyshortcuts="Control+K Meta+K"
+            className="mt-4 flex min-h-9 items-center gap-2 rounded-btn border border-border/70 px-2.5 text-meta text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Search className="h-3.5 w-3.5" aria-hidden />
+            <span className="flex-1 text-left">Search or jump to</span>
+            <kbd className="rounded-chip bg-muted px-1.5 py-0.5 font-sans">{mac ? "⌘K" : "Ctrl K"}</kbd>
+          </button>
+        )}
+        <nav className="mt-4 flex flex-col gap-0.5" aria-label="Main">
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
@@ -212,6 +250,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} tasksOn={tasksOn} scheduleOn={scheduleOn} peopleOn={peopleOn} />}
       <OverdueReminder />
       {pathname !== "/" && <RecordingPill state={bg} />}
     </div>

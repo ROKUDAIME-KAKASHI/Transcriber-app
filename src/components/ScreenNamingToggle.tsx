@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useFlag } from "@/lib/flagsClient";
 import { desktopChromiumNow, useScreenNamingOptIn } from "@/lib/naming/client";
-import { Switch } from "./ui";
+import { DeviceTag, Switch } from "./ui";
 
 /** True on a laptop Chromium browser (checked after mount, so the server render and the first paint agree). */
 export function useScreenNamingAvailable(): boolean {
@@ -24,7 +24,7 @@ export function ScreenNamingToggle({ className }: { className?: string }) {
   if (!available) return null;
   return (
     <div className={className}>
-      <Switch label={SCREEN_NAMING_LABEL} description={SCREEN_NAMING_NOTE} checked={on} onChange={setOn} />
+      <Switch label={<>{SCREEN_NAMING_LABEL}<DeviceTag /></>} description={SCREEN_NAMING_NOTE} checked={on} onChange={setOn} />
     </div>
   );
 }

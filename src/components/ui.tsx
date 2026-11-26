@@ -367,32 +367,65 @@ export function Switch({
         <span id={labelId} className="block text-ui font-semibold">{label}</span>
         {description && <span id={`${labelId}-d`} className="mt-0.5 block text-meta text-muted-foreground">{description}</span>}
       </span>
-      <button
-        type="button"
-        id={id}
-        role="switch"
-        aria-labelledby={labelId}
-        aria-describedby={description ? `${labelId}-d` : undefined}
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={(e) => {
-          e.stopPropagation();
-          onChange(!checked);
-        }}
-        className={cx(
-          "relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-[var(--dur-2)]",
-          checked ? "bg-accent" : "bg-muted-foreground/75"
-        )}
-      >
-        <span
-          aria-hidden
-          className="absolute left-[3px] top-[3px] h-5 w-5 rounded-full bg-white shadow-card"
-          style={{
-            transform: checked ? "translateX(18px)" : "translateX(0)",
-            transition: "transform var(--dur-2) var(--spring)",
-          }}
-        />
-      </button>
+      <SwitchButton id={id} labelledBy={labelId} describedBy={description ? `${labelId}-d` : undefined} checked={checked} disabled={disabled} onChange={onChange} />
     </div>
+  );
+}
+
+/** The bare on/off switch (no label row), for rows that lay out their own text. Pass `labelledBy` or `label`. */
+export function SwitchButton({
+  checked,
+  onChange,
+  id,
+  disabled,
+  labelledBy,
+  describedBy,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  id?: string;
+  disabled?: boolean;
+  labelledBy?: string;
+  describedBy?: string;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      id={id}
+      role="switch"
+      aria-labelledby={labelledBy}
+      aria-label={labelledBy ? undefined : label}
+      aria-describedby={describedBy}
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!checked);
+      }}
+      className={cx(
+        "relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-[var(--dur-2)]",
+        checked ? "bg-accent" : "bg-muted-foreground/75"
+      )}
+    >
+      <span
+        aria-hidden
+        className="absolute left-[3px] top-[3px] h-5 w-5 rounded-full bg-white shadow-card"
+        style={{
+          transform: checked ? "translateX(18px)" : "translateX(0)",
+          transition: "transform var(--dur-2) var(--spring)",
+        }}
+      />
+    </button>
+  );
+}
+
+/** Small tag for settings that only apply to the phone or browser you are using, not your account. */
+export function DeviceTag() {
+  return (
+    <span className="ml-2 inline-flex h-5 items-center rounded-full bg-muted px-2 align-middle text-meta font-medium text-muted-foreground">
+      This device
+    </span>
   );
 }

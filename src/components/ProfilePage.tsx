@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ScreenNamingToggle } from "./ScreenNamingToggle";
 import { Check, ChevronRight, Copy, Download, RefreshCw, Share2, Users } from "lucide-react";
-import { Badge, Button, Panel, PanelHeader, Segmented, Switch } from "@/components/ui";
+import { Badge, Button, DeviceTag, Panel, PanelHeader, Segmented, Switch } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
 import { useOfflineReadiness } from "@/components/OfflineModelControl";
@@ -116,8 +116,15 @@ function BookingSection({ offline }: { offline: boolean }) {
   }, [offline]);
 
   const link = state.kind === "handle" ? absoluteUrl(window.location.origin, `/book/${state.handle}`) : "";
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(t);
+  }, [copied]);
   const copy = async () => {
     const ok = await copyText(link);
+    if (ok) setCopied(true);
     toast(ok ? "Link copied" : "Couldn't copy. Select the link instead.", ok ? "success" : "danger");
   };
   const share = async () => {
@@ -157,14 +164,14 @@ function BookingSection({ offline }: { offline: boolean }) {
               {link}
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" icon={<Copy className="h-4 w-4" aria-hidden />} onClick={copy}>
-                Copy
+              <Button variant="secondary" icon={copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />} onClick={copy}>
+                {copied ? "Copied" : "Copy"}
               </Button>
               <Button variant="secondary" icon={<Share2 className="h-4 w-4" aria-hidden />} onClick={share}>
                 Share
               </Button>
               <Link href="/schedule" className="inline-flex min-h-12 items-center rounded-btn px-4 text-ui font-semibold text-accent-text hover:bg-muted lg:min-h-10">
-                Edit
+                Open Schedule
               </Link>
             </div>
           </>
@@ -313,8 +320,8 @@ function AppSection({ offline }: { offline: boolean }) {
   );
 }
 
-/* ---------- Calendar sharing ---------- */
-function CalendarSection({ offline }: { offline: boolean }) {
+/* ---------- Free/busy sharing (an account setting, shown inside Preferences) ---------- */
+function FreeBusySwitch({ offline }: { offline: boolean }) {
   const on = useFlag("calendar");
   const ready = useCalendarReady(on && !offline);
   const toast = useToast();
@@ -359,23 +366,18 @@ function CalendarSection({ offline }: { offline: boolean }) {
   };
 
   return (
-    <Panel aria-label="Calendar">
-      <PanelHeader title="Calendar" />
-      <div className="p-2">
-        <Switch
-          label="Share when I'm busy with other Minutely users"
-          description="Anyone signed in to Minutely who knows your email can see your busy times and working hours when planning a meeting. They never see titles or details."
-          checked={share}
-          disabled={saving || offline}
-          onChange={(v) => void change(v)}
-        />
-      </div>
-    </Panel>
+    <Switch
+      label="Share when I'm busy with other Minutely users"
+      description="Anyone signed in to Minutely who knows your email can see your busy times and working hours when planning a meeting. They never see titles or details."
+      checked={share}
+      disabled={saving || offline}
+      onChange={(v) => void change(v)}
+    />
   );
 }
 
 /* ---------- Preferences ---------- */
-function PreferencesSection() {
+function PreferencesSection({ offline }: { offline: boolean }) {
   const { pref, setPref } = useMotionPref();
   const theme = useTheme();
   const tasksOn = useFlag("taskTracker");
@@ -386,7 +388,10 @@ function PreferencesSection() {
       <PanelHeader title="Preferences" />
       <div className="p-2">
         <div className="px-3 pb-3 pt-2">
-          <p className="text-ui font-semibold">Theme</p>
+          <p className="text-ui font-semibold">
+            Theme
+            <DeviceTag />
+          </p>
           <p className="mb-2 text-meta text-muted-foreground">System follows your device.</p>
           <Segmented
             label="Theme"
@@ -401,27 +406,37 @@ function PreferencesSection() {
           />
         </div>
         <Switch
-          label="Reduce motion"
+          label={
+            <>
+              Reduce motion
+              <DeviceTag />
+            </>
+          }
           description="Fewer animations. Saves a little battery."
           checked={pref === "reduced"}
           onChange={(on) => setPref(on ? "reduced" : "auto")}
         />
-        <ScreenNamingToggle />
         {tasksOn && plusOn && (
           <Switch
-            label="Remind me about overdue tasks"
-            description="A count on Tasks, a message once a day when you open the app, and a line on Record. This device only."
+            label={
+              <>
+                Remind me about overdue tasks
+                <DeviceTag />
+              </>
+            }
+            description="A count on Tasks, a message once a day when you open the app, and a line on Record."
             checked={remind}
             onChange={setRemind}
           />
         )}
+        <FreeBusySwitch offline={offline} />
       </div>
     </Panel>
   );
 }
 
 /* ---------- Storage ---------- */
-function StorageSection() {
+function RecordingSection() {
   const { readiness } = useOfflineReadiness("moonshine");
   const line = !readiness
     ? "Checking…"
@@ -431,13 +446,20 @@ function StorageSection() {
         ? "Partly saved. Finish the download on the Record screen."
         : "Not saved yet. Download it once to record without internet.";
   return (
-    <Panel aria-label="Storage">
-      <PanelHeader title="Offline models" />
-      <div className="space-y-2 p-4">
-        <p className="text-ui">{line}</p>
-        <Link href="/" className="inline-flex min-h-11 items-center text-ui font-semibold text-accent-text underline-offset-2 hover:underline">
-          Open offline use on Record
-        </Link>
+    <Panel aria-label="Recording">
+      <PanelHeader title="Recording" />
+      <div className="p-2">
+        <div className="space-y-1 px-3 py-2">
+          <p className="text-ui font-semibold">
+            Offline models
+            <DeviceTag />
+          </p>
+          <p className="text-meta text-muted-foreground">{line}</p>
+          <Link href="/" className="inline-flex min-h-11 items-center text-ui font-semibold text-accent-text underline-offset-2 hover:underline">
+            Open offline use on Record
+          </Link>
+        </div>
+        <ScreenNamingToggle />
       </div>
     </Panel>
   );
@@ -469,10 +491,9 @@ export function ProfilePage() {
       <AccountSection offline={offline} />
       <PeopleSection />
       <BookingSection offline={offline} />
-      <CalendarSection offline={offline} />
+      <PreferencesSection offline={offline} />
+      <RecordingSection />
       <AppSection offline={offline} />
-      <PreferencesSection />
-      <StorageSection />
       <p className="px-1 text-meta text-muted-foreground">
         Minutely web {webVersion} · Android app {LATEST_APK.versionName} (build {LATEST_APK.versionCode})
       </p>

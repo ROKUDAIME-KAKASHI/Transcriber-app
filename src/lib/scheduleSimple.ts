@@ -66,6 +66,50 @@ export function availabilityFromSimple(h: SimpleHours): AvailabilityRange[] {
     .map((weekday) => ({ weekday, startMin: h.startMin, endMin: h.endMin }));
 }
 
+/* ---------- Per-day hours (one row per weekday) ---------- */
+
+export interface DayHours {
+  /** 0 = Sunday. */
+  n: number;
+  on: boolean;
+  startMin: number;
+  endMin: number;
+}
+
+/** Seven rows, Monday first. Days that are off keep a start and end so switching them on shows sensible times. */
+export function defaultWeek(): DayHours[] {
+  return WEEK.map((w) => ({ n: w.n, on: DEFAULT_DAYS.includes(w.n), startMin: DEFAULT_START, endMin: DEFAULT_END }));
+}
+
+/** Saved availability as seven day rows. Returns null when a day has more than one range (the rows can't show that). */
+export function weekFromAvailability(av: AvailabilityRange[]): DayHours[] | null {
+  const byDay = new Map<number, AvailabilityRange>();
+  for (const r of av) {
+    if (byDay.has(r.weekday)) return null;
+    byDay.set(r.weekday, r);
+  }
+  return WEEK.map((w) => {
+    const r = byDay.get(w.n);
+    return r ? { n: w.n, on: true, startMin: r.startMin, endMin: r.endMin } : { n: w.n, on: false, startMin: DEFAULT_START, endMin: DEFAULT_END };
+  });
+}
+
+/** What gets saved: one range per day that is on. */
+export function availabilityFromWeek(rows: DayHours[]): AvailabilityRange[] {
+  return WEEK.map((w) => rows.find((r) => r.n === w.n))
+    .filter((r): r is DayHours => !!r && r.on)
+    .map((r) => ({ weekday: r.n, startMin: r.startMin, endMin: r.endMin }));
+}
+
+/** A plain-words problem with the rows, or null when they can be saved. */
+export function weekProblem(rows: DayHours[]): string | null {
+  const on = rows.filter((r) => r.on);
+  if (on.length === 0) return "Pick at least one day people can book.";
+  const bad = on.find((r) => !(r.startMin < r.endMin));
+  if (bad) return `${WEEK.find((w) => w.n === bad.n)?.label ?? "A day"}: the end time must be after the start time.`;
+  return null;
+}
+
 /* ---------- Meeting lengths ---------- */
 
 export interface EventLike {

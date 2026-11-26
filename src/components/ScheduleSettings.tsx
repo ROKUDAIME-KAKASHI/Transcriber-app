@@ -2,18 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, ChevronDown, CloudOff, Copy, Mic, Share2 } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, CloudOff, Copy, Mic, Share2 } from "lucide-react";
 import { useAuth } from "./AuthProvider";
 import { useConnectivity } from "@/lib/connectivity";
 import { copyText, shareText } from "@/lib/export/deliver";
 import { findRepeatBookings } from "@/lib/dedupe";
 import { DURATIONS, formatInZone, validateHandle, type AvailabilityRange } from "@/lib/scheduling";
 import {
-  DEFAULT_DAYS, DEFAULT_END, DEFAULT_OPTIONS, DEFAULT_START, WEEK, applyLengths, availabilityFromSimple, handleWithDigits,
-  lengthsFromEvents, optionsFromEvents, simpleHoursFromAvailability, suggestHandle, type EventLike, type MoreOptions,
+  DEFAULT_OPTIONS, WEEK, applyLengths, availabilityFromWeek, defaultWeek, handleWithDigits,
+  lengthsFromEvents, optionsFromEvents, suggestHandle, weekFromAvailability, weekProblem, type DayHours, type EventLike, type MoreOptions,
 } from "@/lib/scheduleSimple";
 import { useToast } from "./Toast";
-import { Badge, Button, FieldLabel, Notice, Panel, PanelHeader, cx, inputCls, selectCls } from "./ui";
+import { Badge, Button, FieldLabel, Notice, Panel, PanelHeader, SwitchButton, cx, inputCls, selectCls } from "./ui";
 
 interface BookingRow {
   id: string;
@@ -59,7 +59,7 @@ const chipCls = (on: boolean) =>
 function bookingWhen(b: BookingRow, tz: string) {
   const date = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short" }).format(new Date(b.startAt));
   const mins = Math.round((new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000);
-  return `${date} · ${formatInZone(b.startAt, tz, false)} · ${b.guestName} (${mins} min)`;
+  return `${date} · ${formatInZone(b.startAt, tz, false)} · ${mins} min`;
 }
 
 export function ScheduleSettings() {
@@ -79,9 +79,7 @@ export function ScheduleSettings() {
   const [handleTouched, setHandleTouched] = useState(false);
   const [tz, setTz] = useState("UTC");
   const [editingTz, setEditingTz] = useState(false);
-  const [dayOn, setDayOn] = useState<number[]>(DEFAULT_DAYS);
-  const [startMin, setStartMin] = useState(DEFAULT_START);
-  const [endMin, setEndMin] = useState(DEFAULT_END);
+  const [week, setWeek] = useState<DayHours[]>(defaultWeek);
   const [custom, setCustom] = useState<AvailabilityRange[] | null>(null);
   const [lengths, setLengths] = useState<number[]>([30]);
   const [opts, setOpts] = useState<MoreOptions>(DEFAULT_OPTIONS);
@@ -131,12 +129,10 @@ export function ScheduleSettings() {
         setHandleTouched(false);
         setTz(data.timeZone ?? browserTz);
         const av = data.availability as AvailabilityRange[];
-        const simple = simpleHoursFromAvailability(av);
-        if (simple) {
+        const rows = weekFromAvailability(av);
+        if (rows) {
           setCustom(null);
-          setDayOn(simple.days);
-          setStartMin(simple.startMin);
-          setEndMin(simple.endMin);
+          setWeek(rows);
         } else {
           setCustom(av);
         }
@@ -159,11 +155,11 @@ export function ScheduleSettings() {
     void load();
   }, [load]);
 
-  const toggleDay = (n: number) => setDayOn((d) => (d.includes(n) ? d.filter((x) => x !== n) : [...d, n]));
+  const setDay = (n: number, p: Partial<DayHours>) => setWeek((w) => w.map((d) => (d.n === n ? { ...d, ...p } : d)));
   const toggleLength = (d: number) => setLengths((l) => (l.includes(d) ? l.filter((x) => x !== d) : [...l, d].sort((a, b) => a - b)));
 
   const put = async (h: string) => {
-    const availability = custom ?? availabilityFromSimple({ days: dayOn, startMin, endMin });
+    const availability = custom ?? availabilityFromWeek(week);
     return fetch("/api/schedule/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -179,12 +175,9 @@ export function ScheduleSettings() {
       setFormError(v.error);
       return;
     }
-    if (!custom && dayOn.length === 0) {
-      setFormError("Pick at least one day people can book.");
-      return;
-    }
-    if (!custom && !(startMin < endMin)) {
-      setFormError("The end time must be after the start time.");
+    const problem = custom ? null : weekProblem(week);
+    if (problem) {
+      setFormError(problem);
       return;
     }
     if (lengths.length === 0) {
@@ -217,9 +210,16 @@ export function ScheduleSettings() {
   };
 
   const link = savedHandle ? `${typeof window === "undefined" ? "" : window.location.origin}/book/${savedHandle}` : "";
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(t);
+  }, [copied]);
   const copyLink = async () => {
     try {
       await copyText(link);
+      setCopied(true);
       toast("Booking link copied", "success");
     } catch {
       toast("Couldn't copy. Select the link and copy it by hand.", "danger");
@@ -254,7 +254,10 @@ export function ScheduleSettings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Schedule</h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Schedule</h1>
+        <p className="mt-1 text-ui text-muted-foreground">Share a link so people can book time with you.</p>
+      </div>
 
       {offline && (
         <Notice tone="warning" icon={<CloudOff className="h-4 w-4" aria-hidden />} title="Scheduling needs internet">
@@ -317,8 +320,8 @@ export function ScheduleSettings() {
               )}
               {savedHandle && !editingHandle ? (
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" icon={<Copy className="h-4 w-4" aria-hidden />} onClick={() => void copyLink()}>
-                    Copy
+                  <Button variant="secondary" icon={copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />} onClick={() => void copyLink()}>
+                    {copied ? "Copied" : "Copy"}
                   </Button>
                   <Button variant="secondary" icon={<Share2 className="h-4 w-4" aria-hidden />} onClick={() => void shareLink()}>
                     Share
@@ -331,55 +334,64 @@ export function ScheduleSettings() {
           </Panel>
 
           <Panel>
-            <PanelHeader title="When can people book?" />
+            <PanelHeader title="Weekly hours" />
             <div className="space-y-4 p-4">
               {custom ? (
                 <div className="flex flex-wrap items-center gap-3 rounded-chip bg-muted px-3 py-2">
                   <p className="min-w-0 flex-1 text-ui">
                     <span className="font-semibold">Custom hours</span>
-                    <span className="block text-meta text-muted-foreground">Different times on different days.</span>
+                    <span className="block text-meta text-muted-foreground">More than one time range on a day. Reset to edit one range per day.</span>
                   </p>
                   <Button
                     variant="ghost"
                     onClick={() => {
                       setCustom(null);
-                      setDayOn(DEFAULT_DAYS);
-                      setStartMin(DEFAULT_START);
-                      setEndMin(DEFAULT_END);
+                      setWeek(defaultWeek());
                     }}
                   >
                     Reset to simple
                   </Button>
                 </div>
               ) : (
-                <>
-                  <div role="group" aria-label="Days people can book" className="flex flex-wrap gap-2">
-                    {WEEK.map((w) => (
-                      <button key={w.n} type="button" aria-pressed={dayOn.includes(w.n)} aria-label={w.label} onClick={() => toggleDay(w.n)} className={chipCls(dayOn.includes(w.n))}>
-                        {w.short}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="time"
-                      aria-label="From"
-                      value={toTime(startMin)}
-                      onChange={(e) => !Number.isNaN(fromTime(e.target.value)) && setStartMin(fromTime(e.target.value))}
-                      className={cx(inputCls, "!w-32")}
-                    />
-                    <span className="text-meta text-muted-foreground" aria-hidden>
-                      to
-                    </span>
-                    <input
-                      type="time"
-                      aria-label="To"
-                      value={toTime(endMin)}
-                      onChange={(e) => !Number.isNaN(fromTime(e.target.value)) && setEndMin(fromTime(e.target.value))}
-                      className={cx(inputCls, "!w-32")}
-                    />
-                  </div>
-                </>
+                <ul aria-label="Weekly hours" className="divide-y divide-border/70">
+                  {WEEK.map((w) => {
+                    const d = week.find((x) => x.n === w.n)!;
+                    return (
+                      <li key={w.n} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+                        <SwitchButton label={`${w.label} available`} checked={d.on} onChange={(on) => setDay(w.n, { on })} />
+                        <span className="w-12 text-ui font-semibold sm:w-24">
+                          <span className="sm:hidden" aria-hidden>
+                            {w.short}
+                          </span>
+                          <span className="hidden sm:inline">{w.label}</span>
+                        </span>
+                        {d.on ? (
+                          <div className="flex w-full items-center gap-2 pl-[56px] min-[480px]:ml-auto min-[480px]:w-auto min-[480px]:pl-0">
+                            <input
+                              type="time"
+                              aria-label={`${w.label} from`}
+                              value={toTime(d.startMin)}
+                              onChange={(e) => !Number.isNaN(fromTime(e.target.value)) && setDay(w.n, { startMin: fromTime(e.target.value) })}
+                              className={cx(inputCls, "num !w-[7rem] !px-3")}
+                            />
+                            <span className="text-meta text-muted-foreground" aria-hidden>
+                              to
+                            </span>
+                            <input
+                              type="time"
+                              aria-label={`${w.label} to`}
+                              value={toTime(d.endMin)}
+                              onChange={(e) => !Number.isNaN(fromTime(e.target.value)) && setDay(w.n, { endMin: fromTime(e.target.value) })}
+                              className={cx(inputCls, "num !w-[7rem] !px-3")}
+                            />
+                          </div>
+                        ) : (
+                          <span className="ml-auto text-meta text-muted-foreground">Unavailable</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
               <div>
                 <p className="text-meta text-muted-foreground">
@@ -502,7 +514,10 @@ export function ScheduleSettings() {
                         onClick={() => setOpenId(open ? null : b.id)}
                         className="flex min-h-12 w-full items-center gap-2 px-4 py-3 text-left hover:bg-muted"
                       >
-                        <span className="min-w-0 flex-1 text-ui font-semibold">{bookingWhen(b, hostTz)}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="num block text-meta text-muted-foreground">{bookingWhen(b, hostTz)}</span>
+                          <span className="block truncate text-ui font-semibold">{b.guestName}</span>
+                        </span>
                         {repeatGuests.has(b.id) && <Badge tone="warning">Same guest booked twice</Badge>}
                         <ChevronDown className={cx("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} aria-hidden />
                       </button>

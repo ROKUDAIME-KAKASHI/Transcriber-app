@@ -83,3 +83,27 @@ describe("meeting lengths", () => {
     assert.equal(out[0].maxDaysAhead, 14);
   });
 });
+
+import { availabilityFromWeek, defaultWeek, weekFromAvailability, weekProblem } from "../src/lib/scheduleSimple.ts";
+
+test("weekFromAvailability gives seven rows with different hours per day, and round-trips", () => {
+  const av = [
+    { weekday: 1, startMin: 9 * 60, endMin: 12 * 60 },
+    { weekday: 3, startMin: 13 * 60, endMin: 18 * 60 },
+  ];
+  const rows = weekFromAvailability(av)!;
+  assert.equal(rows.length, 7);
+  assert.deepEqual(rows.filter((r) => r.on).map((r) => r.n), [1, 3]);
+  assert.deepEqual(availabilityFromWeek(rows), av);
+});
+
+test("weekFromAvailability refuses two ranges on one day", () => {
+  assert.equal(weekFromAvailability([{ weekday: 1, startMin: 540, endMin: 600 }, { weekday: 1, startMin: 660, endMin: 720 }]), null);
+});
+
+test("weekProblem names the first bad day", () => {
+  assert.equal(weekProblem(defaultWeek()), null);
+  assert.equal(weekProblem(defaultWeek().map((r) => ({ ...r, on: false }))), "Pick at least one day people can book.");
+  const rows = defaultWeek().map((r) => (r.n === 2 ? { ...r, startMin: 900, endMin: 600 } : r));
+  assert.equal(weekProblem(rows), "Tuesday: the end time must be after the start time.");
+});
