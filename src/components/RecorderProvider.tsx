@@ -4,6 +4,9 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useRecorder } from "@/hooks/useRecorder";
 import { setWebRecording } from "@/lib/recordingFlag";
 import { nextRecorderOpts, recorderBusy } from "@/lib/recorderOpts";
+import { useFlag } from "@/lib/flagsClient";
+import { enqueueAuto } from "@/lib/minutesJob";
+import { useLocalUser } from "./SyncProvider";
 
 type Opts = Parameters<typeof useRecorder>[0];
 type Rec = ReturnType<typeof useRecorder>;
@@ -19,9 +22,19 @@ export interface RecorderActions {
   /** Record screen -> provider: engine, language, mic, source. Ignored while a recording is busy. */
   setOptions: (o: Opts) => void;
   getOptions: () => Opts;
-  /** Starting, recording or still saving. Read on demand (no subscription). */
+  /** Starting, recording, paused, finishing or saving. Read on demand (no subscription). */
   isBusy: () => boolean;
+  /** Record screen opened: hide a finished, saved recording so the screen starts fresh. No-op while busy. */
+  resetFinished: () => void;
 }
+
+/** What a finished recording looks like once it has been put away. */
+const BLANK = {
+  meetingId: null, transcriptParts: [], interimText: "", liveStatus: null, backlog: 0, micLevel: 0,
+  noSound: false, recordingSeconds: 0, isPaused: false, statusMsg: "Ready", saveState: "idle" as const,
+  syncNote: null, stoppedRemotely: false, speakerNames: null, notice: null, finishing: false,
+  callSilent: false, screenNaming: null,
+};
 
 const DEFAULT_OPTS: Opts = { engine: "moonshine", language: "en", deviceId: "", source: "mic" };
 
@@ -41,6 +54,9 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
   recRef.current = rec;
   const optsRef = useRef(opts);
   optsRef.current = opts;
+  const { userId } = useLocalUser();
+  /** The meeting a fresh Record screen should no longer show. */
+  const [putAway, setPutAway] = useState<string | null>(null);
 
   const actions = useMemo<RecorderActions>(
     () => ({
@@ -53,6 +69,11 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
       setOptions: (o) => setOpts((cur) => nextRecorderOpts(cur, o, recorderBusy(recRef.current))),
       getOptions: () => optsRef.current,
       isBusy: () => recorderBusy(recRef.current),
+      resetFinished: () => {
+        const r = recRef.current;
+        if (recorderBusy(r) || !r.meetingId) return;
+        if (r.saveState === "saved" || r.saveState === "local") setPutAway(r.meetingId);
+      },
     }),
     []
   );
@@ -64,9 +85,43 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
   }, [busy]);
   useEffect(() => () => setWebRecording(false), []);
 
+  // The account a session started under (WR-07). Captured when it becomes busy, kept until the next one.
+  const ownerRef = useRef<string | null>(null);
+  const wasBusyRef = useRef(false);
+  useEffect(() => {
+    if (busy && !wasBusyRef.current) ownerRef.current = userId;
+    wasBusyRef.current = busy;
+  }, [busy, userId]);
+  // Signed in as someone else mid-recording: stop it (the hook keeps saving under the original account).
+  const userChanged = !!userId && !!ownerRef.current && userId !== ownerRef.current;
+  useEffect(() => {
+    if (userChanged && rec.isRecording) void recRef.current.stop().catch(() => {});
+  }, [userChanged, rec.isRecording]);
+
+  // Stop -> write the minutes for this meeting once (queued; the runner waits for internet and sign-in).
+  // Lives here so it happens wherever the recording ends, not only while Record is open.
+  const autoMinutesOn = useFlag("autoMinutes");
+  const queuedMeeting = useRef<string | null>(null);
+  const finished =
+    !busy && !!rec.meetingId && rec.transcriptParts.length > 0 && (rec.saveState === "saved" || rec.saveState === "local");
+  const words = useMemo(
+    () => rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0),
+    [rec.transcriptParts]
+  );
+  useEffect(() => {
+    const owner = ownerRef.current ?? userId; // never the new account when the session started under another
+    if (!finished || !autoMinutesOn || !owner || !rec.meetingId || queuedMeeting.current === rec.meetingId) return;
+    // Remembered only once queued, so late final phrases that push the count past the minimum still get a run.
+    if (enqueueAuto(owner, rec.meetingId, words)) queuedMeeting.current = rec.meetingId;
+  }, [finished, autoMinutesOn, userId, rec.meetingId, words]);
+
+  // A finished recording is put away on request, and never shown to a different account.
+  const hide = !busy && !!rec.meetingId && (rec.meetingId === putAway || userChanged);
+  const view = useMemo<Rec>(() => (hide ? { ...rec, ...BLANK } : rec), [rec, hide]);
+
   return (
     <ActionsCtx.Provider value={actions}>
-      <StateCtx.Provider value={rec}>{children}</StateCtx.Provider>
+      <StateCtx.Provider value={view}>{children}</StateCtx.Provider>
     </ActionsCtx.Provider>
   );
 }

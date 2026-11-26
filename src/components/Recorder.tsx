@@ -10,8 +10,6 @@ import { useRecorderActions, useRecorderState } from "./RecorderProvider";
 import { useBatteryRestriction, useNativeRecorder } from "@/hooks/useNativeRecorder";
 import { isNativeApp, nativeCapabilities } from "@/lib/nativeRecorder";
 import { useFlag } from "@/lib/flagsClient";
-import { enqueueAuto } from "@/lib/minutesJob";
-import { useLocalUser } from "./SyncProvider";
 import { formatDuration } from "@/lib/transcript";
 import { effectiveEngine, useFeatureGate } from "@/lib/featureGate";
 import { WHISPER_LANGUAGES } from "@/lib/speech/models";
@@ -114,6 +112,10 @@ export function Recorder() {
   const recActions = useRecorderActions();
   /** Coming back to a recording that carried on while this screen was closed: its engine is already fixed. */
   const resumedBusy = !!recActions?.isBusy();
+  // A finished, saved recording from an earlier visit is put away: Record opens ready for a new one.
+  useEffect(() => {
+    recActions?.resetFinished();
+  }, [recActions]);
   const [micId, setMicId] = useState("");
   const { mics, refresh: refreshMics } = useMicrophones();
   /** The saved preference. Only ever written by the user's own selection. */
@@ -354,15 +356,17 @@ export function Recorder() {
   const [prefillPlan, setPrefillPlan] = useState(false);
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
+    // A recording is already running: its title and plan are fixed, so a new ?title= / ?plan= is dropped.
+    const ignorePrefill = resumedBusy;
     if (q.has("title")) {
-      setTitlePrefill(q.get("title"));
+      if (!ignorePrefill) setTitlePrefill(q.get("title"));
       q.delete("title");
       const rest = q.toString();
       window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
     }
     // /?plan=<id> (from a planned meeting's Record button) links the recording to that plan once it starts.
     if (q.has("plan")) {
-      setPlanPrefill(q.get("plan"));
+      if (!ignorePrefill) setPlanPrefill(q.get("plan"));
       q.delete("plan");
       const rest = q.toString();
       window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
@@ -379,8 +383,8 @@ export function Recorder() {
 
   // A plan with a call link: turn computer sound on. Online only; failures are silent.
   useEffect(() => {
-    if (!prefillPlan) {
-      setCallUrl(null);
+    if (!prefillPlan || sessionLocked) {
+      if (!prefillPlan) setCallUrl(null);
       return;
     }
     const id = peekPlanPrefill();
@@ -401,7 +405,7 @@ export function Recorder() {
     return () => {
       cancelled = true;
     };
-  }, [prefillPlan, soundToggle]);
+  }, [prefillPlan, soundToggle, sessionLocked]);
 
   const hasTranscript = rec.transcriptParts.length > 0;
   const hasLive = !!rec.interimText || !!rec.liveStatus;
@@ -418,16 +422,6 @@ export function Recorder() {
     () => rec.transcriptParts.reduce((n, p) => n + p.text.split(/\s+/).filter(Boolean).length, 0),
     [rec.transcriptParts]
   );
-
-  // Stop -> write the minutes for this meeting once (queued; the runner waits for internet and sign-in).
-  const autoMinutesOn = useFlag("autoMinutes");
-  const { userId: autoUserId } = useLocalUser();
-  const queuedMeeting = useRef<string | null>(null);
-  useEffect(() => {
-    if (!finished || !autoMinutesOn || !autoUserId || !rec.meetingId || queuedMeeting.current === rec.meetingId) return;
-    // Remembered only once queued, so late final phrases that push the count past the minimum still get a run.
-    if (enqueueAuto(autoUserId, rec.meetingId, words)) queuedMeeting.current = rec.meetingId;
-  }, [finished, autoMinutesOn, autoUserId, rec.meetingId, words]);
 
   const mode = calmMode({
     recording: busy,
