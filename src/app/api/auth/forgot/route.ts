@@ -36,12 +36,21 @@ export async function POST(req: Request) {
   try {
     const user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, password: true } });
     if (user) {
-      // The origin comes from server config, falling back to the request URL, never from user input.
-      let origin = new URL(req.url).origin;
+      // The link's origin comes from server config. The request's own origin is used only when it is one of
+      // this app's known hosts, so a forged Host header can never point a real reset link at another site.
+      const PROD_ORIGIN = "https://transcriber-app-ten.vercel.app";
+      let origin = PROD_ORIGIN;
       try {
         if (process.env.NEXTAUTH_URL) origin = new URL(process.env.NEXTAUTH_URL).origin;
+        else {
+          const u = new URL(req.url);
+          const known =
+            u.hostname === "localhost" || u.hostname === "127.0.0.1" ||
+            (u.protocol === "https:" && /^transcriber-app-[a-z0-9-]+\.vercel\.app$/.test(u.hostname));
+          if (known) origin = u.origin;
+        }
       } catch {
-        /* keep the request origin */
+        origin = PROD_ORIGIN;
       }
       const link = `${origin}/reset?token=${signResetToken(user.id, user.password, secret)}`;
       await sendMail({
