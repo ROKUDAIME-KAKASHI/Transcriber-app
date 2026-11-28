@@ -21,6 +21,8 @@ import { useFlag } from "@/lib/flagsClient";
 import { OverdueBadge, OverdueReminder, useOverdueCount } from "./OverdueReminder";
 import { isNative } from "@/lib/native";
 import { refreshDisplayName, useCustomName } from "@/lib/displayName";
+import { useNotifications } from "@/lib/notificationsClient";
+import { NotificationBell, NotificationPanel } from "./NotificationPanel";
 
 // Loaded the first time it is opened, so it adds nothing to the first page load.
 const CommandPalette = dynamic(() => import("./CommandPalette"), { ssr: false });
@@ -62,6 +64,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navItems = NAV.filter((n) => (n.href === "/tasks" ? tasksOn : n.href === "/schedule" ? scheduleOn : true));
   const peopleOn = useFlag("stakeholders");
   const overdue = useOverdueCount();
+  const notif = useNotifications();
+  const [notifOpen, setNotifOpen] = useState(false);
   const { user, cachedUser } = useAuth();
   const offline = useConnectivity() === "offline";
   const email = user?.email ?? cachedUser?.email ?? "";
@@ -119,9 +123,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh">
       {/* Sidebar (laptops) */}
       <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-border bg-card px-3 py-4 lg:flex">
-        <div className="px-2.5 py-1">
+        <div className="relative px-2.5 py-1">
           <Logo />
           <ConnectivityPill className="mt-1" />
+          {notif.enabled && <NotificationBell unread={notif.unread} open={notifOpen} onClick={() => setNotifOpen((o) => !o)} className="absolute right-0 top-1.5" />}
         </div>
         {paletteOk && (
           <button
@@ -211,6 +216,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Logo />
           <div className="ml-auto flex items-center gap-1">
           <ConnectivityPill />
+          {notif.enabled && <NotificationBell unread={notif.unread} open={notifOpen} onClick={() => setNotifOpen((o) => !o)} />}
           <AccountMenu pathname={pathname} email={email} peopleOn={peopleOn} offline={offline} onSignOut={doSignOut} />
           </div>
         </div>
@@ -254,6 +260,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} tasksOn={tasksOn} scheduleOn={scheduleOn} peopleOn={peopleOn} />}
+      {notif.enabled && notifOpen && <NotificationPanel state={notif} onClose={() => setNotifOpen(false)} />}
       <OverdueReminder />
       <RecordingPill />
     </div>
