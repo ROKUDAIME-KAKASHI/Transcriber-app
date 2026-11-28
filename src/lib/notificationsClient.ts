@@ -78,7 +78,7 @@ export function useNotifications(): NotifState {
           if (await isRecordingActive().catch(() => true)) return;
           const t = Date.now();
           const [p, b] = await Promise.all([
-            plansOn ? loadPlans(userId, t - 8 * DAY, t + 30 * DAY) : Promise.resolve(null),
+            plansOn ? loadPlans(userId, t - 8 * DAY, t + 30 * DAY, { readOnly: true }) : Promise.resolve(null),
             schedOn ? loadBookings(userId) : Promise.resolve(null),
           ]);
           const fresh = b ?? p;

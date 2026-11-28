@@ -81,8 +81,9 @@ async function getJson<T>(url: string): Promise<T | null> {
 }
 
 /** Planned meetings that start between the two times. The server filters by range (up to 200 rows). */
-export async function loadPlans(userId: string | null, fromMs: number, toMs: number): Promise<CalCache | null> {
+export async function loadPlans(userId: string | null, fromMs: number, toMs: number, opts: { readOnly?: boolean } = {}): Promise<CalCache | null> {
   const q = new URLSearchParams({ from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() });
+  if (opts.readOnly) q.set("ahead", "0");
   const j = await getJson<{ plans?: PlanDTO[] }>(`/api/plans?${q}`);
   if (!j || !Array.isArray(j.plans)) return null;
   return writeCalCache(userId, { plans: { rows: j.plans, win: { fromMs, toMs } } });
