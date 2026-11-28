@@ -35,7 +35,7 @@ function invalidate() {
 
 async function rawProbe(): Promise<boolean> {
   try {
-    const res = await fetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    const res = await fetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(8000) });
     return res.status === 204 || res.ok;
   } catch {
     return false;

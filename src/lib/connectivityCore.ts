@@ -22,7 +22,10 @@ export function reduce(state: ConnState, event: ConnEvent): { state: ConnState; 
       return { state: { status: state.status, failures: state.failures + 1 }, effect: "retry-probe" };
     }
     case "hint-offline":
-      return { state: { status: "offline", failures: Math.max(state.failures, 1) }, effect: null };
+      // Android fires "offline" while handing over between mobile networks (5G/LTE/IMS), even though the
+      // internet still works. Treat it as "check now", never as proof: a real outage fails the probe at once
+      // (fetch rejects with navigator.onLine false) and flips to offline through "probe-fail".
+      return { state, effect: "probe-now" };
     case "hint-online":
     case "plugin-disconnected":
       return { state, effect: "probe-now" };

@@ -25,8 +25,10 @@ test("fail with navigator offline -> offline immediately", () => {
   assert.equal(r.effect, null);
 });
 
-test("hint-offline -> offline immediately", () => {
-  assert.equal(reduce({ status: "online", failures: 0 }, { type: "hint-offline" }).state.status, "offline");
+test("hint-offline -> re-probe, status kept (network handovers fire spurious offline events)", () => {
+  const r = reduce({ status: "online", failures: 0 }, { type: "hint-offline" });
+  assert.equal(r.state.status, "online");
+  assert.equal(r.effect, "probe-now");
 });
 
 test("hint-online -> probe-now, status unchanged", () => {
