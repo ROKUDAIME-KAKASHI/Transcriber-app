@@ -62,7 +62,12 @@ function bookingWhen(b: BookingRow, tz: string) {
   return `${date} · ${formatInZone(b.startAt, tz, false)} · ${mins} min`;
 }
 
-export function ScheduleSettings() {
+/** Which part to show. "all" is the whole page; the calendar's "Scheduling options" menu opens one part at a time. */
+export type ScheduleSection = "all" | "link" | "hours" | "lengths" | "bookings";
+
+export function ScheduleSettings({ section = "all" }: { section?: ScheduleSection }) {
+  const show = (...names: ScheduleSection[]) => section === "all" || names.includes(section);
+  const wantBookings = show("bookings");
   const toast = useToast();
   const { user, cachedUser } = useAuth();
   const offline = useConnectivity() === "offline";
@@ -141,14 +146,14 @@ export function ScheduleSettings() {
         // A brand-new account gets the default 30 minute event; a saved one shows exactly what is on.
         setLengths(data.saved ? lengthsFromEvents(evs) : [30]);
         setOpts(optionsFromEvents(evs));
-        void loadBookings();
+        if (wantBookings) void loadBookings();
       } catch {
         setLoadError("Couldn't reach the server. Check the connection and try again.");
       } finally {
         setLoading(false);
       }
     },
-    [browserTz, email, loadBookings]
+    [browserTz, email, loadBookings, wantBookings]
   );
 
   useEffect(() => {
@@ -254,10 +259,12 @@ export function ScheduleSettings() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Schedule</h1>
-        <p className="mt-1 text-ui text-muted-foreground">Share a link so people can book time with you.</p>
-      </div>
+      {section === "all" && (
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Schedule</h1>
+          <p className="mt-1 text-ui text-muted-foreground">Share a link so people can book time with you.</p>
+        </div>
+      )}
 
       {offline && (
         <Notice tone="warning" icon={<CloudOff className="h-4 w-4" aria-hidden />} title="Scheduling needs internet">
@@ -280,7 +287,7 @@ export function ScheduleSettings() {
         </Notice>
       ) : (
         <>
-          <Panel>
+          {show("link") && <Panel>
             <PanelHeader title="Your booking link">
               {!editingHandle && (
                 <button type="button" className="min-h-11 px-2 text-meta font-semibold text-accent-text" onClick={() => setEditingHandle(true)}>
@@ -331,9 +338,9 @@ export function ScheduleSettings() {
                 !savedHandle && <p className="text-meta text-muted-foreground">Check the times below, then tap Create my link.</p>
               )}
             </div>
-          </Panel>
+          </Panel>}
 
-          <Panel>
+          {show("hours") && <Panel>
             <PanelHeader title="Weekly hours" />
             <div className="space-y-4 p-4">
               {custom ? (
@@ -421,9 +428,9 @@ export function ScheduleSettings() {
                 )}
               </div>
             </div>
-          </Panel>
+          </Panel>}
 
-          <Panel>
+          {show("lengths") && <Panel>
             <PanelHeader title="Meeting length" />
             <div className="space-y-3 p-4">
               <div role="group" aria-label="Meeting lengths" className="flex flex-wrap gap-2">
@@ -475,9 +482,9 @@ export function ScheduleSettings() {
                 </div>
               </details>
             </div>
-          </Panel>
+          </Panel>}
 
-          <div className="sticky bottom-[calc(92px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-10 space-y-2 lg:static">
+          {show("link", "hours", "lengths") && <div className={cx("space-y-2", section === "all" && "sticky bottom-[calc(92px+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] z-10 lg:static")}>
             {formError && (
               <p className="rounded-chip bg-card px-3 py-2 text-meta text-danger-text shadow-card" role="alert">
                 {formError}
@@ -486,9 +493,9 @@ export function ScheduleSettings() {
             <Button variant="primary" size="lg" loading={saving} disabled={offline} onClick={() => void save()} className="w-full sm:w-auto sm:min-w-40">
               {savedHandle ? "Save" : "Create my link"}
             </Button>
-          </div>
+          </div>}
 
-          <Panel>
+          {show("bookings") && <Panel>
             <PanelHeader title="Upcoming" meta={bookings && bookings.length ? String(bookings.length) : undefined} />
             {bookingsError ? (
               <p className="p-4 text-ui text-muted-foreground">{bookingsError}</p>
@@ -563,7 +570,7 @@ export function ScheduleSettings() {
                 })}
               </ul>
             )}
-          </Panel>
+          </Panel>}
         </>
       )}
     </div>

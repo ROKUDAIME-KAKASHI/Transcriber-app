@@ -15,11 +15,11 @@ export async function GET() {
       take: 100,
       select: {
         id: true, guestName: true, guestEmail: true, guestNote: true, startAt: true, endAt: true, agenda: true,
-        meetingId: true, eventType: { select: { title: true } },
+        meetingId: true, createdAt: true, eventType: { select: { title: true } },
       },
     });
     return Response.json(
-      { bookings: rows.map((r) => ({ ...r, startAt: r.startAt.toISOString(), endAt: r.endAt.toISOString(), eventTitle: r.eventType.title, eventType: undefined })) },
+      { bookings: rows.map((r) => ({ ...r, startAt: r.startAt.toISOString(), endAt: r.endAt.toISOString(), createdAt: r.createdAt.toISOString(), eventTitle: r.eventType.title, eventType: undefined })) },
       { headers: NO_STORE }
     );
   } catch (err) {

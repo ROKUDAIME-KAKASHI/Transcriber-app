@@ -313,6 +313,12 @@ export function slotMinutes(offsetPx: number, hourPx: number, step = SLOT_STEP_M
 
 export const timeText = (min: number) => `${p2(Math.floor(min / 60))}:${p2(min % 60)}`;
 
+/** "9:30 am" for a minute of the day. */
+export function clockLabel(min: number): string {
+  const h = Math.floor(min / 60);
+  return `${h % 12 === 0 ? 12 : h % 12}:${p2(min % 60)} ${h < 12 ? "am" : "pm"}`;
+}
+
 /** The "Plan a meeting" address for an empty slot. The Plan page reads date, time and tz. */
 export function planHrefAt(ymd: string, min: number, tz: string): string {
   const q = new URLSearchParams({ new: "1", date: ymd, time: timeText(min), tz });
@@ -345,4 +351,16 @@ export function mergeById<T extends { id: string; startAt: string }>(old: T[], f
   for (const x of old) map.set(x.id, x);
   for (const x of fresh) map.set(x.id, x);
   return [...map.values()].sort((a, b) => ms(b.startAt) - ms(a.startAt)).slice(0, cap);
+}
+
+/**
+ * A fresh answer for a time window replaces what the copy held for that window, so a meeting deleted or moved
+ * elsewhere disappears; rows outside the window are kept.
+ */
+export function replaceInWindow<T extends { id: string; startAt: string }>(old: T[], fresh: T[], fromMs: number, toMs: number, cap = 300): T[] {
+  const outside = old.filter((x) => {
+    const t = ms(x.startAt);
+    return t < fromMs || t > toMs;
+  });
+  return mergeById(outside, fresh, cap);
 }

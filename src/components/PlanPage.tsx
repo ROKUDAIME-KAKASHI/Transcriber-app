@@ -21,6 +21,7 @@ import { conflictMessage, conflictsWith, inviteLabel, type BusyBlock } from "@/l
 import { shareText } from "@/lib/export/deliver";
 import { usePeople } from "@/lib/stakeholdersClient";
 import { navBack } from "@/lib/navStack";
+import { prefillFromParams } from "@/lib/calendarView";
 import { CARRIED_PREFIX } from "@/lib/followUp";
 import { deliverPlanIcs, openCallLink } from "@/lib/planActions";
 import {
@@ -71,6 +72,10 @@ export function PlanPage() {
 
   const id = search.get("id");
   const seriesParam = search.get("seriesId");
+  // From an empty slot on the Schedule calendar: ?date=YYYY-MM-DD&time=HH:mm&tz=Zone (anything malformed is ignored).
+  const dateParam = search.get("date");
+  const timeParam = search.get("time");
+  const tzParam = search.get("tz");
 
   const browserTz = useMemo(() => {
     try {
@@ -121,10 +126,12 @@ export function PlanPage() {
       } else {
         const s = seriesParam ? list.find((x) => x.id === seriesParam) : undefined;
         setPlan(null);
+        const pre = prefillFromParams((k) => (k === "date" ? dateParam : k === "time" ? timeParam : k === "tz" ? tzParam : null));
         setForm(
-          blankForm(new Date(), browserTz, s ? {
-            title: s.title, durationMin: s.defaultDurationMin, venue: s.defaultVenue ?? "", callUrl: s.defaultCallUrl ?? "", seriesId: s.id,
-          } : undefined)
+          blankForm(new Date(), pre.timeZone ?? browserTz, {
+            ...(s ? { title: s.title, durationMin: s.defaultDurationMin, venue: s.defaultVenue ?? "", callUrl: s.defaultCallUrl ?? "", seriesId: s.id } : {}),
+            ...(pre.date && pre.time ? { date: pre.date, time: pre.time } : {}),
+          })
         );
       }
     } catch {
@@ -132,7 +139,7 @@ export function PlanPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, seriesParam, browserTz]);
+  }, [id, seriesParam, dateParam, timeParam, tzParam, browserTz]);
 
   useEffect(() => {
     void load();

@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildEvents, dayStartMs, eventsOnDay, hourLabel, isYmd, layoutOverlaps, mergeById, nowPosition, planHrefAt, prefillFromParams,
+  buildEvents, clockLabel, dayStartMs, eventsOnDay, hourLabel, isYmd, layoutOverlaps, mergeById, nowPosition, replaceInWindow, planHrefAt, prefillFromParams,
   rangeFor, rangeTitle, segmentsForDay, shiftAnchor, slotMinutes, timeText, todayIn,
   type PlanLike,
 } from "../src/lib/calendarView.ts";
@@ -74,6 +74,9 @@ describe("range and week math", () => {
     assert.equal(hourLabel(0), "12 am");
     assert.equal(hourLabel(13), "1 pm");
     assert.equal(timeText(570), "09:30");
+    assert.equal(clockLabel(570), "9:30 am");
+    assert.equal(clockLabel(0), "12:00 am");
+    assert.equal(clockLabel(13 * 60 + 5), "1:05 pm");
   });
 });
 
@@ -204,5 +207,13 @@ describe("offline copy", () => {
     const m = mergeById(old, fresh);
     assert.deepEqual(m.map((x) => [x.id, x.v]), [["c", 2], ["b", 1], ["a", 2]]);
     assert.equal(mergeById(old, fresh, 2).length, 2);
+  });
+
+  test("a fresh answer replaces its window, so a deleted row disappears, and keeps rows outside it", () => {
+    const row = (id: string, startAt: string, v = 1) => ({ id, startAt, v });
+    const old = [row("keep", "2026-10-01T00:00:00Z"), row("gone", "2026-11-10T00:00:00Z"), row("stay", "2026-11-12T00:00:00Z")];
+    const fresh = [row("stay", "2026-11-12T00:00:00Z", 2), row("new", "2026-11-20T00:00:00Z", 2)];
+    const r = replaceInWindow(old, fresh, Date.UTC(2026, 10, 1), Date.UTC(2026, 10, 30));
+    assert.deepEqual(r.map((x) => x.id), ["new", "stay", "keep"]);
   });
 });

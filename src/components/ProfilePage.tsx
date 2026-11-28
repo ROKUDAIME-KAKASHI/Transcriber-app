@@ -240,7 +240,7 @@ function BookingSection({ offline }: { offline: boolean }) {
         ) : state.kind === "none" ? (
           <>
             <p className="text-meta text-muted-foreground">Let people book time with you from a public page.</p>
-            <Link href="/schedule" className="inline-flex min-h-12 items-center rounded-btn bg-accent px-4 text-ui font-semibold text-accent-foreground lg:min-h-10">
+            <Link href="/schedule?options=link" className="inline-flex min-h-12 items-center rounded-btn bg-accent px-4 text-ui font-semibold text-accent-foreground lg:min-h-10">
               Set up your booking link
             </Link>
           </>
@@ -256,7 +256,7 @@ function BookingSection({ offline }: { offline: boolean }) {
               <Button variant="secondary" icon={<Share2 className="h-4 w-4" aria-hidden />} onClick={share}>
                 Share
               </Button>
-              <Link href="/schedule" className="inline-flex min-h-12 items-center rounded-btn px-4 text-ui font-semibold text-accent-text hover:bg-muted lg:min-h-10">
+              <Link href="/schedule?options=link" className="inline-flex min-h-12 items-center rounded-btn px-4 text-ui font-semibold text-accent-text hover:bg-muted lg:min-h-10">
                 Open Schedule
               </Link>
             </div>
