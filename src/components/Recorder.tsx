@@ -552,7 +552,8 @@ export function Recorder() {
           {!busy && !starting && <p className="mt-3 text-meta text-muted-foreground">{RECORD_REMINDER}</p>}
 
           <LevelCanvas
-            className="mt-5 max-w-sm"
+            className="mt-3 max-w-sm"
+            height={32}
             level={rec.micLevel}
             state={busy ? (rec.isPaused ? "paused" : "live") : "idle"}
             reduced={reduced || (busy && mode !== "live")}

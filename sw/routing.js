@@ -26,6 +26,8 @@ function route(url, request, origin) {
   if (path === "/admin" || path.indexOf("/admin/") === 0) return { kind: "pass" };
   // Public booking pages are always live: a cached copy would show stale slots.
   if (path === "/book" || path.indexOf("/book/") === 0) return { kind: "pass" };
+  // Password reset pages are public and token-driven: never serve the offline shell for them.
+  if (path === "/forgot" || path === "/reset") return { kind: "pass" };
   if (isRscRequest(url, request)) return { kind: "pass" };
   if (path.indexOf("/_next/static/") === 0 || path.indexOf("/ort/") === 0) return { kind: "asset" };
   if (request.mode === "navigate") {

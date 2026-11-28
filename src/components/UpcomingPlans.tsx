@@ -6,7 +6,10 @@ import { CalendarPlus, MapPin, Mic, Users, Video } from "lucide-react";
 import { useFlag } from "@/lib/flagsClient";
 import { useConnectivity } from "@/lib/connectivity";
 import { formatInZone } from "@/lib/scheduling";
-import { UPCOMING_DAYS, recordHref, upcomingPlans, type PlanDTO } from "@/lib/planning";
+import { UPCOMING_DAYS, mergeUpcoming, recordHref, type PlanDTO } from "@/lib/planning";
+import { loadBookings, loadPlans, type BookingDTO } from "@/lib/calendarCache";
+import { useAuth } from "./AuthProvider";
+import { useLocalUser } from "./SyncProvider";
 import { cx } from "./ui";
 
 /**
@@ -16,7 +19,11 @@ import { cx } from "./ui";
 export function UpcomingPlans({ className }: { className?: string }) {
   const on = useFlag("plannedMeetings");
   const online = useConnectivity() !== "offline";
+  const { user, cachedUser } = useAuth();
+  const local = useLocalUser();
+  const userId = local.userId ?? user?.id ?? cachedUser?.id ?? null;
   const [plans, setPlans] = useState<PlanDTO[] | null>(null);
+  const [bookings, setBookings] = useState<BookingDTO[]>([]);
   const [tz, setTz] = useState("UTC");
 
   useEffect(() => {
@@ -32,18 +39,15 @@ export function UpcomingPlans({ className }: { className?: string }) {
     let cancelled = false;
     const load = async () => {
       const now = Date.now();
-      const q = new URLSearchParams({
-        from: new Date(now - 12 * 3600_000).toISOString(),
-        to: new Date(now + UPCOMING_DAYS * 86_400_000).toISOString(),
-      });
       try {
-        const r = await fetch(`/api/plans?${q}`, { cache: "no-store" });
-        if (!r.ok) {
-          if (!cancelled) setPlans(null);
+        const [p, b] = await Promise.all([loadPlans(userId, now - 12 * 3600_000, now + UPCOMING_DAYS * 86_400_000, { readOnly: true }), loadBookings(userId)]);
+        if (cancelled) return;
+        if (!p) {
+          setPlans(null);
           return;
         }
-        const j = (await r.json()) as { plans?: PlanDTO[] };
-        if (!cancelled) setPlans(Array.isArray(j.plans) ? j.plans : []);
+        setPlans(p.plans);
+        if (b) setBookings(b.bookings);
       } catch {
         /* offline or server busy: keep what we have */
       }
@@ -57,15 +61,15 @@ export function UpcomingPlans({ className }: { className?: string }) {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [on, online]);
+  }, [on, online, userId]);
 
-  const upcoming = useMemo(() => (plans ? upcomingPlans(plans, new Date()) : []), [plans]);
+  const upcoming = useMemo(() => (plans ? mergeUpcoming(plans, bookings, new Date()) : []), [plans, bookings]);
   if (!on || plans === null) return null;
 
   return (
     <section aria-labelledby="upcoming-heading" className={className}>
       <div className="mb-2 flex items-center justify-between gap-3 px-1">
-        <h2 id="upcoming-heading" className="text-meta font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+        <h2 id="upcoming-heading" className="text-ui font-semibold text-muted-foreground">
           Upcoming
         </h2>
         <Link
@@ -77,12 +81,27 @@ export function UpcomingPlans({ className }: { className?: string }) {
       </div>
       {upcoming.length === 0 ? (
         <p className="rounded-panel border border-border/70 bg-card px-4 py-3 text-ui text-muted-foreground shadow-card">
-          Nothing planned for the next {UPCOMING_DAYS} days.
+          Nothing planned or booked for the next {UPCOMING_DAYS} days.
         </p>
       ) : (
         <ul className="grid gap-2">
-          {upcoming.map((p) => (
-            <li key={p.id} className="flex items-stretch gap-2">
+          {upcoming.map((it) =>
+            it.kind === "booking" ? (
+              <li key={`b-${it.id}`}>
+                <Link
+                  href="/schedule"
+                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 rounded-panel border border-border/70 bg-card px-4 py-3 shadow-card hover:bg-muted/40"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-ui font-semibold">{it.title} with {it.guest}</span>
+                    <span className="mt-0.5 block truncate text-meta tabular-nums text-muted-foreground">{formatInZone(new Date(it.startMs).toISOString(), tz)}</span>
+                  </span>
+                  <span className="rounded-full bg-accent-soft px-2 py-0.5 text-meta font-semibold text-accent-text">Booked</span>
+                </Link>
+              </li>
+            ) : (
+            <li key={it.id} className="flex items-stretch gap-2">
+              {(() => { const p = it.plan; return (<>
               <Link
                 href={`/plan?id=${p.id}`}
                 className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 rounded-panel border border-border/70 bg-card px-4 py-3 shadow-card transition-transform duration-[var(--dur-1)] hover:bg-muted/40 active:scale-[0.98]"
@@ -110,8 +129,10 @@ export function UpcomingPlans({ className }: { className?: string }) {
               >
                 <Mic className="h-5 w-5" aria-hidden />
               </Link>
+              </>); })()}
             </li>
-          ))}
+          )
+          )}
         </ul>
       )}
     </section>

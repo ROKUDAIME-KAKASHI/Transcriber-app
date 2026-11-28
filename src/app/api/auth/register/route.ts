@@ -2,7 +2,12 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { EMAIL_DOMAIN_MESSAGE, isAllowedEmailDomain } from "@/lib/emailRule";
+import { FailureLimiter } from "@/lib/adminAuthCore";
+import { clientIp, TOO_MANY_ATTEMPTS } from "@/lib/loginLimit";
 import { passwordProblem } from "@/lib/passwordRule";
+
+// Best effort per instance: 5 sign-ups per IP per hour.
+const limiter = new FailureLimiter(5, 60 * 60 * 1000);
 
 const Body = z.object({
   email: z.string().email(),
@@ -10,6 +15,11 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const ip = clientIp(req.headers.get("x-forwarded-for"));
+  if (ip !== "unknown") {
+    if (limiter.blocked(ip)) return Response.json({ error: TOO_MANY_ATTEMPTS }, { status: 429 });
+    limiter.fail(ip);
+  }
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(

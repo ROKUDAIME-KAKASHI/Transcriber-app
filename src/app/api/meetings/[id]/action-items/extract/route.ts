@@ -7,6 +7,7 @@ import { getUserId, unauthorized } from "@/lib/auth";
 import { FailureLimiter } from "@/lib/adminAuthCore";
 import { withLegacyFallback } from "@/lib/meetingSelect";
 import { UNTRUSTED_LABELS_NOTE, aiSpeakerLabel, parseTranscript, type SpeakerNames, type TranscriptPart } from "@/lib/transcript";
+import { TRANSCRIPT_DATA_RULE, wrapTranscript } from "@/lib/combined";
 import { buildActionItemsPrompt, chunkLines, mergeItems, parseActionItems, verifyItems } from "@/lib/actionItems";
 
 // Long meetings take a few model calls, two at a time (AICredits rejects more at once).
@@ -85,8 +86,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           const i = next++;
           const r = await generateText({
             model: summaryModel("glm"),
-            system: UNTRUSTED_LABELS_NOTE.trim(),
-            prompt: buildActionItemsPrompt(chunks[i]),
+            system: (TRANSCRIPT_DATA_RULE + UNTRUSTED_LABELS_NOTE).trim(),
+            prompt: buildActionItemsPrompt(wrapTranscript(chunks[i])),
             maxOutputTokens: 4000,
             maxRetries: 1,
             abortSignal: AbortSignal.timeout(120_000),
