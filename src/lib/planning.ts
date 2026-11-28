@@ -398,3 +398,31 @@ export function nextUpPlan<T extends Pick<PlanDTO, "startAt" | "status">>(plans:
 export function recordHref(p: Pick<PlanDTO, "id" | "title">): string {
   return `/?plan=${encodeURIComponent(p.id)}&title=${encodeURIComponent(p.title.slice(0, 120))}`;
 }
+
+/** One row of the Upcoming list on Meetings: a planned meeting, or a confirmed booking with no plan of its own. */
+export type UpcomingItem =
+  | { kind: "plan"; id: string; startMs: number; plan: PlanDTO }
+  | { kind: "booking"; id: string; startMs: number; title: string; guest: string };
+
+interface BookingLike {
+  id: string;
+  guestName: string;
+  startAt: string;
+  endAt: string;
+  eventTitle: string;
+}
+
+/** Planned meetings plus bookings in the next `days`, sorted by start. A booking that already has a plan is shown once, as the plan. */
+export function mergeUpcoming(plans: PlanDTO[], bookings: BookingLike[], now: Date, days = UPCOMING_DAYS): UpcomingItem[] {
+  const t = now.getTime();
+  const linked = new Set(plans.map((p) => p.bookingId).filter(Boolean));
+  const items: UpcomingItem[] = upcomingPlans(plans, now, days).map((p) => ({ kind: "plan", id: p.id, startMs: new Date(p.startAt).getTime(), plan: p }));
+  for (const b of bookings) {
+    if (linked.has(b.id)) continue;
+    const s = new Date(b.startAt).getTime();
+    const e = new Date(b.endAt).getTime();
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e < t || s > t + days * DAY) continue;
+    items.push({ kind: "booking", id: b.id, startMs: s, title: b.eventTitle, guest: b.guestName });
+  }
+  return items.sort((a, b) => a.startMs - b.startMs);
+}

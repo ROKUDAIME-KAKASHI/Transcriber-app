@@ -274,7 +274,7 @@ export function MeetingList() {
             {g.label && (
               <h2
                 suppressHydrationWarning
-                className="sticky top-14 z-10 mb-2 bg-background/90 px-1 py-2 text-meta font-semibold uppercase tracking-[0.08em] text-muted-foreground lg:top-0"
+                className="sticky top-14 z-10 mb-2 bg-background/90 px-1 py-2 text-ui font-semibold text-muted-foreground lg:top-0"
               >
                 {g.label}
               </h2>

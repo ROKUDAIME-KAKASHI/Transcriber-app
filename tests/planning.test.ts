@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   LinkBody, PlanCreate, PlanPatch, SeriesCreate, blankForm, formFromPlan, formStart, inviteText, isHttpUrl, nextOccurrence,
-  nextUpPlan, occurrenceAt, payloadFromForm, planPromptBlock, recordHref, upcomingPlans, type PlanDTO,
+  mergeUpcoming, nextUpPlan, occurrenceAt, payloadFromForm, planPromptBlock, recordHref, upcomingPlans, type PlanDTO,
 } from "../src/lib/planning.ts";
 import { buildIcs, wallClockOf } from "../src/lib/scheduling.ts";
 
@@ -167,5 +167,22 @@ describe("plan ics", () => {
     assert.match(ics, /ATTENDEE;CN="Asha,  CFO ; x";ROLE=REQ-PARTICIPANT:mailto:asha@example\.com/);
     assert.equal((ics.match(/^BEGIN:VEVENT/gm) ?? []).length, 1);
     assert.equal((ics.match(/ATTENDEE;/g) ?? []).length, 2);
+  });
+});
+
+describe("mergeUpcoming", () => {
+  const now = new Date("2026-12-04T09:00:00Z");
+  const bk = (id: string, startAt: string, endAt: string) => ({ id, guestName: "Guest " + id, startAt, endAt, eventTitle: "Intro call" });
+  test("merges plans and bookings sorted by start, with no duplicate for a linked booking", () => {
+    const out = mergeUpcoming(
+      [plan({ id: "p1", startAt: "2026-12-04T11:00:00Z", bookingId: "b2" })],
+      [bk("b1", "2026-12-04T09:03:00Z", "2026-12-04T09:30:00Z"), bk("b2", "2026-12-04T11:00:00Z", "2026-12-04T11:30:00Z")],
+      now
+    );
+    assert.deepEqual(out.map((i) => `${i.kind}:${i.id}`), ["booking:b1", "plan:p1"]);
+  });
+  test("drops bookings that ended or are beyond 14 days", () => {
+    const out = mergeUpcoming([], [bk("old", "2026-12-04T07:00:00Z", "2026-12-04T08:00:00Z"), bk("far", "2027-01-20T09:00:00Z", "2027-01-20T10:00:00Z")], now);
+    assert.equal(out.length, 0);
   });
 });
