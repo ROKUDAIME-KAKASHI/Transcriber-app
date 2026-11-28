@@ -19,6 +19,8 @@ export const FLAG_DEFAULTS = {
   autoMinutes: true,
   meetingAsk: true,
   screenNaming: true,
+  calendarView: true,
+  notifications: true,
 } as const;
 
 export type FlagKey = keyof typeof FLAG_DEFAULTS;
@@ -44,6 +46,8 @@ export const FLAG_LABELS: Record<FlagKey, string> = {
   autoMinutes: "Write minutes, summary and action items automatically after Stop (one small AI request; costs credits)",
   meetingAsk: "Ask tab: questions about a meeting, answered with quotes (small AI request per question)",
   screenNaming: "Read speaker names from the call screen on laptops (on-device; each person also turns it on in their own settings, beta)",
+  calendarView: "Schedule as a calendar (Month, Week, Day); off brings back the plain Schedule page",
+  notifications: "Notification bell: meetings, bookings, tasks and follow-ups (no push)",
 };
 
 export function isFlagKey(k: unknown): k is FlagKey {

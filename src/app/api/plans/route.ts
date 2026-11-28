@@ -25,7 +25,8 @@ export async function GET(req: Request) {
   const to = dateParam(q.get("to"));
   const seriesId = (q.get("seriesId") ?? "").slice(0, 40);
   // Series set to "keep N planned ahead" top themselves up here. Never throws; a no-op until 6_calendar is applied.
-  await ensureAheadForUser(userId);
+  // Background readers (the notification bell) pass ahead=0 so a timer never writes plans.
+  if (q.get("ahead") !== "0") await ensureAheadForUser(userId);
   try {
     const rows = await prisma.plannedMeeting.findMany({
       where: {
