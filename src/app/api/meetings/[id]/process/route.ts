@@ -10,6 +10,7 @@ import { planPromptBlock } from "@/lib/planning";
 import { getUserId, unauthorized } from "@/lib/auth";
 import { withLegacyFallback } from "@/lib/meetingSelect";
 import { UNTRUSTED_LABELS_NOTE, parseTranscript, transcriptToText } from "@/lib/transcript";
+import { TRANSCRIPT_DATA_RULE, wrapTranscript } from "@/lib/combined";
 import { FULL_TRANSCRIPT_SECTION, PROMPTS } from "@/lib/minutesPrompts";
 
 // Long meetings take several AI calls. 300 s is the most every Vercel plan allows; if the platform cuts
@@ -149,7 +150,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const header = `Meeting: ${meeting.title}\nLength: ${Math.round(meeting.durationSec / 60)} min`;
-    let prompt = `${header}\n\nRaw transcript:\n\n${raw}`;
+    let prompt = `${header}\n\nRaw transcript:\n\n${wrapTranscript(raw)}`;
     if (words > LONG_MEETING_WORDS) {
       // Step 1: detailed notes per part (in order), a couple at a time.
       const chunks = splitIntoChunks(parts);
@@ -159,20 +160,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           maxOutputTokens: 4000,
           maxRetries: 2,
           abortSignal: AbortSignal.timeout(180_000),
-          system: NOTES_PROMPT + UNTRUSTED_LABELS_NOTE,
-          prompt: `Part ${i + 1} of ${chunks.length}${multiSpeaker ? " (speaker labels are consistent across parts)" : ""}:\n\n${transcriptToText(chunk, { names, multiSpeaker, forAi: true })}`,
+          system: NOTES_PROMPT + TRANSCRIPT_DATA_RULE + UNTRUSTED_LABELS_NOTE,
+          prompt: `Part ${i + 1} of ${chunks.length}${multiSpeaker ? " (speaker labels are consistent across parts)" : ""}:\n\n${wrapTranscript(transcriptToText(chunk, { names, multiSpeaker, forAi: true }))}`,
         });
         return `## Part ${i + 1} of ${chunks.length}\n\n${r.text.trim()}`;
       });
       // Step 2: the document, written from the notes.
-      prompt = `${header}\n\nThe transcript was too long to include, so here are detailed notes taken from each consecutive part of it (times are into the meeting). Write the document from these notes; merge topics that span parts.\n\n${notes.join("\n\n")}`;
+      prompt = `${header}\n\nThe transcript was too long to include, so here are detailed notes taken from each consecutive part of it (times are into the meeting). Write the document from these notes; merge topics that span parts.\n\n${wrapTranscript(notes.join("\n\n"))}`;
     }
     const result = await generateText({
       model: summaryModel(model),
       maxOutputTokens: 16000,
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(240_000),
-      system: PROMPTS[template] + UNTRUSTED_LABELS_NOTE + planBlock + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
+      system: PROMPTS[template] + TRANSCRIPT_DATA_RULE + UNTRUSTED_LABELS_NOTE + planBlock + (includeFullTranscript ? FULL_TRANSCRIPT_SECTION : ""),
       prompt,
     });
     const document = unwrapFence(result.text);

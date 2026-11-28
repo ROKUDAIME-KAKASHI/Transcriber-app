@@ -57,7 +57,7 @@ export default function LoginPage() {
 
       const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
-        setError(res.error.includes("No account") || res.error.includes("Incorrect") || res.error === EMAIL_DOMAIN_MESSAGE ? res.error : "Sign in failed.");
+        setError(res.error.includes("No account") || res.error.includes("Incorrect") || res.error.startsWith("Too many attempts") || res.error === EMAIL_DOMAIN_MESSAGE ? res.error : "Sign in failed.");
         return;
       }
       // AuthProvider lives in the root layout and still holds the pre-sign-in "no session" probe.

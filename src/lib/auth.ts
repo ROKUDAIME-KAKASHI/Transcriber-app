@@ -2,7 +2,10 @@ import { AuthOptions, getServerSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { LoginGuard, TOO_MANY_ATTEMPTS, clientIp } from "@/lib/loginLimit";
 import { EMAIL_DOMAIN_MESSAGE, isAllowedEmailDomain } from "@/lib/emailRule";
+
+const loginGuard = new LoginGuard();
 
 export const authOptions: AuthOptions = {
   providers: [
@@ -12,18 +15,27 @@ export const authOptions: AuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) throw new Error("Missing credentials");
         const email = credentials.email.toLowerCase().trim();
+        const ip = clientIp(req?.headers?.["x-forwarded-for"]);
+        if (loginGuard.blocked(email, ip)) throw new Error(TOO_MANY_ATTEMPTS);
         const user = await prisma.user.findUnique({
           where: { email },
           // Explicit select: the User table may not have the scheduling columns until `prisma db push` has run.
           select: { id: true, email: true, password: true },
         });
         // Existing accounts on any domain keep working; the domain rule only blocks new ones.
-        if (!user) throw new Error(isAllowedEmailDomain(email) ? "No account found with this email." : EMAIL_DOMAIN_MESSAGE);
+        if (!user) {
+          loginGuard.fail(email, ip);
+          throw new Error(isAllowedEmailDomain(email) ? "No account found with this email." : EMAIL_DOMAIN_MESSAGE);
+        }
         const ok = await bcrypt.compare(credentials.password, user.password);
-        if (!ok) throw new Error("Incorrect password.");
+        if (!ok) {
+          loginGuard.fail(email, ip);
+          throw new Error("Incorrect password.");
+        }
+        loginGuard.success(email);
         return { id: user.id, email: user.email };
       },
     }),
