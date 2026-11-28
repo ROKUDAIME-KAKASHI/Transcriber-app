@@ -74,6 +74,11 @@ try {
   check("/login has COOP same-origin", login.headers.get("cross-origin-opener-policy") === "same-origin", String(login.headers.get("cross-origin-opener-policy")));
   check("/login has COEP require-corp", login.headers.get("cross-origin-embedder-policy") === "require-corp", String(login.headers.get("cross-origin-embedder-policy")));
 
+  for (const p of ["/forgot", "/reset"]) {
+    const r = await get(p);
+    check(`${p} answers 200 with no sign-in`, r.status === 200, String(r.status));
+  }
+
   const privacy = await get("/privacy");
   check("/privacy answers 200 with no sign-in", privacy.status === 200, String(privacy.status));
 

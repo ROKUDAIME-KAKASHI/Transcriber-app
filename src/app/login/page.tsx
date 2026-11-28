@@ -22,9 +22,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  // null until the server answers; the link shows only when email is set up, the hint only on an explicit "no".
+  const [resetEnabled, setResetEnabled] = useState<boolean | null>(null);
   useEffect(() => {
     // /login?deleted=1 is where account deletion lands.
     setDeleted(new URLSearchParams(window.location.search).get("deleted") === "1");
+    fetch("/api/auth/forgot")
+      .then((r) => r.json())
+      .then((d) => setResetEnabled(Boolean(d?.enabled)))
+      .catch(() => {});
   }, []);
   const router = useRouter();
   const { recheck } = useAuth();
@@ -164,6 +170,16 @@ export default function LoginPage() {
                 aria-describedby={mode === "register" ? "pw-rules" : undefined}
               />
               {mode === "register" && <PasswordChecklist id="pw-rules" password={password} />}
+              {mode === "signin" && resetEnabled === true && (
+                <p className="mt-2 text-meta">
+                  <Link href="/forgot" className="text-accent-text underline-offset-2 hover:underline">
+                    Forgot password?
+                  </Link>
+                </p>
+              )}
+              {mode === "signin" && resetEnabled === false && (
+                <p className="mt-2 text-meta text-muted-foreground">Forgot your password? Ask the app owner to reset it.</p>
+              )}
             </div>
             {mode === "register" && (
               <div>

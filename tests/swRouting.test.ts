@@ -30,6 +30,7 @@ describe("route", () => {
   for (const p of ["/book/asha", "/book/asha/30min", "/book/confirmed/abc", "/book"]) {
     test(`booking page ${p} always passes to the network`, () => assert.equal(r(p).kind, "pass"));
   }
+  for (const p of ["/forgot", "/reset"]) test(`${p} always passes to the network`, () => assert.equal(r(p).kind, "pass"));
   test("schedule is an app shell", () => assert.deepEqual(r("/schedule"), { kind: "nav", shell: "/schedule" }));
   test("rsc header", () => assert.equal(r("/meetings", req({}, { rsc: "1" })).kind, "pass"));
   test("prefetch header", () => assert.equal(r("/meetings", req({}, { "next-router-prefetch": "1" })).kind, "pass"));

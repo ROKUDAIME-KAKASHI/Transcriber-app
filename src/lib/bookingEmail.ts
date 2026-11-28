@@ -9,6 +9,8 @@ export interface MailPayload {
   to: string;
   subject: string;
   text: string;
+  /** Optional HTML body sent alongside the plain text. */
+  html?: string;
   ics?: string;
   icsName?: string;
   /** MIME type of the attachment, e.g. "text/calendar; method=REQUEST; charset=utf-8". */
@@ -34,6 +36,7 @@ async function send(payload: MailPayload): Promise<boolean> {
         to: [payload.to],
         subject: payload.subject,
         text: payload.text,
+        ...(payload.html ? { html: payload.html } : {}),
         ...(payload.replyTo ? { reply_to: payload.replyTo } : {}),
         attachments: payload.ics
           ? [{
