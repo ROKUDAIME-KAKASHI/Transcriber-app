@@ -102,7 +102,7 @@ export const LevelCanvas = memo(function LevelCanvas({
 
   if (reduced) {
     return (
-      <div className={cx("flex items-center", className)} style={{ height }}>
+      <div className={cx("flex w-full items-center", className)} style={{ height }}>
         <div {...aria} className="h-2 w-full overflow-hidden rounded-full bg-muted">
           <div
             className="h-full w-full origin-left rounded-full bg-accent"

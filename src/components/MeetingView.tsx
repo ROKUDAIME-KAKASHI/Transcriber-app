@@ -814,7 +814,7 @@ export function MeetingView({ meeting, source = "server" }: { meeting: MeetingDa
         <MeetingTabBar
           tabs={tabs}
           value={tab}
-          labels={{ minutes: `Summary & ${docName.toLowerCase()}` }}
+          labels={{ minutes: docName }}
           onChange={(t) => {
             userPicked.current = true;
             setTab(t);
